@@ -23,7 +23,10 @@ _TOOL_SCHEMA = {
             "passt": {"type": "array", "items": {"type": "string"}},
             "passt_nicht": {"type": "array", "items": {"type": "string"}},
             "luecken": {"type": "array", "items": {"type": "string"}},
-            "kurzfazit": {"type": "string"},
+            "kurzfazit": {
+                "type": "string",
+                "description": "Maximal ein kurzer Satz, keine Aufzaehlung von Gruenden.",
+            },
         },
         "required": ["score", "passt", "passt_nicht", "luecken", "kurzfazit"],
     },
@@ -34,7 +37,10 @@ _SYSTEM_PROMPT = (
     f"Antworte ausschliesslich ueber das Werkzeug {_TOOL_NAME}. "
     "Score-Skala: 5 = sehr gute Passung, sofort bewerben; 4 = gute Passung, "
     "kleine Luecken; 3 = machbar, aber deutliche Luecken oder Abstriche; "
-    "2 = eher nein; 1 = passt nicht."
+    "2 = eher nein; 1 = passt nicht. "
+    "kurzfazit ist genau ein kurzer Satz (maximal 20 Woerter) mit der "
+    "wichtigsten Begruendung fuer den Score - keine Aufzaehlung, keine "
+    "Wiederholung von passt/passt_nicht/luecken."
 )
 
 
