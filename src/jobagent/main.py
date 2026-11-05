@@ -72,6 +72,7 @@ def _suche_alle(konfig: dict) -> list[fetch.Anzeige]:
     wo = konfig.get("wo")
     umkreis = konfig.get("umkreis")
     veroeffentlichtseit = konfig.get("veroeffentlichtseit")
+    firmen = konfig.get("firmen", [])
 
     gefunden: dict[str, fetch.Anzeige] = {}
     for was in konfig.get("was", []):
@@ -80,6 +81,8 @@ def _suche_alle(konfig: dict) -> list[fetch.Anzeige]:
         ):
             gefunden.setdefault(anzeige.id, anzeige)
         for anzeige in fetch.search_arbeitnow(was, wo=wo, veroeffentlichtseit=veroeffentlichtseit):
+            gefunden.setdefault(anzeige.id, anzeige)
+        for anzeige in fetch.search_watchlist(firmen, was):
             gefunden.setdefault(anzeige.id, anzeige)
 
     return list(gefunden.values())

@@ -10,11 +10,11 @@ liefert ausschließlich Vorschläge zum manuellen Durchsehen.
 ## Ablauf
 
 ```
-Bundesagentur-Jobsuche-API    Arbeitnow-API
-(Suche + Jobdetails)          (kostenlos, kein Key)
-        │                            │
-        └──────────┬─────────────────┘
-                    ▼
+Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
+(Suche + Details)   (kein Key)      (Greenhouse/Lever pro Firma)
+        │                 │                 │
+        └────────┬────────┴─────────┬───────┘
+                  ▼
     fetch.py  ──►  store.py (SQLite-Dedupe: schon gesehene IDs raus)
         │
         ▼
@@ -35,7 +35,7 @@ erneut versucht — der Gesamtlauf bricht nie ab.
 - `httpx` für HTTP-Zugriffe, `sqlite3` (Standardbibliothek) für Dedupe
 - [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) mit
   Claude Haiku für die Bewertung (strukturierte Antwort per Tool-Use)
-- `pytest` (32 Tests, alles gemockt/mit Fixtures, kein Live-Zugriff in
+- `pytest` (48 Tests, alles gemockt/mit Fixtures, kein Live-Zugriff in
   Tests) und `ruff` für Lint/Format
 
 ## Setup
@@ -58,7 +58,8 @@ API-Key setzen (niemals im Code/Repo):
 ```
 
 Suchparameter in `config.toml` anpassen (Ort, Umkreis, Zeitfenster,
-Suchbegriffe).
+Suchbegriffe, optional `[[firmen]]` für eine Watchlist konkreter
+Greenhouse-/Lever-Jobboards).
 
 ## Verwenden
 

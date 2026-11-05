@@ -1,4 +1,4 @@
-"""Anzeigen von Jobquellen holen (Bundesagentur fuer Arbeit, Arbeitnow)."""
+"""Anzeigen von Jobquellen holen (Bundesagentur, Arbeitnow, Firmen-Watchlist)."""
 
 import base64
 import html
@@ -20,6 +20,10 @@ _ARBEITNOW_URL = "https://www.arbeitnow.com/api/job-board-api"
 _ARBEITNOW_MAX_SEITEN = 10
 _TAG_PATTERN = re.compile(r"<[^>]+>")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
+
+_GREENHOUSE_URL = "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs"
+_GREENHOUSE_DETAIL_URL = "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs/{job_id}"
+_LEVER_URL = "https://api.lever.co/v0/postings/{company_slug}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,9 +189,157 @@ def _arbeitnow_zu_anzeige(eintrag: dict) -> Anzeige:
 
 
 def _html_zu_text(markup: str | None) -> str | None:
+    # Entschachtelt vor dem Tag-Strip, da Greenhouse HTML doppelt escaped
+    # liefert ("&lt;div&gt;..." statt "<div>..."); fuer einfach escapte
+    # Quellen (z.B. Arbeitnow) ist der erste unescape-Aufruf ein No-Op.
     if not markup:
         return None
-    ohne_tags = _TAG_PATTERN.sub(" ", markup)
+    entschachtelt = html.unescape(markup)
+    ohne_tags = _TAG_PATTERN.sub(" ", entschachtelt)
     text = html.unescape(ohne_tags)
     bereinigt = _WHITESPACE_PATTERN.sub(" ", text).strip()
     return bereinigt or None
+
+
+def search_watchlist(
+    firmen: list[dict],
+    was: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> list[Anzeige]:
+    """Durchsucht die oeffentlichen Jobboards konkret beobachteter Firmen.
+
+    Jeder Eintrag in firmen braucht die Felder "name", "ats" ("greenhouse"
+    oder "lever") und "slug" (Board-Token bzw. Firmen-Slug). Scheitert eine
+    einzelne Firma (falscher Slug, API-Fehler), wird das geloggt und die
+    uebrigen Firmen trotzdem durchsucht.
+    """
+    treffer: list[Anzeige] = []
+    for firma in firmen:
+        ats = firma.get("ats")
+        slug = firma.get("slug")
+        name = firma.get("name", slug)
+        if ats == "greenhouse":
+            treffer.extend(search_greenhouse(slug, was, transport=transport))
+        elif ats == "lever":
+            treffer.extend(search_lever(slug, name, was, transport=transport))
+        else:
+            logger.error("Unbekannter ats-Typ in Watchlist: %r (firma=%r)", ats, name)
+    return treffer
+
+
+def search_greenhouse(
+    board_token: str,
+    was: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> list[Anzeige]:
+    """Durchsucht das oeffentliche Greenhouse-Jobboard einer einzelnen Firma.
+
+    Keine serverseitige Stichwortsuche - Filterung nach Titel (was) passiert
+    clientseitig. Holt die volle Beschreibung pro Treffer per Detail-Call;
+    schlaegt dieser fehl, bleibt nur dessen Beschreibung leer statt den
+    gesamten Firmen-Durchlauf abzubrechen.
+    """
+    url = _GREENHOUSE_URL.format(board_token=board_token)
+    with httpx.Client(timeout=_TIMEOUT, transport=transport) as client:
+        try:
+            response = client.get(url)
+            response.raise_for_status()
+            daten = response.json()
+        except httpx.HTTPError:
+            logger.exception("Greenhouse-Anfrage fehlgeschlagen (board=%r)", board_token)
+            return []
+        except ValueError:
+            logger.exception("Greenhouse-Antwort ist kein gueltiges JSON (board=%r)", board_token)
+            return []
+
+        return [
+            _greenhouse_zu_anzeige(eintrag, board_token, client)
+            for eintrag in daten.get("jobs", [])
+            if was.lower() in eintrag.get("title", "").lower()
+        ]
+
+
+def _greenhouse_zu_anzeige(eintrag: dict, board_token: str, client: httpx.Client) -> Anzeige:
+    job_id = eintrag["id"]
+    return Anzeige(
+        id=f"greenhouse:{board_token}:{job_id}",
+        titel=eintrag.get("title", ""),
+        firma=eintrag.get("company_name"),
+        ort=(eintrag.get("location") or {}).get("name"),
+        link=eintrag.get("absolute_url", ""),
+        beschreibung=_hole_greenhouse_beschreibung(client, board_token, job_id),
+    )
+
+
+def _hole_greenhouse_beschreibung(
+    client: httpx.Client, board_token: str, job_id: int
+) -> str | None:
+    url = _GREENHOUSE_DETAIL_URL.format(board_token=board_token, job_id=job_id)
+    try:
+        response = client.get(url, params={"content": "true"})
+        response.raise_for_status()
+        details = response.json()
+    except httpx.HTTPError:
+        logger.exception(
+            "Greenhouse-Detail-Anfrage fehlgeschlagen (board=%r, job_id=%r)", board_token, job_id
+        )
+        return None
+    except ValueError:
+        logger.exception(
+            "Greenhouse-Detail-Antwort ist kein gueltiges JSON (board=%r, job_id=%r)",
+            board_token,
+            job_id,
+        )
+        return None
+
+    return _html_zu_text(details.get("content"))
+
+
+def search_lever(
+    company_slug: str,
+    firma_name: str,
+    was: str,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> list[Anzeige]:
+    """Durchsucht die oeffentlichen Lever-Postings einer einzelnen Firma.
+
+    Keine serverseitige Stichwortsuche - Filterung nach Titel (was) passiert
+    clientseitig. Lever liefert bereits eine reine Textbeschreibung
+    (descriptionPlain), kein HTML-Stripping noetig.
+    """
+    url = _LEVER_URL.format(company_slug=company_slug)
+    with httpx.Client(timeout=_TIMEOUT, transport=transport) as client:
+        try:
+            response = client.get(url, params={"mode": "json"})
+            response.raise_for_status()
+            daten = response.json()
+        except httpx.HTTPError:
+            logger.exception("Lever-Anfrage fehlgeschlagen (firma=%r)", company_slug)
+            return []
+        except ValueError:
+            logger.exception("Lever-Antwort ist kein gueltiges JSON (firma=%r)", company_slug)
+            return []
+
+    if not isinstance(daten, list):
+        logger.error("Lever-Antwort hat unerwartetes Format (firma=%r): %r", company_slug, daten)
+        return []
+
+    return [
+        _lever_zu_anzeige(eintrag, company_slug, firma_name)
+        for eintrag in daten
+        if was.lower() in eintrag.get("text", "").lower()
+    ]
+
+
+def _lever_zu_anzeige(eintrag: dict, company_slug: str, firma_name: str) -> Anzeige:
+    return Anzeige(
+        id=f"lever:{company_slug}:{eintrag['id']}",
+        titel=eintrag.get("text", ""),
+        firma=firma_name,
+        ort=(eintrag.get("categories") or {}).get("location"),
+        link=eintrag.get("hostedUrl", ""),
+        beschreibung=eintrag.get("descriptionPlain"),
+    )

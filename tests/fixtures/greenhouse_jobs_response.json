@@ -1,0 +1,21 @@
+{
+  "jobs": [
+    {
+      "id": 1001,
+      "title": "Full-Stack-Entwickler (m/w/d)",
+      "company_name": "Beispiel GmbH",
+      "location": {"name": "München, Deutschland"},
+      "absolute_url": "https://job-boards.greenhouse.io/beispiel/jobs/1001",
+      "updated_at": "2026-11-01T10:00:00+01:00"
+    },
+    {
+      "id": 1002,
+      "title": "Sales Manager (m/w/d)",
+      "company_name": "Beispiel GmbH",
+      "location": {"name": "Berlin, Deutschland"},
+      "absolute_url": "https://job-boards.greenhouse.io/beispiel/jobs/1002",
+      "updated_at": "2026-11-01T10:00:00+01:00"
+    }
+  ],
+  "meta": {"total": 2}
+}

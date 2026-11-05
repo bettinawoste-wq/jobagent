@@ -19,8 +19,9 @@ _PROFIL = "# Suchprofil\nPython, München, Hybrid bevorzugt."
 
 
 @pytest.fixture(autouse=True)
-def _keine_echten_arbeitnow_aufrufe(monkeypatch: pytest.MonkeyPatch) -> None:
+def _keine_echten_zweit_und_drittquellen_aufrufe(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fetch, "search_arbeitnow", lambda *a, **kw: [])
+    monkeypatch.setattr(fetch, "search_watchlist", lambda *a, **kw: [])
 
 
 @pytest.fixture
@@ -152,3 +153,35 @@ def test_main_kombiniert_treffer_aus_beiden_quellen(
     assert "Stelle a-1" in inhalt
     assert "Full-Stack-Entwickler (m/w/d)" in inhalt
     assert sorted(aufrufe) == ["a-1", "arbeitnow:full-stack-entwickler-100"]
+
+
+def test_main_bindet_watchlist_firmen_aus_config_ein(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projekt["konfig_pfad"].write_text(
+        'wo = "München"\numkreis = 30\nveroeffentlichtseit = 1\n'
+        'was = ["Softwareentwickler"]\n\n'
+        '[[firmen]]\nname = "GitLab"\nats = "greenhouse"\nslug = "gitlab"\n',
+        encoding="utf-8",
+    )
+    watchlist_anzeige = Anzeige(
+        id="greenhouse:gitlab:999",
+        titel="Full-Stack-Entwickler (m/w/d)",
+        firma="GitLab",
+        ort="Remote",
+        link="https://job-boards.greenhouse.io/gitlab/jobs/999",
+    )
+    erhaltene_firmen = []
+
+    def fake_search_watchlist(firmen, was, **kw):
+        erhaltene_firmen.append(firmen)
+        return [watchlist_anzeige]
+
+    monkeypatch.setattr(fetch, "search", lambda *a, **kw: [])
+    monkeypatch.setattr(fetch, "search_watchlist", fake_search_watchlist)
+    monkeypatch.setattr(score, "score_anzeige", lambda *a, **kw: _bewertung())
+
+    pfad = main.main(**projekt)
+
+    assert erhaltene_firmen == [[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}]]
+    assert "Full-Stack-Entwickler (m/w/d)" in pfad.read_text(encoding="utf-8")

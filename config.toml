@@ -10,3 +10,19 @@ was = [
     "Embedded Entwickler",
     "Data Scientist",
 ]
+
+# Watchlist: konkrete Firmen, deren eigenes Jobboard (Greenhouse/Lever)
+# zusaetzlich durchsucht wird. slug ist der Board-Token (Greenhouse) bzw.
+# Firmen-Slug (Lever) - meist aus der URL der oeffentlichen Karriereseite
+# ablesbar, z.B. https://job-boards.greenhouse.io/<slug> oder
+# https://jobs.lever.co/<slug>. Unten zwei funktionierende Beispiele -
+# durch echte Zielfirmen ersetzen oder die Liste leer lassen ([]).
+[[firmen]]
+name = "GitLab"
+ats = "greenhouse"
+slug = "gitlab"
+
+[[firmen]]
+name = "Lever Demo"
+ats = "lever"
+slug = "leverdemo"

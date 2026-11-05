@@ -9,7 +9,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `pytest` für Tests, `ruff` für Lint und Format
 
 ## Struktur
-- `src/jobagent/fetch.py`: Anzeigen von Quellen holen (Bundesagentur für Arbeit, Arbeitnow)
+- `src/jobagent/fetch.py`: Anzeigen von Quellen holen (Bundesagentur für Arbeit, Arbeitnow, Firmen-Watchlist via Greenhouse/Lever)
 - `src/jobagent/store.py`: SQLite, merkt sich gesehene Anzeigen-IDs
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md`, sortiert nach Score
@@ -33,6 +33,14 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Keine serverseitige Stichwort- oder Ortssuche - Filterung nach `was`/`wo` passiert clientseitig in `fetch.search_arbeitnow`. Kein `umkreis` möglich (keine Geokoordinaten).
 - Paging folgt `links.next`, stoppt sobald Einträge älter als `veroeffentlichtseit` Tage auftauchen (max. 10 Seiten als Sicherheitsgrenze - maßvolle Nutzung der freien API).
 - Netzwerkzugriffe in Tests immer mocken, nie live testen.
+
+## Quelle 3: Firmen-Watchlist (Greenhouse/Lever)
+- Statt breiter Suche: konkrete Firmen aus `config.toml` (`[[firmen]]`, Felder `name`/`ats`/`slug`) werden direkt über ihr öffentliches Jobboard durchsucht.
+- Greenhouse (`boards-api.greenhouse.io/v1/boards/{slug}/jobs`): Beschreibung kommt doppelt HTML-escaped und braucht einen Detail-Call pro Treffer (`?content=true`).
+- Lever (`api.lever.co/v0/postings/{slug}`): liefert direkt `descriptionPlain`, kein HTML-Stripping nötig. Response ist eine rohe Liste, kein Wrapper-Objekt.
+- Beide ohne serverseitige Stichwortsuche - Filterung nach `was` passiert clientseitig in `fetch.search_greenhouse`/`fetch.search_lever`. Scheitert eine Firma, werden die übrigen trotzdem durchsucht (`fetch.search_watchlist`).
+- Netzwerkzugriffe in Tests immer mocken, nie live testen.
+- Bewusst nicht genutzt: Remotive-API - Suchparameter filtert praktisch nicht, winziger kaum Deutschland-relevanter Feed, und die API-Antwort selbst weist auf ein kostenpflichtiges Angebot für diesen Nutzungszweck hin.
 
 ## Konventionen
 - Kleine Funktionen, Typannotationen, keine versteckten Seiteneffekte

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "posting-1",
+    "text": "Full-Stack-Entwickler (m/w/d)",
+    "categories": {
+      "location": "München",
+      "team": "Engineering"
+    },
+    "createdAt": 1762000000000,
+    "hostedUrl": "https://jobs.lever.co/beispiel/posting-1",
+    "description": "<div>Wir suchen <strong>Python</strong> Erfahrung.</div>",
+    "descriptionPlain": "Wir suchen Python Erfahrung."
+  },
+  {
+    "id": "posting-2",
+    "text": "Sales Manager (m/w/d)",
+    "categories": {
+      "location": "Berlin",
+      "team": "Sales"
+    },
+    "createdAt": 1762000000000,
+    "hostedUrl": "https://jobs.lever.co/beispiel/posting-2",
+    "description": "<div>Vertriebserfahrung gesucht.</div>",
+    "descriptionPlain": "Vertriebserfahrung gesucht."
+  }
+]
