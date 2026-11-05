@@ -40,7 +40,10 @@ _SYSTEM_PROMPT = (
     "2 = eher nein; 1 = passt nicht. "
     "kurzfazit ist genau ein kurzer Satz (maximal 20 Woerter) mit der "
     "wichtigsten Begruendung fuer den Score - keine Aufzaehlung, keine "
-    "Wiederholung von passt/passt_nicht/luecken."
+    "Wiederholung von passt/passt_nicht/luecken. "
+    "passt, passt_nicht und luecken sind JSON-Arrays aus einzelnen kurzen "
+    "Punkten (je ein eigener String), niemals ein einzelner "
+    "zusammengefasster Text mit Kommas."
 )
 
 
@@ -126,6 +129,12 @@ def _validiere(daten: dict) -> Bewertung:
 
 
 def _als_string_liste(wert: object) -> list[str]:
+    # Claude liefert dieses Feld manchmal als einzelnen String statt als
+    # JSON-Array, obwohl das Tool-Schema ein Array vorgibt. Statt die ganze
+    # Bewertung zu verwerfen, wird der String als Ein-Elemente-Liste
+    # uebernommen - kein Datenverlust, nur weniger granular dargestellt.
+    if isinstance(wert, str):
+        return [wert]
     if not isinstance(wert, list):
-        raise TypeError(f"erwartete Liste, bekam {type(wert)}")
+        raise TypeError(f"erwartete Liste oder String, bekam {type(wert)}")
     return [str(eintrag) for eintrag in wert]

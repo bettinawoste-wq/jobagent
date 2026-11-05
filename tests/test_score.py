@@ -136,7 +136,7 @@ def test_score_anzeige_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture)
     "ungueltige_daten",
     [
         {**SCORE_FIXTURE, "score": 7},
-        {**SCORE_FIXTURE, "passt": "kein-liste"},
+        {**SCORE_FIXTURE, "passt": 123},
         {k: v for k, v in SCORE_FIXTURE.items() if k != "kurzfazit"},
     ],
 )
@@ -150,3 +150,17 @@ def test_score_anzeige_gibt_none_bei_ungueltiger_antwort(
 
     assert bewertung is None
     assert "Ungueltige Bewertungsantwort" in caplog.text
+
+
+def test_score_anzeige_akzeptiert_string_statt_liste() -> None:
+    # Claude liefert passt/passt_nicht/luecken manchmal als einzelnen String
+    # statt als JSON-Array, obwohl das Tool-Schema ein Array vorgibt. Das
+    # darf die Anzeige nicht verwerfen, sondern wird als Ein-Elemente-Liste
+    # uebernommen.
+    daten = {**SCORE_FIXTURE, "passt": "München-Standort, Hybrid möglich"}
+    client = _FakeClient(_nachricht_mit_tool_input(daten))
+
+    bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+
+    assert bewertung is not None
+    assert bewertung.passt == ["München-Standort, Hybrid möglich"]
