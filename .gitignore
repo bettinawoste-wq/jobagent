@@ -6,10 +6,12 @@ __pycache__/
 build/
 dist/
 
-# Projektdaten
+# Projektdaten (persoenlich, nicht ins Repo)
 output/
 *.db
 .env
+profile.md
+run.log
 
 # Tools
 .ruff_cache/
