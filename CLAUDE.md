@@ -9,7 +9,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `pytest` für Tests, `ruff` für Lint und Format
 
 ## Struktur
-- `src/jobagent/fetch.py`: Anzeigen von Quellen holen (zuerst nur Bundesagentur für Arbeit)
+- `src/jobagent/fetch.py`: Anzeigen von Quellen holen (Bundesagentur für Arbeit, Arbeitnow)
 - `src/jobagent/store.py`: SQLite, merkt sich gesehene Anzeigen-IDs
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md`, sortiert nach Score
@@ -24,7 +24,14 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 
 ## Quelle 1: Jobsuche-API der Bundesagentur für Arbeit
 - Doku und Beispiele: GitHub `bundesAPI/jobsuche-api`. Endpunkt, Header und Parameter immer dort gegenprüfen, nicht raten.
+- Achtung: Die Live-API (`pc/v6/jobs`) weicht vom dokumentierten Schema ab (z. B. `ergebnisliste` statt `stellenangebote`, `referenznummer` statt `refnr`) - immer gegen echte Antworten verifizieren, nicht nur gegen die Doku.
 - Suche nach Stichwort (`was`), Ort (`wo`), Umkreis (`umkreis`), Alter der Anzeige (`veroeffentlichtseit`).
+- Netzwerkzugriffe in Tests immer mocken, nie live testen.
+
+## Quelle 2: Arbeitnow API
+- Kostenlose, öffentliche API ohne Key: `https://www.arbeitnow.com/api/job-board-api`. Aggregiert Remote-/Europa-Jobs (Tech-Schwerpunkt).
+- Keine serverseitige Stichwort- oder Ortssuche - Filterung nach `was`/`wo` passiert clientseitig in `fetch.search_arbeitnow`. Kein `umkreis` möglich (keine Geokoordinaten).
+- Paging folgt `links.next`, stoppt sobald Einträge älter als `veroeffentlichtseit` Tage auftauchen (max. 10 Seiten als Sicherheitsgrenze - maßvolle Nutzung der freien API).
 - Netzwerkzugriffe in Tests immer mocken, nie live testen.
 
 ## Konventionen

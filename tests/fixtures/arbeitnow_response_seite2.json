@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "slug": "data-scientist-hamburg-200002",
+      "company_name": "Seite-Zwei GmbH",
+      "title": "Data Scientist (m/w/d)",
+      "description": "<p>Seite 2 Treffer.</p>",
+      "remote": false,
+      "url": "https://www.arbeitnow.com/jobs/companies/seite-zwei-gmbh/data-scientist-hamburg-200002",
+      "tags": ["Data Science"],
+      "job_types": ["Full time"],
+      "location": "Hamburg",
+      "created_at": 0
+    }
+  ],
+  "links": {
+    "first": "https://www.arbeitnow.com/api/job-board-api?page=1",
+    "last": "https://www.arbeitnow.com/api/job-board-api?page=2",
+    "prev": "https://www.arbeitnow.com/api/job-board-api?page=1",
+    "next": null
+  },
+  "meta": {"current_page": 2, "per_page": 300}
+}

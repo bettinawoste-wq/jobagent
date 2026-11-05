@@ -10,9 +10,11 @@ liefert ausschließlich Vorschläge zum manuellen Durchsehen.
 ## Ablauf
 
 ```
-Bundesagentur-Jobsuche-API
-        │  (Suche + Jobdetails pro Treffer)
-        ▼
+Bundesagentur-Jobsuche-API    Arbeitnow-API
+(Suche + Jobdetails)          (kostenlos, kein Key)
+        │                            │
+        └──────────┬─────────────────┘
+                    ▼
     fetch.py  ──►  store.py (SQLite-Dedupe: schon gesehene IDs raus)
         │
         ▼

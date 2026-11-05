@@ -1,7 +1,10 @@
-"""Anzeigen von Jobquellen holen (zuerst nur Bundesagentur fuer Arbeit)."""
+"""Anzeigen von Jobquellen holen (Bundesagentur fuer Arbeit, Arbeitnow)."""
 
 import base64
+import html
 import logging
+import re
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -12,6 +15,11 @@ _SEARCH_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/j
 _DETAILS_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobdetails/{code}"
 _HEADERS = {"X-API-Key": "jobboerse-jobsuche"}
 _TIMEOUT = 30.0
+
+_ARBEITNOW_URL = "https://www.arbeitnow.com/api/job-board-api"
+_ARBEITNOW_MAX_SEITEN = 10
+_TAG_PATTERN = re.compile(r"<[^>]+>")
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,3 +104,90 @@ def _hole_beschreibung(client: httpx.Client, refnr: str) -> str | None:
         return None
 
     return details.get("stellenangebotsBeschreibung") or details.get("stellenbeschreibung")
+
+
+def search_arbeitnow(
+    was: str,
+    wo: str | None = None,
+    veroeffentlichtseit: int | None = None,
+    *,
+    transport: httpx.BaseTransport | None = None,
+) -> list[Anzeige]:
+    """Durchsucht die kostenlose Arbeitnow-API (kein API-Key noetig).
+
+    Die API bietet keine serverseitige Stichwort- oder Ortssuche, daher wird
+    clientseitig nach Titel (was) und Ort (wo) gefiltert. umkreis wird nicht
+    unterstuetzt, da keine Geokoordinaten verfuegbar sind. Ergebnisse sind
+    nach Veroeffentlichung sortiert; das Paging stoppt, sobald ein Eintrag
+    aelter als veroeffentlichtseit Tage auftaucht (max. 10 Seiten als
+    Sicherheitsgrenze, auch ohne Datumsfilter - Arbeitnow bittet explizit
+    um massvolle Nutzung der freien API).
+    """
+    grenze = time.time() - veroeffentlichtseit * 86400 if veroeffentlichtseit is not None else None
+
+    treffer: list[Anzeige] = []
+    url: str | None = _ARBEITNOW_URL
+    with httpx.Client(timeout=_TIMEOUT, transport=transport) as client:
+        for _ in range(_ARBEITNOW_MAX_SEITEN):
+            if not url:
+                break
+            try:
+                response = client.get(url)
+                response.raise_for_status()
+                daten = response.json()
+            except httpx.HTTPError:
+                logger.exception("Arbeitnow-API-Anfrage fehlgeschlagen (was=%r, wo=%r)", was, wo)
+                return treffer
+            except ValueError:
+                logger.exception("Arbeitnow-API-Antwort ist kein gueltiges JSON")
+                return treffer
+
+            eintraege = daten.get("data", [])
+            if not eintraege:
+                break
+
+            zu_alt_erreicht = False
+            for eintrag in eintraege:
+                erstellt = eintrag.get("created_at")
+                if grenze is not None and isinstance(erstellt, int | float) and erstellt < grenze:
+                    zu_alt_erreicht = True
+                    continue
+                if _arbeitnow_passt(eintrag, was, wo):
+                    treffer.append(_arbeitnow_zu_anzeige(eintrag))
+
+            if zu_alt_erreicht:
+                break
+            url = (daten.get("links") or {}).get("next")
+
+    return treffer
+
+
+def _arbeitnow_passt(eintrag: dict, was: str, wo: str | None) -> bool:
+    titel = eintrag.get("title", "")
+    if was and was.lower() not in titel.lower():
+        return False
+    if wo:
+        ort = eintrag.get("location") or ""
+        if wo.lower() not in ort.lower():
+            return False
+    return True
+
+
+def _arbeitnow_zu_anzeige(eintrag: dict) -> Anzeige:
+    return Anzeige(
+        id=f"arbeitnow:{eintrag['slug']}",
+        titel=eintrag.get("title", ""),
+        firma=eintrag.get("company_name"),
+        ort=eintrag.get("location"),
+        link=eintrag.get("url", ""),
+        beschreibung=_html_zu_text(eintrag.get("description")),
+    )
+
+
+def _html_zu_text(markup: str | None) -> str | None:
+    if not markup:
+        return None
+    ohne_tags = _TAG_PATTERN.sub(" ", markup)
+    text = html.unescape(ohne_tags)
+    bereinigt = _WHITESPACE_PATTERN.sub(" ", text).strip()
+    return bereinigt or None

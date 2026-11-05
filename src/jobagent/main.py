@@ -79,6 +79,8 @@ def _suche_alle(konfig: dict) -> list[fetch.Anzeige]:
             was, wo=wo, umkreis=umkreis, veroeffentlichtseit=veroeffentlichtseit
         ):
             gefunden.setdefault(anzeige.id, anzeige)
+        for anzeige in fetch.search_arbeitnow(was, wo=wo, veroeffentlichtseit=veroeffentlichtseit):
+            gefunden.setdefault(anzeige.id, anzeige)
 
     return list(gefunden.values())
 

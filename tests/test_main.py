@@ -18,6 +18,11 @@ was = ["Softwareentwickler"]
 _PROFIL = "# Suchprofil\nPython, München, Hybrid bevorzugt."
 
 
+@pytest.fixture(autouse=True)
+def _keine_echten_arbeitnow_aufrufe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(fetch, "search_arbeitnow", lambda *a, **kw: [])
+
+
 @pytest.fixture
 def projekt(tmp_path: Path) -> dict[str, Path]:
     konfig_pfad = tmp_path / "config.toml"
@@ -124,3 +129,26 @@ def test_main_dedupliziert_treffer_ueber_mehrere_suchbegriffe(
     main.main(**projekt)
 
     assert aufrufe == ["a-1"]
+
+
+def test_main_kombiniert_treffer_aus_beiden_quellen(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arbeitnow_anzeige = Anzeige(
+        id="arbeitnow:full-stack-entwickler-100",
+        titel="Full-Stack-Entwickler (m/w/d)",
+        firma="Arbeitnow-Firma",
+        ort="Berlin",
+        link="https://www.arbeitnow.com/jobs/companies/arbeitnow-firma/full-stack-entwickler-100",
+    )
+    monkeypatch.setattr(fetch, "search", lambda *a, **kw: [_anzeige("a-1")])
+    monkeypatch.setattr(fetch, "search_arbeitnow", lambda *a, **kw: [arbeitnow_anzeige])
+    aufrufe = []
+    monkeypatch.setattr(score, "score_anzeige", _score_und_merke(aufrufe))
+
+    pfad = main.main(**projekt)
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "Stelle a-1" in inhalt
+    assert "Full-Stack-Entwickler (m/w/d)" in inhalt
+    assert sorted(aufrufe) == ["a-1", "arbeitnow:full-stack-entwickler-100"]
