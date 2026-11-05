@@ -1,0 +1,45 @@
+{
+  "stellenangebote": [
+    {
+      "hashId": "WBTAiM10b25rJgZqiLhVIHzAF9e0rnV_DXdsRZtlb54=",
+      "beruf": "Softwareentwickler/in (m/w/d)",
+      "refnr": "10001-1003353506-S",
+      "arbeitgeber": "Beispiel GmbH",
+      "aktuelleVeroeffentlichungsdatum": "2026-11-01",
+      "eintrittsdatum": "2026-12-01",
+      "arbeitsort": {
+        "plz": 80331,
+        "ort": "M\u00fcnchen",
+        "strasse": "Beispielstra\u00dfe 1",
+        "region": "Bayern",
+        "land": "Deutschland",
+        "koordinaten": {"lat": 48.1374, "lon": 11.5755}
+      },
+      "kundennummerHash": "Z-HzVkUCLGQiQFxQSAICs302sSdB9Sp7XtgOiO4GGCA=",
+      "externeUrl": null,
+      "modifikationsTimestamp": "2026-11-01T08:00:00.000"
+    },
+    {
+      "hashId": "abc123",
+      "beruf": "IT Consultant (m/w/d)",
+      "refnr": "10001-1003353507-S",
+      "arbeitgeber": "Consulting AG",
+      "aktuelleVeroeffentlichungsdatum": "2026-11-02",
+      "eintrittsdatum": "2026-12-15",
+      "arbeitsort": {
+        "plz": 85748,
+        "ort": "Garching",
+        "strasse": "Teststra\u00dfe 2",
+        "region": "Bayern",
+        "land": "Deutschland"
+      },
+      "kundennummerHash": null,
+      "externeUrl": "https://www.consulting-ag.example/karriere/it-consultant",
+      "modifikationsTimestamp": "2026-11-02T09:30:00.000"
+    }
+  ],
+  "maxErgebnisse": "2",
+  "page": "1",
+  "size": "25",
+  "facetten": []
+}
