@@ -1,0 +1,58 @@
+{
+  "10001-1003353506-S": {
+    "aktuelleVeroeffentlichungsdatum": "2026-11-01",
+    "angebotsart": "ARBEIT",
+    "arbeitgeber": "Beispiel GmbH",
+    "branchengruppe": "IT, Computer, Telekommunikation",
+    "branche": "Sonstige Softwareentwicklung",
+    "arbeitgeberHashId": "dj32HpGiU3tdrYi6ohcMOtUhtBLPvwGIRiRlcvDsebg=",
+    "arbeitgeberKundennummerHash": "Z-HzVkUCLGQiQFxQSAICs302sSdB9Sp7XtgOiO4GGCA=",
+    "arbeitsorte": [
+      {
+        "land": "Deutschland",
+        "region": "Bayern",
+        "plz": "80331",
+        "ort": "M\u00fcnchen",
+        "strasse": "Beispielstra\u00dfe 1"
+      }
+    ],
+    "arbeitszeitmodelle": ["VOLLZEIT"],
+    "befristung": "UNBEFRISTET",
+    "titel": "Softwareentwickler/in (m/w/d)",
+    "stellenangebotsTitel": "Softwareentwickler/in (m/w/d)",
+    "hashId": "WBTAiM10b25rJgZqiLhVIHzAF9e0rnV_DXdsRZtlb54=",
+    "beruf": "Softwareentwickler/in (m/w/d)",
+    "modifikationsTimestamp": "2026-11-01T08:00:00.000",
+    "stellenangebotsBeschreibung": "Wir suchen eine Softwareentwicklerin fuer unser Backend-Team in Python und C++. Aufgaben: API-Design, CI/CD, Code-Reviews. Erfahrung mit Cloud-Migration von Vorteil.",
+    "refnr": "10001-1003353506-S",
+    "referenznummer": "10001-1003353506-S",
+    "verguetung": "nach Vereinbarung"
+  },
+  "10001-1003353507-S": {
+    "aktuelleVeroeffentlichungsdatum": "2026-11-02",
+    "angebotsart": "ARBEIT",
+    "arbeitgeber": "Consulting AG",
+    "branchengruppe": "Unternehmensberatung",
+    "branche": "IT-Beratung",
+    "arbeitgeberHashId": "xyz",
+    "arbeitgeberKundennummerHash": null,
+    "arbeitsorte": [
+      {
+        "land": "Deutschland",
+        "region": "Bayern",
+        "plz": "85748",
+        "ort": "Garching",
+        "strasse": "Teststra\u00dfe 2"
+      }
+    ],
+    "arbeitszeitmodelle": ["VOLLZEIT"],
+    "befristung": "UNBEFRISTET",
+    "titel": "IT Consultant (m/w/d)",
+    "stellenangebotsTitel": "IT Consultant (m/w/d)",
+    "hashId": "abc123",
+    "beruf": "IT Consultant (m/w/d)",
+    "modifikationsTimestamp": "2026-11-02T09:30:00.000",
+    "refnr": "10001-1003353507-S",
+    "referenznummer": "10001-1003353507-S"
+  }
+}
