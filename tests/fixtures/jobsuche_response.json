@@ -1,45 +1,61 @@
 {
-  "stellenangebote": [
+  "ergebnisliste": [
     {
-      "hashId": "WBTAiM10b25rJgZqiLhVIHzAF9e0rnV_DXdsRZtlb54=",
-      "beruf": "Softwareentwickler/in (m/w/d)",
-      "refnr": "10001-1003353506-S",
-      "arbeitgeber": "Beispiel GmbH",
-      "aktuelleVeroeffentlichungsdatum": "2026-11-01",
-      "eintrittsdatum": "2026-12-01",
-      "arbeitsort": {
-        "plz": 80331,
-        "ort": "M\u00fcnchen",
-        "strasse": "Beispielstra\u00dfe 1",
-        "region": "Bayern",
-        "land": "Deutschland",
-        "koordinaten": {"lat": 48.1374, "lon": 11.5755}
-      },
-      "kundennummerHash": "Z-HzVkUCLGQiQFxQSAICs302sSdB9Sp7XtgOiO4GGCA=",
-      "externeUrl": null,
-      "modifikationsTimestamp": "2026-11-01T08:00:00.000"
+      "stellenangebotsart": "ARBEIT",
+      "stellenangebotsTitel": "Softwareentwickler/in Linux (m/w/d)",
+      "hauptberuf": "Softwareentwickler/in",
+      "firma": "Beispiel GmbH",
+      "referenznummer": "10001-1003353506-S",
+      "datumErsteVeroeffentlichung": "2026-11-01",
+      "aenderungsdatum": "2026-11-01T08:00:00.000",
+      "arbeitgeberKundennummerHash": "Z-HzVkUCLGQiQFxQSAICs302sSdB9Sp7XtgOiO4GGCA=",
+      "stellenlokationen": [
+        {
+          "adresse": {
+            "plz": "80331",
+            "ort": "M\u00fcnchen",
+            "strasse": "Beispielstra\u00dfe",
+            "hausnummer": "1",
+            "region": "BAYERN",
+            "land": "DEUTSCHLAND"
+          },
+          "breite": 48.1374,
+          "laenge": 11.5755
+        }
+      ]
     },
     {
-      "hashId": "abc123",
-      "beruf": "IT Consultant (m/w/d)",
-      "refnr": "10001-1003353507-S",
-      "arbeitgeber": "Consulting AG",
-      "aktuelleVeroeffentlichungsdatum": "2026-11-02",
-      "eintrittsdatum": "2026-12-15",
-      "arbeitsort": {
-        "plz": 85748,
-        "ort": "Garching",
-        "strasse": "Teststra\u00dfe 2",
-        "region": "Bayern",
-        "land": "Deutschland"
-      },
-      "kundennummerHash": null,
-      "externeUrl": "https://www.consulting-ag.example/karriere/it-consultant",
-      "modifikationsTimestamp": "2026-11-02T09:30:00.000"
+      "stellenangebotsart": "ARBEIT",
+      "stellenangebotsTitel": "IT Consultant (m/w/d)",
+      "hauptberuf": "IT-Berater/in",
+      "firma": "Consulting AG",
+      "referenznummer": "10001-1003353507-S",
+      "datumErsteVeroeffentlichung": "2026-11-02",
+      "aenderungsdatum": "2026-11-02T09:30:00.000",
+      "externeURL": "https://www.consulting-ag.example/karriere/it-consultant",
+      "stellenlokationen": [
+        {
+          "adresse": {
+            "plz": "85748",
+            "ort": "Garching",
+            "strasse": "Teststra\u00dfe",
+            "hausnummer": "2",
+            "region": "BAYERN",
+            "land": "DEUTSCHLAND"
+          },
+          "breite": 48.2499,
+          "laenge": 11.6344
+        }
+      ]
     }
   ],
-  "maxErgebnisse": "2",
-  "page": "1",
-  "size": "25",
-  "facetten": []
+  "maxErgebnisse": 2,
+  "page": 1,
+  "size": 25,
+  "woOutput": {
+    "bereinigterOrt": "M\u00fcnchen",
+    "suchmodus": "UMKREISSUCHE",
+    "koordinaten": [{"lat": 48.1377, "lon": 11.5755}]
+  },
+  "facetten": {}
 }

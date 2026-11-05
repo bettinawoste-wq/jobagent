@@ -45,7 +45,7 @@ def test_search_mapt_antwort_auf_anzeigen_inklusive_details() -> None:
     assert ergebnis == [
         Anzeige(
             id="10001-1003353506-S",
-            titel="Softwareentwickler/in (m/w/d)",
+            titel="Softwareentwickler/in Linux (m/w/d)",
             firma="Beispiel GmbH",
             ort="München",
             link="https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003353506-S",
@@ -99,7 +99,7 @@ def test_search_ohne_treffer_ruft_keine_details_ab() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         aufrufe.append(request)
-        return httpx.Response(200, json={"stellenangebote": []})
+        return httpx.Response(200, json={"ergebnisliste": []})
 
     ergebnis = search("Data Science", transport=_transport(handler))
 

@@ -60,18 +60,22 @@ def search(
             logger.exception("Jobsuche-API-Antwort ist kein gueltiges JSON")
             return []
 
-        return [_zu_anzeige(eintrag, client) for eintrag in daten.get("stellenangebote", [])]
+        return [_zu_anzeige(eintrag, client) for eintrag in daten.get("ergebnisliste", [])]
 
 
 def _zu_anzeige(eintrag: dict, client: httpx.Client) -> Anzeige:
-    refnr = eintrag["refnr"]
-    arbeitsort = eintrag.get("arbeitsort") or {}
-    link = eintrag.get("externeUrl") or f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}"
+    # Hinweis: Die Live-API liefert ein anderes Schema als die Doku von
+    # bundesAPI/jobsuche-api (dort z.B. "stellenangebote"/"refnr"/"arbeitsort"/
+    # "externeUrl"). Feldnamen hier sind gegen echte API-Antworten verifiziert.
+    refnr = eintrag["referenznummer"]
+    lokationen = eintrag.get("stellenlokationen") or [{}]
+    adresse = lokationen[0].get("adresse") or {}
+    link = eintrag.get("externeURL") or f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}"
     return Anzeige(
         id=refnr,
-        titel=eintrag.get("beruf", ""),
-        firma=eintrag.get("arbeitgeber"),
-        ort=arbeitsort.get("ort"),
+        titel=eintrag.get("stellenangebotsTitel") or eintrag.get("hauptberuf", ""),
+        firma=eintrag.get("firma"),
+        ort=adresse.get("ort"),
         link=link,
         beschreibung=_hole_beschreibung(client, refnr),
     )
