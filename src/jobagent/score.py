@@ -76,7 +76,9 @@ def score_anzeige(
             tool_choice={"type": "tool", "name": _TOOL_NAME},
             messages=[{"role": "user", "content": nutzertext}],
         )
-    except anthropic.AnthropicError:
+    except (anthropic.AnthropicError, TypeError):
+        # TypeError: die SDK wirft dies statt eines AnthropicError, wenn z.B.
+        # kein ANTHROPIC_API_KEY gesetzt ist (Validierung beim Request-Aufbau).
         logger.exception("Anthropic-API-Anfrage fehlgeschlagen (anzeige=%r)", anzeige.id)
         return None
 

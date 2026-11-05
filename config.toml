@@ -1,0 +1,12 @@
+# Suchparameter fuer die Jobsuche-API der Bundesagentur fuer Arbeit.
+wo = "München"
+umkreis = 30
+veroeffentlichtseit = 1
+
+# Ein Suchlauf pro Begriff, Ergebnisse werden ueber refnr dedupliziert.
+was = [
+    "Full-Stack-Entwickler",
+    "IT Consultant",
+    "Embedded Entwickler",
+    "Data Scientist",
+]

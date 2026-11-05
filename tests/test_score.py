@@ -100,6 +100,18 @@ def test_score_anzeige_gibt_none_bei_api_fehler(caplog: pytest.LogCaptureFixture
     assert "fehlgeschlagen" in caplog.text
 
 
+def test_score_anzeige_gibt_none_bei_fehlendem_api_key(caplog: pytest.LogCaptureFixture) -> None:
+    # Die SDK wirft hierfuer einen rohen TypeError statt eines AnthropicError
+    # (Validierung erst beim Request-Aufbau, nicht bei Client.create()).
+    client = _FakeClient(TypeError("Could not resolve authentication method."))
+
+    with caplog.at_level("ERROR"):
+        bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+
+    assert bewertung is None
+    assert "fehlgeschlagen" in caplog.text
+
+
 def test_score_anzeige_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture) -> None:
     nachricht = Message(
         id="msg_2",
