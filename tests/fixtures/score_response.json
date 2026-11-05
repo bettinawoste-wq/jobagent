@@ -1,0 +1,7 @@
+{
+  "score": 4,
+  "passt": ["Python- und SQL-Kenntnisse", "Standort München passt"],
+  "passt_nicht": [],
+  "luecken": ["Wenig Kubernetes-Erfahrung"],
+  "kurzfazit": "Gute Passung, kleine Lücken bei Kubernetes."
+}
