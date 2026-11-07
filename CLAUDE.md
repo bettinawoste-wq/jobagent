@@ -48,6 +48,12 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Fehler einer Quelle dürfen den Lauf nicht abbrechen, sie werden geloggt
 - Eine Aufgabe pro Durchgang, danach committen
 
+## Commits und Versionen
+- Commit-Betreff: Imperativ, deutsch, mit echten Umlauten (ä/ö/ü/ß), max. ca. 70 Zeichen, keine Nummerierung wie „(Schritt n)“
+- Commit-Text erklärt das Warum (Anlass, Auswirkung), nicht nur das Was
+- Version in `pyproject.toml` nach SemVer (0.x): neue Quelle oder Funktion → Minor, Fix → Patch; `uv.lock` mitziehen
+- Jede Versionsanhebung bekommt einen annotierten Tag `vX.Y.Z`
+
 ## Nicht tun
 - Keine Anzeigen-Volltexte dauerhaft speichern, nur ID, Titel, Firma, Link, Score, Datum
 - Keine Scraper für Seiten, die automatisiertes Auslesen untersagen (LinkedIn, Xing, Indeed)
