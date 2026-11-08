@@ -1,5 +1,6 @@
 """Schreibt output/YYYY-MM-DD.md, sortiert nach Score."""
 
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -11,12 +12,18 @@ OUTPUT_DIR = Path("output")
 Treffer = tuple[Anzeige, Bewertung]
 
 
+@dataclass(frozen=True, slots=True)
+class GeschriebenerReport:
+    pfad: Path
+    nummern: dict[str, int]  # Anzeigen-ID -> Treffernummer
+
+
 def schreibe_report(
     treffer: list[Treffer],
     datum: date,
     ausgabe_verzeichnis: Path = OUTPUT_DIR,
-) -> Path:
-    """Schreibt die Treffer sortiert nach Score in output/YYYY-MM-DD.md.
+) -> GeschriebenerReport:
+    """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
     Ohne Treffer wird eine kurze Notiz statt einer leeren Datei erzeugt.
     Ein vorhandener Report wird nie ueberschrieben, siehe _freier_pfad.
@@ -29,15 +36,18 @@ def schreibe_report(
             f"# Stellenvorschläge {datum.isoformat()}\n\nKeine neuen Treffer heute.\n",
             encoding="utf-8",
         )
-        return pfad
+        return GeschriebenerReport(pfad, {})
 
     sortiert = sorted(treffer, key=lambda paar: paar[1].score, reverse=True)
+    nummeriert = list(enumerate(sortiert, start=1))
 
     inhalt = f"# Stellenvorschläge {datum.isoformat()}\n\n"
-    inhalt += "\n".join(_abschnitt(anzeige, bewertung) for anzeige, bewertung in sortiert)
+    inhalt += "\n".join(
+        _abschnitt(nummer, anzeige, bewertung) for nummer, (anzeige, bewertung) in nummeriert
+    )
 
     pfad.write_text(inhalt, encoding="utf-8")
-    return pfad
+    return GeschriebenerReport(pfad, {anzeige.id: nummer for nummer, (anzeige, _) in nummeriert})
 
 
 def _freier_pfad(ausgabe_verzeichnis: Path, datum: date) -> Path:
@@ -51,9 +61,9 @@ def _freier_pfad(ausgabe_verzeichnis: Path, datum: date) -> Path:
     return pfad
 
 
-def _abschnitt(anzeige: Anzeige, bewertung: Bewertung) -> str:
+def _abschnitt(nummer: int, anzeige: Anzeige, bewertung: Bewertung) -> str:
     zeilen = [
-        f"## {anzeige.titel} – Score {bewertung.score}/5",
+        f"## {nummer}. {anzeige.titel} – Score {bewertung.score}/5",
         f"- Firma: {anzeige.firma or 'unbekannt'}",
         f"- Ort: {anzeige.ort or 'unbekannt'}",
         f"- Link: {anzeige.link}",

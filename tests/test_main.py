@@ -1,10 +1,11 @@
 """Tests fuer main.py: Ablauf fetch -> dedupe -> score -> report, alles gemockt."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from jobagent import fetch, main, score
+from jobagent import fetch, main, score, store
 from jobagent.fetch import Anzeige
 from jobagent.score import Bewertung
 
@@ -71,6 +72,29 @@ def test_main_schreibt_report_fuer_neue_treffer(
     inhalt = pfad.read_text(encoding="utf-8")
     assert "Stelle a-1" in inhalt
     assert "4/5" in inhalt
+
+
+def test_main_merkt_sich_report_und_treffernummer(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scores = {"a-1": 2, "a-2": 5}
+
+    def bewerte(anzeige: Anzeige, profil: str) -> Bewertung:
+        return replace(_bewertung(), score=scores[anzeige.id])
+
+    monkeypatch.setattr(fetch, "search", lambda *a, **kw: [_anzeige("a-1"), _anzeige("a-2")])
+    monkeypatch.setattr(score, "score_anzeige", bewerte)
+
+    pfad = main.main(**projekt)
+
+    conn = store.connect(projekt["db_pfad"])
+    try:
+        zeilen = conn.execute(
+            "SELECT id, report, nummer FROM gesehene_anzeigen ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert zeilen == [("a-1", pfad.stem, 2), ("a-2", pfad.stem, 1)]
 
 
 def test_main_ueberspringt_bereits_gesehene_anzeigen(

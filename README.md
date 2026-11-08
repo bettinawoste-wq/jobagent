@@ -69,6 +69,7 @@ uv run python -m jobagent.main
 
 Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
 `output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
+Die Treffer sind je Report ab 1 durchnummeriert.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
 
 ## Tests

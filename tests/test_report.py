@@ -18,6 +18,10 @@ def _anzeige(id_: str, titel: str) -> Anzeige:
     )
 
 
+def _schreibe_pfad(*args, **kwargs) -> Path:
+    return schreibe_report(*args, **kwargs).pfad
+
+
 def _bewertung(score: int, kurzfazit: str = "Passt gut.") -> Bewertung:
     return Bewertung(
         score=score,
@@ -35,7 +39,7 @@ def test_schreibe_report_sortiert_nach_score_absteigend(tmp_path: Path) -> None:
         (_anzeige("a-3", "Mittel"), _bewertung(3)),
     ]
 
-    pfad = schreibe_report(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
+    pfad = _schreibe_pfad(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
 
     assert pfad == tmp_path / "2026-11-05.md"
     inhalt = pfad.read_text(encoding="utf-8")
@@ -45,10 +49,44 @@ def test_schreibe_report_sortiert_nach_score_absteigend(tmp_path: Path) -> None:
     assert pos_hoch < pos_mittel < pos_niedrig
 
 
+def test_treffer_werden_in_rangfolge_ab_eins_nummeriert(tmp_path: Path) -> None:
+    treffer = [
+        (_anzeige("a-1", "Niedrig"), _bewertung(2)),
+        (_anzeige("a-2", "Hoch"), _bewertung(5)),
+        (_anzeige("a-3", "Mittel"), _bewertung(3)),
+    ]
+
+    geschrieben = schreibe_report(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
+
+    inhalt = geschrieben.pfad.read_text(encoding="utf-8")
+    assert "## 1. Hoch – Score 5/5" in inhalt
+    assert "## 2. Mittel – Score 3/5" in inhalt
+    assert "## 3. Niedrig – Score 2/5" in inhalt
+    assert geschrieben.nummern == {"a-2": 1, "a-3": 2, "a-1": 3}
+
+
+def test_jeder_report_beginnt_wieder_bei_eins(tmp_path: Path) -> None:
+    tag = date(2026, 11, 5)
+    schreibe_report([(_anzeige("a-1", "Erster"), _bewertung(4))], tag, ausgabe_verzeichnis=tmp_path)
+
+    zweiter = schreibe_report(
+        [(_anzeige("a-2", "Zweiter"), _bewertung(3))], tag, ausgabe_verzeichnis=tmp_path
+    )
+
+    assert zweiter.nummern == {"a-2": 1}
+    assert "## 1. Zweiter" in zweiter.pfad.read_text(encoding="utf-8")
+
+
+def test_report_ohne_treffer_hat_keine_nummern(tmp_path: Path) -> None:
+    geschrieben = schreibe_report([], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
+
+    assert geschrieben.nummern == {}
+
+
 def test_schreibe_report_enthaelt_alle_pflichtfelder(tmp_path: Path) -> None:
     treffer = [(_anzeige("a-1", "Softwareentwickler"), _bewertung(4, "Gute Passung."))]
 
-    pfad = schreibe_report(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
+    pfad = _schreibe_pfad(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
     inhalt = pfad.read_text(encoding="utf-8")
 
     assert "Softwareentwickler" in inhalt
@@ -62,7 +100,7 @@ def test_schreibe_report_enthaelt_alle_pflichtfelder(tmp_path: Path) -> None:
 
 
 def test_schreibe_report_ohne_treffer_schreibt_notiz_statt_leerer_datei(tmp_path: Path) -> None:
-    pfad = schreibe_report([], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
+    pfad = _schreibe_pfad([], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
 
     inhalt = pfad.read_text(encoding="utf-8")
     assert "Keine neuen Treffer" in inhalt
@@ -71,11 +109,11 @@ def test_schreibe_report_ohne_treffer_schreibt_notiz_statt_leerer_datei(tmp_path
 
 def test_zweiter_lauf_am_selben_tag_ueberschreibt_ersten_report_nicht(tmp_path: Path) -> None:
     tag = date(2026, 11, 5)
-    erster = schreibe_report(
+    erster = _schreibe_pfad(
         [(_anzeige("a-1", "Erster Lauf"), _bewertung(4))], tag, ausgabe_verzeichnis=tmp_path
     )
 
-    zweiter = schreibe_report(
+    zweiter = _schreibe_pfad(
         [(_anzeige("a-2", "Zweiter Lauf"), _bewertung(3))], tag, ausgabe_verzeichnis=tmp_path
     )
 
@@ -87,11 +125,11 @@ def test_zweiter_lauf_am_selben_tag_ueberschreibt_ersten_report_nicht(tmp_path: 
 
 def test_lauf_ohne_treffer_ueberschreibt_vorhandenen_report_nicht(tmp_path: Path) -> None:
     tag = date(2026, 11, 5)
-    erster = schreibe_report(
+    erster = _schreibe_pfad(
         [(_anzeige("a-1", "Erster Lauf"), _bewertung(4))], tag, ausgabe_verzeichnis=tmp_path
     )
 
-    zweiter = schreibe_report([], tag, ausgabe_verzeichnis=tmp_path)
+    zweiter = _schreibe_pfad([], tag, ausgabe_verzeichnis=tmp_path)
 
     assert zweiter != erster
     assert "Erster Lauf" in erster.read_text(encoding="utf-8")
@@ -99,10 +137,10 @@ def test_lauf_ohne_treffer_ueberschreibt_vorhandenen_report_nicht(tmp_path: Path
 
 def test_dritter_lauf_am_selben_tag_bekommt_naechste_laufnummer(tmp_path: Path) -> None:
     tag = date(2026, 11, 5)
-    schreibe_report([], tag, ausgabe_verzeichnis=tmp_path)
-    schreibe_report([], tag, ausgabe_verzeichnis=tmp_path)
+    _schreibe_pfad([], tag, ausgabe_verzeichnis=tmp_path)
+    _schreibe_pfad([], tag, ausgabe_verzeichnis=tmp_path)
 
-    dritter = schreibe_report([], tag, ausgabe_verzeichnis=tmp_path)
+    dritter = _schreibe_pfad([], tag, ausgabe_verzeichnis=tmp_path)
 
     assert dritter == tmp_path / "2026-11-05-3.md"
 
@@ -110,6 +148,6 @@ def test_dritter_lauf_am_selben_tag_bekommt_naechste_laufnummer(tmp_path: Path) 
 def test_schreibe_report_erstellt_ausgabeverzeichnis(tmp_path: Path) -> None:
     ziel = tmp_path / "noch_nicht_vorhanden"
 
-    schreibe_report([], date(2026, 11, 5), ausgabe_verzeichnis=ziel)
+    _schreibe_pfad([], date(2026, 11, 5), ausgabe_verzeichnis=ziel)
 
     assert ziel.is_dir()

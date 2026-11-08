@@ -32,7 +32,9 @@ def main(
     conn = store.connect(db_pfad)
     try:
         neue_treffer = _neue_treffer(conn, konfig, profil, heute)
-        return report.schreibe_report(neue_treffer, heute, ausgabe_verzeichnis)
+        geschrieben = report.schreibe_report(neue_treffer, heute, ausgabe_verzeichnis)
+        store.merke_treffernummern(conn, geschrieben.pfad.stem, geschrieben.nummern)
+        return geschrieben.pfad
     finally:
         conn.close()
 
@@ -62,7 +64,7 @@ def _neue_treffer(
             )
             continue
 
-        store.mark_seen(conn, anzeige, bewertung.score, heute)
+        store.mark_seen(conn, anzeige, bewertung, heute)
         treffer.append((anzeige, bewertung))
 
     return treffer

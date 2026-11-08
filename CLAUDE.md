@@ -10,7 +10,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 
 ## Struktur
 - `src/jobagent/fetch.py`: Anzeigen von Quellen holen (Bundesagentur für Arbeit, Arbeitnow, Firmen-Watchlist via Greenhouse/Lever)
-- `src/jobagent/store.py`: SQLite, merkt sich gesehene Anzeigen-IDs
+- `src/jobagent/store.py`: SQLite, merkt sich gesehene Anzeigen samt Report, Treffernummer, Hash und Bewertung
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md` (weitere Läufe am Tag: `-2`, `-3`, nie überschreiben), sortiert nach Score
 - `src/jobagent/main.py`: Ablauf: fetch, dedupe, score, report
@@ -55,6 +55,6 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Jede Versionsanhebung bekommt einen annotierten Tag `vX.Y.Z`
 
 ## Nicht tun
-- Keine Anzeigen-Volltexte dauerhaft speichern, nur ID, Titel, Firma, Link, Score, Datum
+- Keine Anzeigen-Volltexte dauerhaft speichern, nur ID, Titel, Firma, Link, Score, Datum, Report und Treffernummer, einen Hash der Beschreibung sowie die Bewertung des Modells (`passt`, `passt_nicht`, `luecken`, `kurzfazit`)
 - Keine Scraper für Seiten, die automatisiertes Auslesen untersagen (LinkedIn, Xing, Indeed)
 - Keine automatischen Bewerbungen oder Nachrichten
