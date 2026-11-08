@@ -14,6 +14,8 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md` (weitere Läufe am Tag: `-2`, `-3`, nie überschreiben), sortiert nach Score, unter `mindest_score` nur einzeilig
 - `src/jobagent/main.py`: Ablauf: fetch, dedupe, score, report
+- `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
+- `src/jobagent/stelle.py`: erkennt dieselbe Stelle über normalisierte Firma + Titel
 - `tests/`: Tests, Beispielantworten liegen in `tests/fixtures/`
 - `profile.md`: mein Suchprofil und meine Ausschlusskriterien
 
@@ -21,6 +23,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Tests: `pytest`
 - Lint/Format: `ruff check . && ruff format .`
 - Lauf: `python -m jobagent.main`
+- Rückmeldung: `python -m jobagent.feedback --help`
 
 ## Quelle 1: Jobsuche-API der Bundesagentur für Arbeit
 - Doku und Beispiele: GitHub `bundesAPI/jobsuche-api`. Endpunkt, Header und Parameter immer dort gegenprüfen, nicht raten.

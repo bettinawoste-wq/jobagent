@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -20,6 +21,28 @@ CREATE TABLE IF NOT EXISTS gesehene_anzeigen (
 )
 """
 
+_SCHEMA_BEWERBUNGEN = """
+CREATE TABLE IF NOT EXISTS bewerbungen (
+    id INTEGER PRIMARY KEY,
+    stelle TEXT NOT NULL,
+    firma TEXT,
+    titel TEXT NOT NULL,
+    anzeige_id TEXT UNIQUE,
+    status TEXT NOT NULL,
+    beworben_am TEXT NOT NULL
+)
+"""
+
+_SCHEMA_FEEDBACK = """
+CREATE TABLE IF NOT EXISTS feedback (
+    anzeige_id TEXT PRIMARY KEY,
+    score INTEGER NOT NULL,
+    grund TEXT,
+    datum TEXT NOT NULL,
+    verarbeitet INTEGER NOT NULL DEFAULT 0
+)
+"""
+
 # Seit 0.3.0. Bestehende Datenbanken bekommen die Spalten beim Oeffnen ergaenzt,
 # ihre Zeilen bleiben dort leer.
 _ERGAENZTE_SPALTEN = {
@@ -30,10 +53,27 @@ _ERGAENZTE_SPALTEN = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class GespeicherterTreffer:
+    id: str
+    titel: str
+    firma: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class NeueBewerbung:
+    stelle: str
+    firma: str | None
+    titel: str
+    anzeige_id: str | None  # None bei manueller Erfassung ohne Treffer
+
+
 def connect(pfad: str | Path) -> sqlite3.Connection:
     """Oeffnet (und initialisiert oder migriert bei Bedarf) die SQLite-Datenbank unter pfad."""
     conn = sqlite3.connect(pfad)
     conn.execute(_SCHEMA)
+    conn.execute(_SCHEMA_BEWERBUNGEN)
+    conn.execute(_SCHEMA_FEEDBACK)
     _ergaenze_fehlende_spalten(conn)
     conn.commit()
     return conn
@@ -84,6 +124,79 @@ def merke_treffernummern(
     conn.executemany(
         "UPDATE gesehene_anzeigen SET report = ?, nummer = ? WHERE id = ?",
         [(report_name, nummer, anzeige_id) for anzeige_id, nummer in nummern.items()],
+    )
+    conn.commit()
+
+
+def finde_treffer(
+    conn: sqlite3.Connection, report_name: str, nummer: int
+) -> GespeicherterTreffer | None:
+    """Sucht die Anzeige, die in einem Report unter einer Treffernummer steht."""
+    zeile = conn.execute(
+        "SELECT id, titel, firma FROM gesehene_anzeigen WHERE report = ? AND nummer = ?",
+        (report_name, nummer),
+    ).fetchone()
+    return GespeicherterTreffer(*zeile) if zeile else None
+
+
+def bewerbung_zu_anzeige(conn: sqlite3.Connection, anzeige_id: str) -> int | None:
+    """Liefert die ID der Bewerbung auf genau diese Anzeige, falls vorhanden."""
+    zeile = conn.execute(
+        "SELECT id FROM bewerbungen WHERE anzeige_id = ?", (anzeige_id,)
+    ).fetchone()
+    return zeile[0] if zeile else None
+
+
+def bewerbung_zu_stelle(conn: sqlite3.Connection, stelle: str) -> int | None:
+    """Liefert die ID der letzten Bewerbung auf diese Stelle, falls vorhanden."""
+    zeile = conn.execute(
+        "SELECT id FROM bewerbungen WHERE stelle = ? ORDER BY beworben_am DESC, id DESC LIMIT 1",
+        (stelle,),
+    ).fetchone()
+    return zeile[0] if zeile else None
+
+
+def lege_bewerbung_an(
+    conn: sqlite3.Connection, bewerbung: NeueBewerbung, status: str, beworben_am: date
+) -> None:
+    conn.execute(
+        "INSERT INTO bewerbungen (stelle, firma, titel, anzeige_id, status, beworben_am) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            bewerbung.stelle,
+            bewerbung.firma,
+            bewerbung.titel,
+            bewerbung.anzeige_id,
+            status,
+            beworben_am.isoformat(),
+        ),
+    )
+    conn.commit()
+
+
+def aktualisiere_bewerbung(
+    conn: sqlite3.Connection, bewerbung_id: int, status: str, beworben_am: date | None
+) -> None:
+    """Setzt den Status; das Bewerbungsdatum aendert sich nur, wenn eines angegeben ist."""
+    conn.execute(
+        "UPDATE bewerbungen SET status = ?, beworben_am = COALESCE(?, beworben_am) WHERE id = ?",
+        (status, beworben_am.isoformat() if beworben_am else None, bewerbung_id),
+    )
+    conn.commit()
+
+
+def loesche_bewerbung(conn: sqlite3.Connection, bewerbung_id: int) -> None:
+    conn.execute("DELETE FROM bewerbungen WHERE id = ?", (bewerbung_id,))
+    conn.commit()
+
+
+def speichere_feedback(
+    conn: sqlite3.Connection, anzeige_id: str, score: int, grund: str | None, datum: date
+) -> None:
+    """Speichert den eigenen Score; neues Feedback ersetzt altes und gilt als unverarbeitet."""
+    conn.execute(
+        "INSERT OR REPLACE INTO feedback (anzeige_id, score, grund, datum) VALUES (?, ?, ?, ?)",
+        (anzeige_id, score, grund, datum.isoformat()),
     )
     conn.commit()
 

@@ -75,6 +75,27 @@ Treffer unter `mindest_score` (`config.toml`, Standard 3) erscheinen nur
 einzeilig am Ende.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
 
+## Rückmeldung geben
+
+Treffer werden über Report und Nummer angesprochen:
+
+```bash
+uv run python -m jobagent.feedback 2026-11-06 3 beworben
+uv run python -m jobagent.feedback 2026-11-06 3 beworben --am 2026-11-01
+uv run python -m jobagent.feedback 2026-11-06 3 gespräch
+uv run python -m jobagent.feedback 2026-11-06 2 score 4 "Dienstleister ist okay"
+```
+
+Status sind `beworben`, `gespräch`, `absage`, `zusage` und `zurückgezogen`;
+`zurücknehmen` löscht eine versehentlich erfasste Bewerbung. Der Status ändert
+sich nur durch solche Angaben, nie von selbst.
+
+Bewerbungen ohne Treffer (z. B. direkt auf einer Karriereseite) gehen so:
+
+```bash
+uv run python -m jobagent.feedback beworben --firma "Firma X" --titel "Data Engineer"
+```
+
 ## Tests
 
 ```bash
