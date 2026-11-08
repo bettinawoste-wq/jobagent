@@ -17,6 +17,7 @@ _PROFIL_PFAD = Path("profile.md")
 _DB_PFAD = Path("jobagent.db")
 _NACHFASSEN_AB_TAG = 14
 _NACHFASSEN_BIS_TAG = 28
+_PROFILVORSCHLAG_AB_FEEDBACK = 5
 
 
 def main(
@@ -50,6 +51,7 @@ def main(
                 ab_tag=konfig.get("nachfassen_ab_tag", _NACHFASSEN_AB_TAG),
                 bis_tag=konfig.get("nachfassen_bis_tag", _NACHFASSEN_BIS_TAG),
             ),
+            offenes_feedback=_offenes_feedback(conn),
         )
         store.merke_treffernummern(conn, geschrieben.pfad.stem, geschrieben.nummern)
         return geschrieben.pfad
@@ -85,6 +87,11 @@ def _neue_treffer(
         treffer.append((anzeige, bewertung))
 
     return treffer
+
+
+def _offenes_feedback(conn: sqlite3.Connection) -> int:
+    anzahl = store.anzahl_offenes_feedback(conn)
+    return anzahl if anzahl >= _PROFILVORSCHLAG_AB_FEEDBACK else 0
 
 
 def _bereits_beworben(

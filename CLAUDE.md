@@ -5,7 +5,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 ## Stack
 - Python 3.12, Abhängigkeiten per `uv` (oder `pip` + `venv`)
 - `httpx` für HTTP, `sqlite3` aus der Standardbibliothek für Dedupe
-- `anthropic` SDK für die Bewertung (Modell Haiku, API-Key aus Umgebungsvariable `ANTHROPIC_API_KEY`, nie im Code oder Repo)
+- `anthropic` SDK für die Bewertung (Modell Haiku) und den seltenen Profil-Vorschlag (Modell Sonnet), API-Key aus Umgebungsvariable `ANTHROPIC_API_KEY`, nie im Code oder Repo
 - `pytest` für Tests, `ruff` für Lint und Format
 
 ## Struktur
@@ -16,6 +16,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/main.py`: Ablauf: fetch, dedupe, score, report
 - `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
 - `src/jobagent/stelle.py`: erkennt dieselbe Stelle über normalisierte Firma + Titel
+- `src/jobagent/profilvorschlag.py`: leitet aus Feedback Änderungen an `profile.md` ab (Diff, Bestätigung, Sicherung)
 - `tests/`: Tests, Beispielantworten liegen in `tests/fixtures/`
 - `profile.md`: mein Suchprofil und meine Ausschlusskriterien
 
@@ -24,6 +25,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Lint/Format: `ruff check . && ruff format .`
 - Lauf: `python -m jobagent.main`
 - Rückmeldung: `python -m jobagent.feedback --help`
+- Profil-Vorschlag: `python -m jobagent.profilvorschlag`
 
 ## Quelle 1: Jobsuche-API der Bundesagentur für Arbeit
 - Doku und Beispiele: GitHub `bundesAPI/jobsuche-api`. Endpunkt, Header und Parameter immer dort gegenprüfen, nicht raten.
@@ -62,3 +64,4 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Keine Anzeigen-Volltexte dauerhaft speichern, nur ID, Titel, Firma, Link, Score, Datum, Report und Treffernummer, einen Hash der Beschreibung sowie die Bewertung des Modells (`passt`, `passt_nicht`, `luecken`, `kurzfazit`)
 - Keine Scraper für Seiten, die automatisiertes Auslesen untersagen (LinkedIn, Xing, Indeed)
 - Keine automatischen Bewerbungen oder Nachrichten
+- `profile.md` nie ohne ausdrückliche Bestätigung ändern, den Bewerbungsstatus nie automatisch

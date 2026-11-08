@@ -79,6 +79,17 @@ class BekannteBewerbung:
 
 
 @dataclass(frozen=True, slots=True)
+class Rueckmeldung:
+    anzeige_id: str
+    titel: str
+    firma: str | None
+    modell_score: int
+    bewertung: dict
+    eigener_score: int
+    grund: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Nachfasskandidat:
     firma: str | None
     titel: str
@@ -246,6 +257,39 @@ def zum_nachfassen(
         ),
     ).fetchall()
     return [Nachfasskandidat(firma, titel, date.fromisoformat(am)) for firma, titel, am in zeilen]
+
+
+def offene_rueckmeldungen(conn: sqlite3.Connection) -> list[Rueckmeldung]:
+    """Liefert alles unverarbeitete Feedback samt Bewertung des Modells."""
+    zeilen = conn.execute(
+        "SELECT f.anzeige_id, g.titel, g.firma, g.score, g.bewertung, f.score, f.grund "
+        "FROM feedback f JOIN gesehene_anzeigen g ON g.id = f.anzeige_id "
+        "WHERE f.verarbeitet = 0 ORDER BY f.datum, f.anzeige_id"
+    ).fetchall()
+    return [
+        Rueckmeldung(
+            anzeige_id=anzeige_id,
+            titel=titel,
+            firma=firma,
+            modell_score=modell_score,
+            bewertung=json.loads(bewertung) if bewertung else {},
+            eigener_score=eigener_score,
+            grund=grund,
+        )
+        for anzeige_id, titel, firma, modell_score, bewertung, eigener_score, grund in zeilen
+    ]
+
+
+def anzahl_offenes_feedback(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0").fetchone()[0]
+
+
+def markiere_feedback_verarbeitet(conn: sqlite3.Connection, anzeige_ids: list[str]) -> None:
+    conn.executemany(
+        "UPDATE feedback SET verarbeitet = 1 WHERE anzeige_id = ?",
+        [(anzeige_id,) for anzeige_id in anzeige_ids],
+    )
+    conn.commit()
 
 
 def beschreibung_hash(beschreibung: str | None) -> str | None:

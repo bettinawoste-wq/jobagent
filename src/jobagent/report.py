@@ -36,6 +36,7 @@ def schreibe_report(
     mindest_score: int = STANDARD_MINDEST_SCORE,
     bewerbungen: Mapping[str, BereitsBeworben] | None = None,
     nachfassen: Sequence[Nachfasskandidat] = (),
+    offenes_feedback: int = 0,
 ) -> GeschriebenerReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -47,6 +48,7 @@ def schreibe_report(
     kopf = (
         f"# Stellenvorschläge {datum.isoformat()}\n\n"
         f"{_quellen_block(quellen)}{_nachfass_block(nachfassen, datum)}"
+        f"{_profil_hinweis(offenes_feedback)}"
     )
 
     if not treffer:
@@ -97,6 +99,15 @@ def _quellen_zeile(quelle: Quellenstatus) -> str:
     if not quelle.fehler:
         return f"- {quelle.name}: {anzahl}"
     return f"- {quelle.name}: FEHLER, {anzahl} ({'; '.join(quelle.fehler)})"
+
+
+def _profil_hinweis(offenes_feedback: int) -> str:
+    if not offenes_feedback:
+        return ""
+    return (
+        f"## Profil-Vorschlag\n- {offenes_feedback} Rückmeldungen warten auf Auswertung: "
+        "`python -m jobagent.profilvorschlag`\n\n"
+    )
 
 
 def _nachfass_block(nachfassen: Sequence[Nachfasskandidat], heute: date) -> str:

@@ -501,3 +501,36 @@ def test_main_nachfass_hinweis_aendert_den_status_nicht(
         assert conn.execute("SELECT status FROM bewerbungen").fetchall() == [("beworben",)]
     finally:
         conn.close()
+
+
+def _offenes_feedback(projekt: dict[str, Path], anzahl: int) -> None:
+    conn = store.connect(projekt["db_pfad"])
+    for nummer in range(anzahl):
+        anzeige_id = f"f-{nummer}"
+        store.mark_seen(conn, _anzeige(anzeige_id), _bewertung(), date.today())
+        store.speichere_feedback(conn, anzeige_id, 3, None, date.today())
+    conn.close()
+
+
+@pytest.mark.parametrize(("anzahl", "erwartet"), [(4, False), (5, True), (7, True)])
+def test_main_hinweis_auf_profil_vorschlag_ab_fuenf_feedbacks(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, anzahl: int, erwartet: bool
+) -> None:
+    _offenes_feedback(projekt, anzahl)
+
+    inhalt = _lauf_ohne_treffer(projekt, monkeypatch)
+
+    assert ("## Profil-Vorschlag" in inhalt) is erwartet
+    if erwartet:
+        assert f"- {anzahl} Rückmeldungen warten" in inhalt
+
+
+def test_main_verarbeitetes_feedback_zaehlt_nicht(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _offenes_feedback(projekt, 5)
+    conn = store.connect(projekt["db_pfad"])
+    store.markiere_feedback_verarbeitet(conn, ["f-0"])
+    conn.close()
+
+    assert "Profil-Vorschlag" not in _lauf_ohne_treffer(projekt, monkeypatch)

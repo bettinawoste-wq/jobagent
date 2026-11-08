@@ -35,8 +35,8 @@ erneut versucht — der Gesamtlauf bricht nie ab.
 - `httpx` für HTTP-Zugriffe, `sqlite3` (Standardbibliothek) für Dedupe
 - [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) mit
   Claude Haiku für die Bewertung (strukturierte Antwort per Tool-Use)
-- `pytest` (48 Tests, alles gemockt/mit Fixtures, kein Live-Zugriff in
-  Tests) und `ruff` für Lint/Format
+- `pytest` (alles gemockt/mit Fixtures, kein Live-Zugriff in Tests) und
+  `ruff` für Lint/Format
 
 ## Setup
 
@@ -104,6 +104,18 @@ Erscheint eine Stelle erneut, auf die du dich beworben hast, steht sie im
 Report im Block „Bereits beworben“, mit Status, Datum und dem Hinweis, ob der
 Text von dem bei deiner Bewerbung abweicht. Dieselbe Stelle heißt: gleiche Firma
 und gleicher Titel, unabhängig von Schreibweise, (m/w/d) und Rechtsform.
+
+## Suchprofil aus Feedback verbessern
+
+```bash
+uv run python -m jobagent.profilvorschlag
+```
+
+Claude Sonnet wertet das noch offene Feedback aus und unterscheidet dabei
+Lücken im Profil von Lesefehlern der Bewertung. Du siehst die Änderungen als
+Diff und entscheidest: übernehmen, ablehnen oder abbrechen. Vor dem Übernehmen
+wird eine Sicherung `profile.sicherung-….md` angelegt. Ab 5 offenen
+Rückmeldungen erinnert der Report daran.
 
 ## Tests
 

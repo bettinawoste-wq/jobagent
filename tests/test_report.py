@@ -358,3 +358,26 @@ def test_nachfass_hinweis_ohne_firma_und_mit_einem_tag(tmp_path: Path) -> None:
     )
 
     assert "Data Engineer (unbekannt): seit 1 Tag keine Antwort" in pfad.read_text(encoding="utf-8")
+
+
+def test_hinweis_auf_profil_vorschlag_steht_nach_nachfassen(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad(
+        [],
+        date(2026, 11, 20),
+        ausgabe_verzeichnis=tmp_path,
+        nachfassen=[_nachfassen()],
+        offenes_feedback=5,
+    )
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert (
+        "## Profil-Vorschlag\n- 5 Rückmeldungen warten auf Auswertung: "
+        "`python -m jobagent.profilvorschlag`\n"
+    ) in inhalt
+    assert inhalt.index("## Nachfassen") < inhalt.index("## Profil-Vorschlag")
+
+
+def test_ohne_offenes_feedback_kein_hinweis(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad([], date(2026, 11, 20), ausgabe_verzeichnis=tmp_path)
+
+    assert "Profil-Vorschlag" not in pfad.read_text(encoding="utf-8")

@@ -11,6 +11,7 @@ output/
 *.db
 .env
 profile.md
+profile.sicherung-*.md
 run.log
 
 # Tools
