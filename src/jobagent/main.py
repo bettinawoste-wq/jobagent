@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 _KONFIG_PFAD = Path("config.toml")
 _PROFIL_PFAD = Path("profile.md")
 _DB_PFAD = Path("jobagent.db")
+_NACHFASSEN_AB_TAG = 14
+_NACHFASSEN_BIS_TAG = 28
 
 
 def main(
@@ -42,6 +44,12 @@ def main(
             quellen=quellen,
             mindest_score=konfig.get("mindest_score", report.STANDARD_MINDEST_SCORE),
             bewerbungen=_bereits_beworben(conn, neue_treffer),
+            nachfassen=store.zum_nachfassen(
+                conn,
+                heute,
+                ab_tag=konfig.get("nachfassen_ab_tag", _NACHFASSEN_AB_TAG),
+                bis_tag=konfig.get("nachfassen_bis_tag", _NACHFASSEN_BIS_TAG),
+            ),
         )
         store.merke_treffernummern(conn, geschrieben.pfad.stem, geschrieben.nummern)
         return geschrieben.pfad

@@ -96,6 +96,10 @@ Bewerbungen ohne Treffer (z. B. direkt auf einer Karriereseite) gehen so:
 uv run python -m jobagent.feedback beworben --firma "Firma X" --titel "Data Engineer"
 ```
 
+Steht eine Bewerbung auf `beworben` und liegt 14 bis 28 Tage zurück
+(`nachfassen_ab_tag`, `nachfassen_bis_tag` in `config.toml`), erinnert der
+Report ans Nachhaken. Danach verschwindet der Hinweis, der Status bleibt.
+
 Erscheint eine Stelle erneut, auf die du dich beworben hast, steht sie im
 Report im Block „Bereits beworben“, mit Status, Datum und dem Hinweis, ob der
 Text von dem bei deiner Bewerbung abweicht. Dieselbe Stelle heißt: gleiche Firma

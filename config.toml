@@ -6,6 +6,11 @@ veroeffentlichtseit = 1
 # Treffer unter diesem Score erscheinen im Report nur noch als eine Zeile.
 mindest_score = 3
 
+# Hinweis im Report bei Bewerbungen ohne Antwort, solange sie so viele Tage
+# zurueckliegen. Der Status aendert sich dadurch nie.
+nachfassen_ab_tag = 14
+nachfassen_bis_tag = 28
+
 # Ein Suchlauf pro Begriff, Ergebnisse werden ueber refnr dedupliziert.
 was = [
     "Full-Stack-Entwickler",

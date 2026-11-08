@@ -4,12 +4,13 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from jobagent.fetch import Anzeige
 from jobagent.score import Bewertung
 
+BEWORBEN = "beworben"
 ZURUECKGEZOGEN = "zurückgezogen"
 
 _SCHEMA = """
@@ -75,6 +76,13 @@ class BekannteBewerbung:
     status: str
     beworben_am: date
     beschreibung_hash: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Nachfasskandidat:
+    firma: str | None
+    titel: str
+    beworben_am: date
 
 
 def connect(pfad: str | Path) -> sqlite3.Connection:
@@ -222,6 +230,22 @@ def letzte_bewerbung(conn: sqlite3.Connection, stelle: str) -> BekannteBewerbung
     if zeile is None:
         return None
     return BekannteBewerbung(zeile[0], date.fromisoformat(zeile[1]), zeile[2])
+
+
+def zum_nachfassen(
+    conn: sqlite3.Connection, heute: date, *, ab_tag: int, bis_tag: int
+) -> list[Nachfasskandidat]:
+    """Bewerbungen ohne Antwort, deren Datum ab_tag bis bis_tag Tage zurueckliegt."""
+    zeilen = conn.execute(
+        "SELECT firma, titel, beworben_am FROM bewerbungen "
+        "WHERE status = ? AND beworben_am BETWEEN ? AND ? ORDER BY beworben_am, id",
+        (
+            BEWORBEN,
+            (heute - timedelta(days=bis_tag)).isoformat(),
+            (heute - timedelta(days=ab_tag)).isoformat(),
+        ),
+    ).fetchall()
+    return [Nachfasskandidat(firma, titel, date.fromisoformat(am)) for firma, titel, am in zeilen]
 
 
 def beschreibung_hash(beschreibung: str | None) -> str | None:

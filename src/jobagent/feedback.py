@@ -12,7 +12,7 @@ from jobagent.stelle import stellen_schluessel
 
 _DB_PFAD = Path("jobagent.db")
 
-_STATUS = ["beworben", "gespräch", "absage", "zusage", store.ZURUECKGEZOGEN]
+_STATUS = [store.BEWORBEN, "gespräch", "absage", "zusage", store.ZURUECKGEZOGEN]
 _ZURUECKNEHMEN = "zurücknehmen"
 _SCORE = "score"
 

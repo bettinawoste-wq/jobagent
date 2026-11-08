@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jobagent.fetch import Anzeige, Quellenstatus
 from jobagent.score import Bewertung
+from jobagent.store import Nachfasskandidat
 
 OUTPUT_DIR = Path("output")
 STANDARD_MINDEST_SCORE = 3
@@ -34,6 +35,7 @@ def schreibe_report(
     quellen: Sequence[Quellenstatus] = (),
     mindest_score: int = STANDARD_MINDEST_SCORE,
     bewerbungen: Mapping[str, BereitsBeworben] | None = None,
+    nachfassen: Sequence[Nachfasskandidat] = (),
 ) -> GeschriebenerReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -42,7 +44,10 @@ def schreibe_report(
     """
     ausgabe_verzeichnis.mkdir(parents=True, exist_ok=True)
     pfad = _freier_pfad(ausgabe_verzeichnis, datum)
-    kopf = f"# Stellenvorschläge {datum.isoformat()}\n\n{_quellen_block(quellen)}"
+    kopf = (
+        f"# Stellenvorschläge {datum.isoformat()}\n\n"
+        f"{_quellen_block(quellen)}{_nachfass_block(nachfassen, datum)}"
+    )
 
     if not treffer:
         pfad.write_text(f"{kopf}Keine neuen Treffer heute.\n", encoding="utf-8")
@@ -92,6 +97,22 @@ def _quellen_zeile(quelle: Quellenstatus) -> str:
     if not quelle.fehler:
         return f"- {quelle.name}: {anzahl}"
     return f"- {quelle.name}: FEHLER, {anzahl} ({'; '.join(quelle.fehler)})"
+
+
+def _nachfass_block(nachfassen: Sequence[Nachfasskandidat], heute: date) -> str:
+    if not nachfassen:
+        return ""
+    zeilen = "\n".join(_nachfass_zeile(kandidat, heute) for kandidat in nachfassen)
+    return f"## Nachfassen\n{zeilen}\n\n"
+
+
+def _nachfass_zeile(kandidat: Nachfasskandidat, heute: date) -> str:
+    tage = (heute - kandidat.beworben_am).days
+    dauer = "1 Tag" if tage == 1 else f"{tage} Tagen"
+    return (
+        f"- {kandidat.titel} ({kandidat.firma or 'unbekannt'}): seit {dauer} keine Antwort, "
+        f"nachhaken? (beworben am {kandidat.beworben_am:%d.%m.%Y})"
+    )
 
 
 def _kompakter_block(kompakt: list[tuple[int, Treffer]], mindest_score: int) -> str:

@@ -1,11 +1,12 @@
 """Tests fuer report.py mit temporaerem Ausgabeverzeichnis."""
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from jobagent.fetch import Anzeige, Quellenstatus
 from jobagent.report import BereitsBeworben, schreibe_report
 from jobagent.score import Bewertung
+from jobagent.store import Nachfasskandidat
 
 
 def _anzeige(id_: str, titel: str) -> Anzeige:
@@ -307,3 +308,53 @@ def test_schreibe_report_erstellt_ausgabeverzeichnis(tmp_path: Path) -> None:
     _schreibe_pfad([], date(2026, 11, 5), ausgabe_verzeichnis=ziel)
 
     assert ziel.is_dir()
+
+
+def _nachfassen(firma: str | None = "Firma X", vor_tagen: int = 14) -> Nachfasskandidat:
+    tag = date(2026, 11, 20) - timedelta(days=vor_tagen)
+    return Nachfasskandidat(firma=firma, titel="Data Engineer", beworben_am=tag)
+
+
+def test_nachfass_hinweis_steht_nach_quellen_und_vor_treffern(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad(
+        [(_anzeige("a-1", "Stelle"), _bewertung(4))],
+        date(2026, 11, 20),
+        ausgabe_verzeichnis=tmp_path,
+        quellen=[Quellenstatus("Arbeitnow", 0, [])],
+        nachfassen=[_nachfassen()],
+    )
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "## Nachfassen\n" in inhalt
+    assert (
+        "- Data Engineer (Firma X): seit 14 Tagen keine Antwort, nachhaken? "
+        "(beworben am 06.11.2026)\n"
+    ) in inhalt
+    assert inhalt.index("## Quellen") < inhalt.index("## Nachfassen") < inhalt.index("## 1. Stelle")
+
+
+def test_nachfass_hinweis_erscheint_auch_ohne_treffer(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad(
+        [], date(2026, 11, 20), ausgabe_verzeichnis=tmp_path, nachfassen=[_nachfassen()]
+    )
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "## Nachfassen" in inhalt
+    assert "Keine neuen Treffer" in inhalt
+
+
+def test_ohne_kandidaten_fehlt_der_nachfass_block(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad([], date(2026, 11, 20), ausgabe_verzeichnis=tmp_path)
+
+    assert "Nachfassen" not in pfad.read_text(encoding="utf-8")
+
+
+def test_nachfass_hinweis_ohne_firma_und_mit_einem_tag(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad(
+        [],
+        date(2026, 11, 20),
+        ausgabe_verzeichnis=tmp_path,
+        nachfassen=[_nachfassen(firma=None, vor_tagen=1)],
+    )
+
+    assert "Data Engineer (unbekannt): seit 1 Tag keine Antwort" in pfad.read_text(encoding="utf-8")

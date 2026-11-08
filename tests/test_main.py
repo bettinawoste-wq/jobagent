@@ -1,6 +1,7 @@
 """Tests fuer main.py: Ablauf fetch -> dedupe -> score -> report, alles gemockt."""
 
 from dataclasses import replace
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -438,3 +439,65 @@ def test_main_vergleicht_mit_letzter_bewerbung(
     _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("drei", "Zweiter Text"))
 
     assert "– Text identisch –" in inhalt
+
+
+def _beworben_vor(projekt: dict[str, Path], tagen: int, status: str = "beworben") -> None:
+    am = (date.today() - timedelta(days=tagen)).isoformat()
+    basis = ["--firma", "Firma X", "--titel", "Dev"]
+    assert feedback.main(["beworben", *basis, "--am", am], db_pfad=projekt["db_pfad"]) == 0
+    if status != "beworben":
+        assert feedback.main([status, *basis], db_pfad=projekt["db_pfad"]) == 0
+
+
+def _lauf_ohne_treffer(projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([]))
+    return main.main(**projekt).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("tage", "erwartet"), [(13, False), (14, True), (20, True), (28, True), (29, False)]
+)
+def test_main_nachfass_fenster(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, tage: int, erwartet: bool
+) -> None:
+    _beworben_vor(projekt, tage)
+
+    inhalt = _lauf_ohne_treffer(projekt, monkeypatch)
+
+    assert ("## Nachfassen" in inhalt) is erwartet
+    if erwartet:
+        assert f"seit {tage} Tagen keine Antwort" in inhalt
+
+
+@pytest.mark.parametrize("status", ["gespräch", "absage", "zusage", "zurückgezogen"])
+def test_main_nachfassen_nur_bei_status_beworben(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    _beworben_vor(projekt, 20, status)
+
+    assert "Nachfassen" not in _lauf_ohne_treffer(projekt, monkeypatch)
+
+
+def test_main_nachfass_tage_aus_konfiguration(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projekt["konfig_pfad"].write_text(
+        'was = ["A"]\nnachfassen_ab_tag = 3\nnachfassen_bis_tag = 5\n', encoding="utf-8"
+    )
+    _beworben_vor(projekt, 4)
+
+    assert "seit 4 Tagen keine Antwort" in _lauf_ohne_treffer(projekt, monkeypatch)
+
+
+def test_main_nachfass_hinweis_aendert_den_status_nicht(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _beworben_vor(projekt, 60)
+
+    _lauf_ohne_treffer(projekt, monkeypatch)
+
+    conn = store.connect(projekt["db_pfad"])
+    try:
+        assert conn.execute("SELECT status FROM bewerbungen").fetchall() == [("beworben",)]
+    finally:
+        conn.close()
