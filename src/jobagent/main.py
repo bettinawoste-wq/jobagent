@@ -35,7 +35,11 @@ def main(
         anzeigen, quellen = _suche_alle(konfig)
         neue_treffer = _neue_treffer(conn, anzeigen, profil, heute)
         geschrieben = report.schreibe_report(
-            neue_treffer, heute, ausgabe_verzeichnis, quellen=quellen
+            neue_treffer,
+            heute,
+            ausgabe_verzeichnis,
+            quellen=quellen,
+            mindest_score=konfig.get("mindest_score", report.STANDARD_MINDEST_SCORE),
         )
         store.merke_treffernummern(conn, geschrieben.pfad.stem, geschrieben.nummern)
         return geschrieben.pfad

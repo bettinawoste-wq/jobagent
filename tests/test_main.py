@@ -123,6 +123,30 @@ def test_main_ueberlebt_unerwarteten_fehler_einer_quelle(
     assert "Stelle a-1" in inhalt
 
 
+def test_main_nimmt_mindest_score_aus_der_konfiguration(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projekt["konfig_pfad"].write_text('was = ["A"]\nmindest_score = 5\n', encoding="utf-8")
+    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_anzeige("a-1")], []))
+    monkeypatch.setattr(score, "score_anzeige", lambda *a, **kw: _bewertung())
+
+    inhalt = main.main(**projekt).read_text(encoding="utf-8")
+
+    assert "## Weitere Treffer (Score unter 5)" in inhalt
+    assert "- **1.** Stelle a-1" in inhalt
+
+
+def test_main_nutzt_standard_mindest_score_ohne_konfiguration(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_anzeige("a-1")], []))
+    monkeypatch.setattr(score, "score_anzeige", lambda *a, **kw: replace(_bewertung(), score=2))
+
+    inhalt = main.main(**projekt).read_text(encoding="utf-8")
+
+    assert "## Weitere Treffer (Score unter 3)" in inhalt
+
+
 def test_main_merkt_sich_report_und_treffernummer(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:

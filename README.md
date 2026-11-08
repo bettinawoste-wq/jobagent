@@ -71,6 +71,8 @@ Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
 `output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
 Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht je
 Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
+Treffer unter `mindest_score` (`config.toml`, Standard 3) erscheinen nur
+einzeilig am Ende.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
 
 ## Tests

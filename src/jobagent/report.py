@@ -9,6 +9,7 @@ from jobagent.fetch import Anzeige, Quellenstatus
 from jobagent.score import Bewertung
 
 OUTPUT_DIR = Path("output")
+STANDARD_MINDEST_SCORE = 3
 
 Treffer = tuple[Anzeige, Bewertung]
 
@@ -24,6 +25,7 @@ def schreibe_report(
     datum: date,
     ausgabe_verzeichnis: Path = OUTPUT_DIR,
     quellen: Sequence[Quellenstatus] = (),
+    mindest_score: int = STANDARD_MINDEST_SCORE,
 ) -> GeschriebenerReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -41,10 +43,14 @@ def schreibe_report(
     sortiert = sorted(treffer, key=lambda paar: paar[1].score, reverse=True)
     nummeriert = list(enumerate(sortiert, start=1))
 
-    inhalt = kopf + "\n".join(
-        _abschnitt(nummer, anzeige, bewertung) for nummer, (anzeige, bewertung) in nummeriert
-    )
+    voll = [eintrag for eintrag in nummeriert if eintrag[1][1].score >= mindest_score]
+    kompakt = [eintrag for eintrag in nummeriert if eintrag[1][1].score < mindest_score]
 
+    teile = [_abschnitt(nummer, anzeige, bewertung) for nummer, (anzeige, bewertung) in voll]
+    if kompakt:
+        teile.append(_kompakter_block(kompakt, mindest_score))
+
+    inhalt = kopf + "\n".join(teile)
     pfad.write_text(inhalt, encoding="utf-8")
     return GeschriebenerReport(pfad, {anzeige.id: nummer for nummer, (anzeige, _) in nummeriert})
 
@@ -72,6 +78,22 @@ def _quellen_zeile(quelle: Quellenstatus) -> str:
     if not quelle.fehler:
         return f"- {quelle.name}: {anzahl}"
     return f"- {quelle.name}: FEHLER, {anzahl} ({'; '.join(quelle.fehler)})"
+
+
+def _kompakter_block(kompakt: list[tuple[int, Treffer]], mindest_score: int) -> str:
+    zeilen = "\n".join(
+        _kompakte_zeile(nummer, anzeige, bewertung) for nummer, (anzeige, bewertung) in kompakt
+    )
+    return f"## Weitere Treffer (Score unter {mindest_score})\n{zeilen}\n"
+
+
+def _kompakte_zeile(nummer: int, anzeige: Anzeige, bewertung: Bewertung) -> str:
+    firma = anzeige.firma or "unbekannt"
+    ort = anzeige.ort or "unbekannt"
+    return (
+        f"- **{nummer}.** {anzeige.titel} ({firma}, {ort}) – "
+        f"Score {bewertung.score}/5: {bewertung.kurzfazit} – {anzeige.link}"
+    )
 
 
 def _abschnitt(nummer: int, anzeige: Anzeige, bewertung: Bewertung) -> str:

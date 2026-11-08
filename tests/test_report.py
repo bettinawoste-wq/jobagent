@@ -61,8 +61,58 @@ def test_treffer_werden_in_rangfolge_ab_eins_nummeriert(tmp_path: Path) -> None:
     inhalt = geschrieben.pfad.read_text(encoding="utf-8")
     assert "## 1. Hoch – Score 5/5" in inhalt
     assert "## 2. Mittel – Score 3/5" in inhalt
-    assert "## 3. Niedrig – Score 2/5" in inhalt
+    assert "**3.** Niedrig" in inhalt
     assert geschrieben.nummern == {"a-2": 1, "a-3": 2, "a-1": 3}
+
+
+def test_treffer_unter_mindest_score_werden_einzeilig(tmp_path: Path) -> None:
+    treffer = [
+        (_anzeige("a-1", "Niedrig"), _bewertung(2, "Zu weit weg.")),
+        (_anzeige("a-2", "Grenzfall"), _bewertung(3)),
+    ]
+
+    pfad = _schreibe_pfad(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path, mindest_score=3)
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "## 1. Grenzfall – Score 3/5" in inhalt
+    assert "## Weitere Treffer (Score unter 3)" in inhalt
+    assert (
+        "- **2.** Niedrig (Beispiel GmbH, München) – Score 2/5: Zu weit weg. – "
+        "https://www.arbeitsagentur.de/jobsuche/jobdetail/a-1\n"
+    ) in inhalt
+    assert inhalt.count("- Passt:") == 1
+
+
+def test_nur_niedrige_treffer_beginnen_bei_nummer_eins(tmp_path: Path) -> None:
+    treffer = [(_anzeige("a-1", "Niedrig"), _bewertung(1))]
+
+    geschrieben = schreibe_report(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
+
+    assert "- **1.** Niedrig" in geschrieben.pfad.read_text(encoding="utf-8")
+    assert geschrieben.nummern == {"a-1": 1}
+
+
+def test_ohne_niedrige_treffer_fehlt_der_kompakte_block(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad(
+        [(_anzeige("a-1", "Niedrig"), _bewertung(1))],
+        date(2026, 11, 5),
+        ausgabe_verzeichnis=tmp_path,
+        mindest_score=1,
+    )
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "## 1. Niedrig" in inhalt
+    assert "Weitere Treffer" not in inhalt
+
+
+def test_kompakte_zeile_ohne_firma_und_ort(tmp_path: Path) -> None:
+    anzeige = Anzeige(id="a-1", titel="Niedrig", firma=None, ort=None, link="https://x.example")
+
+    pfad = _schreibe_pfad(
+        [(anzeige, _bewertung(1))], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path
+    )
+
+    assert "Niedrig (unbekannt, unbekannt)" in pfad.read_text(encoding="utf-8")
 
 
 def test_jeder_report_beginnt_wieder_bei_eins(tmp_path: Path) -> None:
