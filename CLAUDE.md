@@ -54,7 +54,8 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 ## Commits und Versionen
 - Commit-Betreff: Imperativ, deutsch, mit echten Umlauten (ä/ö/ü/ß), max. ca. 70 Zeichen, keine Nummerierung wie „(Schritt n)“
 - Commit-Text erklärt das Warum (Anlass, Auswirkung), nicht nur das Was
-- Version in `pyproject.toml` nach SemVer (0.x): neue Quelle oder Funktion → Minor, Fix → Patch; `uv.lock` mitziehen
+- Nicht jeder Commit ist eine neue Version: Die Version steigt erst, wenn eine zusammenhängende Arbeit abgeschlossen ist, die meist mehrere Commits umfasst
+- Version in `pyproject.toml` dann nach SemVer (0.x): neue Quelle oder Funktion → Minor, nur Fixes → Patch; `uv.lock` mitziehen
 - Jede Versionsanhebung bekommt einen annotierten Tag `vX.Y.Z`
 
 ## Nicht tun
