@@ -96,6 +96,11 @@ Bewerbungen ohne Treffer (z. B. direkt auf einer Karriereseite) gehen so:
 uv run python -m jobagent.feedback beworben --firma "Firma X" --titel "Data Engineer"
 ```
 
+Erscheint eine Stelle erneut, auf die du dich beworben hast, steht sie im
+Report im Block „Bereits beworben“, mit Status, Datum und dem Hinweis, ob der
+Text von dem bei deiner Bewerbung abweicht. Dieselbe Stelle heißt: gleiche Firma
+und gleicher Titel, unabhängig von Schreibweise, (m/w/d) und Rechtsform.
+
 ## Tests
 
 ```bash

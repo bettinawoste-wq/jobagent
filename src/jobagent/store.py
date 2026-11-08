@@ -10,6 +10,8 @@ from pathlib import Path
 from jobagent.fetch import Anzeige
 from jobagent.score import Bewertung
 
+ZURUECKGEZOGEN = "zurückgezogen"
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS gesehene_anzeigen (
     id TEXT PRIMARY KEY,
@@ -68,6 +70,13 @@ class NeueBewerbung:
     anzeige_id: str | None  # None bei manueller Erfassung ohne Treffer
 
 
+@dataclass(frozen=True, slots=True)
+class BekannteBewerbung:
+    status: str
+    beworben_am: date
+    beschreibung_hash: str | None
+
+
 def connect(pfad: str | Path) -> sqlite3.Connection:
     """Oeffnet (und initialisiert oder migriert bei Bedarf) die SQLite-Datenbank unter pfad."""
     conn = sqlite3.connect(pfad)
@@ -110,7 +119,7 @@ def mark_seen(
             anzeige.link,
             bewertung.score,
             datum.isoformat(),
-            _beschreibung_hash(anzeige.beschreibung),
+            beschreibung_hash(anzeige.beschreibung),
             _bewertung_als_json(bewertung),
         ),
     )
@@ -201,7 +210,22 @@ def speichere_feedback(
     conn.commit()
 
 
-def _beschreibung_hash(beschreibung: str | None) -> str | None:
+def letzte_bewerbung(conn: sqlite3.Connection, stelle: str) -> BekannteBewerbung | None:
+    """Liefert die letzte Bewerbung auf diese Stelle; zurueckgezogene zaehlen nicht."""
+    zeile = conn.execute(
+        "SELECT b.status, b.beworben_am, g.beschreibung_hash "
+        "FROM bewerbungen b LEFT JOIN gesehene_anzeigen g ON g.id = b.anzeige_id "
+        "WHERE b.stelle = ? AND b.status != ? "
+        "ORDER BY b.beworben_am DESC, b.id DESC LIMIT 1",
+        (stelle, ZURUECKGEZOGEN),
+    ).fetchone()
+    if zeile is None:
+        return None
+    return BekannteBewerbung(zeile[0], date.fromisoformat(zeile[1]), zeile[2])
+
+
+def beschreibung_hash(beschreibung: str | None) -> str | None:
+    """Fingerabdruck einer Beschreibung; None, wenn es keinen Text gibt."""
     # Leerraum vereinheitlichen, damit reine Formatierung nicht als
     # Textabweichung zaehlt.
     normalisiert = " ".join((beschreibung or "").split())

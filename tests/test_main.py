@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from jobagent import fetch, main, score, store
+from jobagent import feedback, fetch, main, score, store
 from jobagent.fetch import Anzeige
 from jobagent.score import Bewertung
 
@@ -286,3 +286,155 @@ def test_main_bindet_watchlist_firmen_aus_config_ein(
 
     assert erhaltene_firmen == [[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}]]
     assert "Full-Stack-Entwickler (m/w/d)" in pfad.read_text(encoding="utf-8")
+
+
+def _stelle(id_: str, beschreibung: str | None = "Text", titel: str = "Data Engineer") -> Anzeige:
+    return Anzeige(
+        id=id_,
+        titel=titel,
+        firma="Beispiel GmbH",
+        ort="München",
+        link=f"https://x.example/{id_}",
+        beschreibung=beschreibung,
+    )
+
+
+def _lauf_findet(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, anzeige: Anzeige
+) -> tuple[Path, str]:
+    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([anzeige]))
+    monkeypatch.setattr(score, "score_anzeige", lambda *a, **kw: _bewertung())
+    pfad = main.main(**projekt)
+    return pfad, pfad.read_text(encoding="utf-8")
+
+
+def _manuell(projekt: dict[str, Path], aktion: str = "beworben", titel: str = "Data Engineer"):
+    argumente = [aktion, "--firma", "Beispiel", "--titel", titel]
+    assert feedback.main(argumente, db_pfad=projekt["db_pfad"]) == 0
+
+
+def _bewerbung_auf_erste_anzeige(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, beschreibung: str | None
+) -> None:
+    pfad, _ = _lauf_findet(projekt, monkeypatch, _stelle("alt", beschreibung))
+    assert feedback.main([pfad.stem, "1", "beworben"], db_pfad=projekt["db_pfad"]) == 0
+
+
+def test_main_verschiebt_bereits_beworbene_stelle_in_eigenen_block(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _manuell(projekt)
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu"))
+
+    assert "## Bereits beworben" in inhalt
+    assert "Data Engineer (Beispiel GmbH, München) – Score 4/5 – beworben, beworben am" in inhalt
+    assert "## 1. Data Engineer" not in inhalt
+
+
+def test_main_erkennt_stelle_trotz_firmenname_im_titel(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _manuell(projekt)
+    anzeige = _stelle("neu", titel="Beispiel GmbH: Data Engineer (w/m/x)")
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, anzeige)
+
+    assert "## Bereits beworben" in inhalt
+
+
+def test_main_zeigt_status_der_bewerbung(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _manuell(projekt)
+    _manuell(projekt, "absage")
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu"))
+
+    assert "– absage, beworben am" in inhalt
+
+
+def test_main_zurueckgezogene_bewerbung_zaehlt_nicht(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _manuell(projekt)
+    _manuell(projekt, "zurückgezogen")
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu"))
+
+    assert "Bereits beworben" not in inhalt
+    assert "## 1. Data Engineer" in inhalt
+
+
+def test_main_andere_stelle_bleibt_unmarkiert(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _manuell(projekt, titel="Consultant")
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu"))
+
+    assert "Bereits beworben" not in inhalt
+
+
+def test_main_anzeige_ohne_firma_wird_nicht_zugeordnet(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    argumente = ["beworben", "--firma", "", "--titel", "Data Engineer"]
+    feedback.main(argumente, db_pfad=projekt["db_pfad"])
+    ohne_firma = replace(_stelle("neu"), firma=None)
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, ohne_firma)
+
+    assert "Bereits beworben" not in inhalt
+
+
+def test_main_meldet_identischen_text(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Gleicher Text")
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu", "Gleicher   Text"))
+
+    assert "– Text identisch –" in inhalt
+
+
+def test_main_meldet_textabweichung(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Alter Text")
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu", "Neuer Text"))
+
+    assert "– Text weicht von deiner Bewerbung ab –" in inhalt
+
+
+def test_main_manuelle_bewerbung_ist_nicht_vergleichbar(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _manuell(projekt)
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu"))
+
+    assert "– Text nicht vergleichbar –" in inhalt
+
+
+def test_main_fehlende_neue_beschreibung_ist_nicht_vergleichbar(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Alter Text")
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("neu", None))
+
+    assert "– Text nicht vergleichbar –" in inhalt
+
+
+def test_main_vergleicht_mit_letzter_bewerbung(
+    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Erster Text")
+    pfad, _ = _lauf_findet(projekt, monkeypatch, _stelle("zwei", "Zweiter Text"))
+    assert feedback.main([pfad.stem, "1", "beworben"], db_pfad=projekt["db_pfad"]) == 0
+
+    _, inhalt = _lauf_findet(projekt, monkeypatch, _stelle("drei", "Zweiter Text"))
+
+    assert "– Text identisch –" in inhalt

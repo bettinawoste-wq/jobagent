@@ -34,10 +34,20 @@ _RECHTSFORMEN = {
 def stellen_schluessel(firma: str | None, titel: str) -> str:
     """Bildet den Vergleichswert, an dem dieselbe Stelle erkannt wird.
 
-    Ignoriert Schreibweise, Geschlechtsangaben im Titel und die Rechtsform
-    der Firma.
+    Ignoriert Schreibweise, Geschlechtsangaben im Titel, die Rechtsform der
+    Firma und einen vorangestellten Firmennamen im Titel.
     """
-    return f"{_firma_normalisiert(firma or '')}|{_titel_normalisiert(titel)}"
+    firma_normalisiert = _firma_normalisiert(firma or "")
+    titel_normalisiert = _titel_normalisiert(_ohne_firmen_vorsatz(titel, firma_normalisiert))
+    return f"{firma_normalisiert}|{titel_normalisiert}"
+
+
+def _ohne_firmen_vorsatz(titel: str, firma_normalisiert: str) -> str:
+    # Die Bundesagentur liefert manche Titel als "Firma GmbH: Eigentlicher Titel".
+    vorsatz, trenner, rest = titel.partition(":")
+    if trenner and rest.strip() and _firma_normalisiert(vorsatz) == firma_normalisiert:
+        return rest
+    return titel
 
 
 def _titel_normalisiert(titel: str) -> str:

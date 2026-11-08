@@ -1,6 +1,6 @@
 """Schreibt output/YYYY-MM-DD.md, sortiert nach Score."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -20,12 +20,20 @@ class GeschriebenerReport:
     nummern: dict[str, int]  # Anzeigen-ID -> Treffernummer
 
 
+@dataclass(frozen=True, slots=True)
+class BereitsBeworben:
+    status: str
+    beworben_am: date
+    textvergleich: str
+
+
 def schreibe_report(
     treffer: list[Treffer],
     datum: date,
     ausgabe_verzeichnis: Path = OUTPUT_DIR,
     quellen: Sequence[Quellenstatus] = (),
     mindest_score: int = STANDARD_MINDEST_SCORE,
+    bewerbungen: Mapping[str, BereitsBeworben] | None = None,
 ) -> GeschriebenerReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -41,14 +49,20 @@ def schreibe_report(
         return GeschriebenerReport(pfad, {})
 
     sortiert = sorted(treffer, key=lambda paar: paar[1].score, reverse=True)
-    nummeriert = list(enumerate(sortiert, start=1))
+    bewerbungen = bewerbungen or {}
+    offen = [eintrag for eintrag in sortiert if eintrag[0].id not in bewerbungen]
+    beworben = [eintrag for eintrag in sortiert if eintrag[0].id in bewerbungen]
+    nummeriert = list(enumerate(offen + beworben, start=1))
 
-    voll = [eintrag for eintrag in nummeriert if eintrag[1][1].score >= mindest_score]
-    kompakt = [eintrag for eintrag in nummeriert if eintrag[1][1].score < mindest_score]
+    nummeriert_offen = nummeriert[: len(offen)]
+    voll = [eintrag for eintrag in nummeriert_offen if eintrag[1][1].score >= mindest_score]
+    kompakt = [eintrag for eintrag in nummeriert_offen if eintrag[1][1].score < mindest_score]
 
     teile = [_abschnitt(nummer, anzeige, bewertung) for nummer, (anzeige, bewertung) in voll]
     if kompakt:
         teile.append(_kompakter_block(kompakt, mindest_score))
+    if beworben:
+        teile.append(_beworben_block(nummeriert[len(offen) :], bewerbungen))
 
     inhalt = kopf + "\n".join(teile)
     pfad.write_text(inhalt, encoding="utf-8")
@@ -88,12 +102,36 @@ def _kompakter_block(kompakt: list[tuple[int, Treffer]], mindest_score: int) -> 
 
 
 def _kompakte_zeile(nummer: int, anzeige: Anzeige, bewertung: Bewertung) -> str:
-    firma = anzeige.firma or "unbekannt"
-    ort = anzeige.ort or "unbekannt"
     return (
-        f"- **{nummer}.** {anzeige.titel} ({firma}, {ort}) – "
+        f"{_zeilenanfang(nummer, anzeige)} – "
         f"Score {bewertung.score}/5: {bewertung.kurzfazit} – {anzeige.link}"
     )
+
+
+def _beworben_block(
+    nummeriert: list[tuple[int, Treffer]], bewerbungen: Mapping[str, BereitsBeworben]
+) -> str:
+    zeilen = "\n".join(
+        _beworben_zeile(nummer, anzeige, bewertung, bewerbungen[anzeige.id])
+        for nummer, (anzeige, bewertung) in nummeriert
+    )
+    return f"## Bereits beworben\n{zeilen}\n"
+
+
+def _beworben_zeile(
+    nummer: int, anzeige: Anzeige, bewertung: Bewertung, bewerbung: BereitsBeworben
+) -> str:
+    return (
+        f"{_zeilenanfang(nummer, anzeige)} – Score {bewertung.score}/5 – "
+        f"{bewerbung.status}, beworben am {bewerbung.beworben_am:%d.%m.%Y} – "
+        f"{bewerbung.textvergleich} – {anzeige.link}"
+    )
+
+
+def _zeilenanfang(nummer: int, anzeige: Anzeige) -> str:
+    firma = anzeige.firma or "unbekannt"
+    ort = anzeige.ort or "unbekannt"
+    return f"- **{nummer}.** {anzeige.titel} ({firma}, {ort})"
 
 
 def _abschnitt(nummer: int, anzeige: Anzeige, bewertung: Bewertung) -> str:

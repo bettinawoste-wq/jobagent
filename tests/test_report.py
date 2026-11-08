@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from jobagent.fetch import Anzeige, Quellenstatus
-from jobagent.report import schreibe_report
+from jobagent.report import BereitsBeworben, schreibe_report
 from jobagent.score import Bewertung
 
 
@@ -229,6 +229,76 @@ def test_ohne_treffer_steht_quellenausfall_trotzdem_im_report(tmp_path: Path) ->
     inhalt = pfad.read_text(encoding="utf-8")
     assert "FEHLER" in inhalt
     assert "Keine neuen Treffer" in inhalt
+
+
+_ABSAGE = BereitsBeworben("absage", date(2026, 10, 1), "Text identisch")
+
+
+def test_bereits_beworben_steht_im_eigenen_block_am_ende(tmp_path: Path) -> None:
+    treffer = [
+        (_anzeige("a-1", "Beworben"), _bewertung(5)),
+        (_anzeige("a-2", "Offen"), _bewertung(4)),
+    ]
+
+    pfad = _schreibe_pfad(
+        treffer,
+        date(2026, 11, 5),
+        ausgabe_verzeichnis=tmp_path,
+        bewerbungen={"a-1": _ABSAGE},
+    )
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "## 1. Offen" in inhalt
+    assert "## Bereits beworben\n" in inhalt
+    assert (
+        "- **2.** Beworben (Beispiel GmbH, München) – Score 5/5 – absage, beworben am "
+        "01.10.2026 – Text identisch – https://www.arbeitsagentur.de/jobsuche/jobdetail/a-1\n"
+    ) in inhalt
+    assert inhalt.index("## 1. Offen") < inhalt.index("## Bereits beworben")
+    assert "## 2. Beworben" not in inhalt
+
+
+def test_nummern_laufen_ueber_alle_bloecke(tmp_path: Path) -> None:
+    treffer = [
+        (_anzeige("a-1", "Beworben"), _bewertung(5)),
+        (_anzeige("a-2", "Voll"), _bewertung(4)),
+        (_anzeige("a-3", "Kompakt"), _bewertung(1)),
+    ]
+
+    geschrieben = schreibe_report(
+        treffer,
+        date(2026, 11, 5),
+        ausgabe_verzeichnis=tmp_path,
+        bewerbungen={"a-1": _ABSAGE},
+    )
+
+    assert geschrieben.nummern == {"a-2": 1, "a-3": 2, "a-1": 3}
+    inhalt = geschrieben.pfad.read_text(encoding="utf-8")
+    assert inhalt.index("Weitere Treffer") < inhalt.index("Bereits beworben")
+
+
+def test_ohne_bewerbungen_fehlt_der_block(tmp_path: Path) -> None:
+    pfad = _schreibe_pfad(
+        [(_anzeige("a-1", "Offen"), _bewertung(4))],
+        date(2026, 11, 5),
+        ausgabe_verzeichnis=tmp_path,
+    )
+
+    assert "Bereits beworben" not in pfad.read_text(encoding="utf-8")
+
+
+def test_nur_bereits_beworbene_treffer(tmp_path: Path) -> None:
+    geschrieben = schreibe_report(
+        [(_anzeige("a-1", "Beworben"), _bewertung(2))],
+        date(2026, 11, 5),
+        ausgabe_verzeichnis=tmp_path,
+        bewerbungen={"a-1": _ABSAGE},
+    )
+
+    inhalt = geschrieben.pfad.read_text(encoding="utf-8")
+    assert "- **1.** Beworben" in inhalt
+    assert "Weitere Treffer" not in inhalt
+    assert geschrieben.nummern == {"a-1": 1}
 
 
 def test_schreibe_report_erstellt_ausgabeverzeichnis(tmp_path: Path) -> None:

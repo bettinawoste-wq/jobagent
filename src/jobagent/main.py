@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from jobagent import fetch, report, score, store
+from jobagent.stelle import stellen_schluessel
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ def main(
             ausgabe_verzeichnis,
             quellen=quellen,
             mindest_score=konfig.get("mindest_score", report.STANDARD_MINDEST_SCORE),
+            bewerbungen=_bereits_beworben(conn, neue_treffer),
         )
         store.merke_treffernummern(conn, geschrieben.pfad.stem, geschrieben.nummern)
         return geschrieben.pfad
@@ -75,6 +77,31 @@ def _neue_treffer(
         treffer.append((anzeige, bewertung))
 
     return treffer
+
+
+def _bereits_beworben(
+    conn: sqlite3.Connection, treffer: list[report.Treffer]
+) -> dict[str, report.BereitsBeworben]:
+    ergebnis: dict[str, report.BereitsBeworben] = {}
+    for anzeige, _ in treffer:
+        if not anzeige.firma:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
+            continue
+        bewerbung = store.letzte_bewerbung(conn, stellen_schluessel(anzeige.firma, anzeige.titel))
+        if bewerbung is not None:
+            ergebnis[anzeige.id] = report.BereitsBeworben(
+                bewerbung.status,
+                bewerbung.beworben_am,
+                _textvergleich(
+                    store.beschreibung_hash(anzeige.beschreibung), bewerbung.beschreibung_hash
+                ),
+            )
+    return ergebnis
+
+
+def _textvergleich(neu: str | None, bei_bewerbung: str | None) -> str:
+    if neu is None or bei_bewerbung is None:
+        return "Text nicht vergleichbar"
+    return "Text identisch" if neu == bei_bewerbung else "Text weicht von deiner Bewerbung ab"
 
 
 def _suche_alle(konfig: dict) -> tuple[list[fetch.Anzeige], list[fetch.Quellenstatus]]:
