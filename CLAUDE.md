@@ -12,7 +12,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/fetch.py`: Anzeigen von Quellen holen (Bundesagentur für Arbeit, Arbeitnow, Firmen-Watchlist via Greenhouse/Lever)
 - `src/jobagent/store.py`: SQLite, merkt sich gesehene Anzeigen-IDs
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
-- `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md`, sortiert nach Score
+- `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md` (weitere Läufe am Tag: `-2`, `-3`, nie überschreiben), sortiert nach Score
 - `src/jobagent/main.py`: Ablauf: fetch, dedupe, score, report
 - `tests/`: Tests, Beispielantworten liegen in `tests/fixtures/`
 - `profile.md`: mein Suchprofil und meine Ausschlusskriterien

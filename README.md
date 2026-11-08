@@ -67,8 +67,9 @@ Greenhouse-/Lever-Jobboards).
 uv run python -m jobagent.main
 ```
 
-Ergebnis landet in `output/YYYY-MM-DD.md`. Ohne neue Treffer wird eine kurze
-Notiz statt einer leeren Datei geschrieben.
+Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
+`output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
+Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
 
 ## Tests
 

@@ -19,9 +19,10 @@ def schreibe_report(
     """Schreibt die Treffer sortiert nach Score in output/YYYY-MM-DD.md.
 
     Ohne Treffer wird eine kurze Notiz statt einer leeren Datei erzeugt.
+    Ein vorhandener Report wird nie ueberschrieben, siehe _freier_pfad.
     """
     ausgabe_verzeichnis.mkdir(parents=True, exist_ok=True)
-    pfad = ausgabe_verzeichnis / f"{datum.isoformat()}.md"
+    pfad = _freier_pfad(ausgabe_verzeichnis, datum)
 
     if not treffer:
         pfad.write_text(
@@ -36,6 +37,17 @@ def schreibe_report(
     inhalt += "\n".join(_abschnitt(anzeige, bewertung) for anzeige, bewertung in sortiert)
 
     pfad.write_text(inhalt, encoding="utf-8")
+    return pfad
+
+
+def _freier_pfad(ausgabe_verzeichnis: Path, datum: date) -> Path:
+    # Gesehene Anzeigen kommen nie wieder, ein ueberschriebener Report waere
+    # also endgueltig verloren. Weitere Laeufe am selben Tag bekommen -2, -3, ...
+    pfad = ausgabe_verzeichnis / f"{datum.isoformat()}.md"
+    laufnummer = 2
+    while pfad.exists():
+        pfad = ausgabe_verzeichnis / f"{datum.isoformat()}-{laufnummer}.md"
+        laufnummer += 1
     return pfad
 
 
