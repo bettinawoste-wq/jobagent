@@ -9,14 +9,29 @@ from pathlib import Path
 import httpx
 import pytest
 
-from jobagent.fetch import (
-    Anzeige,
-    search,
-    search_arbeitnow,
-    search_greenhouse,
-    search_lever,
-    search_watchlist,
-)
+from jobagent import fetch
+from jobagent.fetch import Anzeige
+
+
+def search(*args, **kwargs) -> list[Anzeige]:
+    return fetch.search(*args, **kwargs).anzeigen
+
+
+def search_arbeitnow(*args, **kwargs) -> list[Anzeige]:
+    return fetch.search_arbeitnow(*args, **kwargs).anzeigen
+
+
+def search_greenhouse(*args, **kwargs) -> list[Anzeige]:
+    return fetch.search_greenhouse(*args, **kwargs).anzeigen
+
+
+def search_lever(*args, **kwargs) -> list[Anzeige]:
+    return fetch.search_lever(*args, **kwargs).anzeigen
+
+
+def search_watchlist(*args, **kwargs) -> list[Anzeige]:
+    return fetch.search_watchlist(*args, **kwargs).anzeigen
+
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 JOBSUCHE_FIXTURE = json.loads((_FIXTURES / "jobsuche_response.json").read_text(encoding="utf-8"))
@@ -436,3 +451,102 @@ def test_search_watchlist_isoliert_fehler_einer_firma() -> None:
     ergebnis = search_watchlist(firmen, "Full-Stack", transport=_transport(handler))
 
     assert [a.id for a in ergebnis] == ["greenhouse:beispiel:1001"]
+
+
+def _status(code: int):
+    return _transport(lambda request: httpx.Response(code))
+
+
+def _kein_json():
+    return _transport(lambda request: httpx.Response(200, content=b"nicht json"))
+
+
+def _keine_verbindung():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("keine Verbindung", request=request)
+
+    return _transport(handler)
+
+
+def test_search_ohne_fehler_meldet_keine_fehler() -> None:
+    transport = _transport(lambda request: httpx.Response(200, json={"ergebnisliste": []}))
+
+    assert fetch.search("Data Science", transport=transport).fehler == []
+
+
+@pytest.mark.parametrize(
+    ("transport", "erwartet"),
+    [
+        (_status(500), "Data Science: HTTP 500"),
+        (_keine_verbindung(), "Data Science: keine Verbindung"),
+        (_kein_json(), "Data Science: ungültige Antwort"),
+    ],
+)
+def test_search_meldet_fehlergrund(transport, erwartet: str) -> None:
+    ergebnis = fetch.search("Data Science", transport=transport)
+
+    assert ergebnis.anzeigen == []
+    assert ergebnis.fehler == [erwartet]
+
+
+def test_detailfehler_gilt_nicht_als_quellenfehler() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _SEARCH_PATH:
+            return httpx.Response(200, json=JOBSUCHE_FIXTURE)
+        return httpx.Response(500)
+
+    ergebnis = fetch.search("Softwareentwicklerin", transport=_transport(handler))
+
+    assert len(ergebnis.anzeigen) == 2
+    assert ergebnis.fehler == []
+
+
+def test_search_arbeitnow_meldet_fehler_und_behaelt_bisherige_treffer() -> None:
+    seite1 = _mit_alter(ARBEITNOW_SEITE1, {0: 1})
+    aufrufe = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        aufrufe.append(request)
+        return httpx.Response(200, json=seite1) if len(aufrufe) == 1 else httpx.Response(503)
+
+    ergebnis = fetch.search_arbeitnow(
+        "Data Scientist", veroeffentlichtseit=14, transport=_transport(handler)
+    )
+
+    assert len(ergebnis.anzeigen) == 1
+    assert ergebnis.fehler == ["Data Scientist: HTTP 503"]
+
+
+def test_search_greenhouse_meldet_fehlergrund() -> None:
+    assert fetch.search_greenhouse("weg", "Dev", transport=_status(404)).fehler == ["HTTP 404"]
+
+
+def test_search_lever_meldet_unerwartetes_format() -> None:
+    transport = _transport(lambda request: httpx.Response(200, json={"ok": False}))
+
+    ergebnis = fetch.search_lever("x", "Firma", "Dev", transport=transport)
+
+    assert ergebnis.fehler == ["ungültige Antwort"]
+
+
+def test_search_watchlist_nennt_gescheiterte_firma() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "kaputt" in request.url.path:
+            return httpx.Response(500)
+        return _greenhouse_handler(request)
+
+    firmen = [
+        {"name": "Kaputte Firma", "ats": "greenhouse", "slug": "kaputt"},
+        {"name": "Beispiel GmbH", "ats": "greenhouse", "slug": "beispiel"},
+    ]
+
+    ergebnis = fetch.search_watchlist(firmen, "Full-Stack", transport=_transport(handler))
+
+    assert len(ergebnis.anzeigen) == 1
+    assert ergebnis.fehler == ["Kaputte Firma: HTTP 500"]
+
+
+def test_search_watchlist_meldet_unbekannten_ats_typ() -> None:
+    firmen = [{"name": "Mystery AG", "ats": "mysteryats", "slug": "mystery"}]
+
+    assert fetch.search_watchlist(firmen, "Dev").fehler == ["Mystery AG: unbekannter ats-Typ"]

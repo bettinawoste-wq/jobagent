@@ -3,6 +3,7 @@
 import logging
 import sqlite3
 import tomllib
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -31,8 +32,11 @@ def main(
 
     conn = store.connect(db_pfad)
     try:
-        neue_treffer = _neue_treffer(conn, konfig, profil, heute)
-        geschrieben = report.schreibe_report(neue_treffer, heute, ausgabe_verzeichnis)
+        anzeigen, quellen = _suche_alle(konfig)
+        neue_treffer = _neue_treffer(conn, anzeigen, profil, heute)
+        geschrieben = report.schreibe_report(
+            neue_treffer, heute, ausgabe_verzeichnis, quellen=quellen
+        )
         store.merke_treffernummern(conn, geschrieben.pfad.stem, geschrieben.nummern)
         return geschrieben.pfad
     finally:
@@ -46,11 +50,10 @@ def _lade_konfig(pfad: Path) -> dict:
 
 def _neue_treffer(
     conn: sqlite3.Connection,
-    konfig: dict,
+    anzeigen: list[fetch.Anzeige],
     profil: str,
     heute: date,
 ) -> list[report.Treffer]:
-    anzeigen = _suche_alle(konfig)
     treffer: list[report.Treffer] = []
 
     for anzeige in anzeigen:
@@ -70,24 +73,51 @@ def _neue_treffer(
     return treffer
 
 
-def _suche_alle(konfig: dict) -> list[fetch.Anzeige]:
+def _suche_alle(konfig: dict) -> tuple[list[fetch.Anzeige], list[fetch.Quellenstatus]]:
+    gefunden: dict[str, fetch.Anzeige] = {}
+    status: list[fetch.Quellenstatus] = []
+
+    for name, suche in _quellen(konfig).items():
+        ids: set[str] = set()
+        fehler: dict[str, None] = {}  # dict statt set: Reihenfolge bleibt erhalten
+        for was in konfig.get("was", []):
+            ergebnis = _sichere_suche(suche, was, name)
+            fehler.update(dict.fromkeys(ergebnis.fehler))
+            for anzeige in ergebnis.anzeigen:
+                ids.add(anzeige.id)
+                gefunden.setdefault(anzeige.id, anzeige)
+        status.append(fetch.Quellenstatus(name, len(ids), list(fehler)))
+
+    return list(gefunden.values()), status
+
+
+def _quellen(konfig: dict) -> dict[str, Callable[[str], fetch.Suchergebnis]]:
     wo = konfig.get("wo")
     umkreis = konfig.get("umkreis")
-    veroeffentlichtseit = konfig.get("veroeffentlichtseit")
+    seit = konfig.get("veroeffentlichtseit")
     firmen = konfig.get("firmen", [])
 
-    gefunden: dict[str, fetch.Anzeige] = {}
-    for was in konfig.get("was", []):
-        for anzeige in fetch.search(
-            was, wo=wo, umkreis=umkreis, veroeffentlichtseit=veroeffentlichtseit
-        ):
-            gefunden.setdefault(anzeige.id, anzeige)
-        for anzeige in fetch.search_arbeitnow(was, wo=wo, veroeffentlichtseit=veroeffentlichtseit):
-            gefunden.setdefault(anzeige.id, anzeige)
-        for anzeige in fetch.search_watchlist(firmen, was):
-            gefunden.setdefault(anzeige.id, anzeige)
+    quellen: dict[str, Callable[[str], fetch.Suchergebnis]] = {
+        "Bundesagentur für Arbeit": lambda was: fetch.search(
+            was, wo=wo, umkreis=umkreis, veroeffentlichtseit=seit
+        ),
+        "Arbeitnow": lambda was: fetch.search_arbeitnow(was, wo=wo, veroeffentlichtseit=seit),
+    }
+    if firmen:
+        quellen["Firmen-Watchlist"] = lambda was: fetch.search_watchlist(firmen, was)
+    return quellen
 
-    return list(gefunden.values())
+
+def _sichere_suche(
+    suche: Callable[[str], fetch.Suchergebnis], was: str, quelle: str
+) -> fetch.Suchergebnis:
+    # Bekannte Netzwerk- und API-Fehler behandelt fetch selbst. Dieses Netz faengt
+    # z.B. ein geaendertes Antwortformat ab: Eine Quelle darf den Lauf nie abbrechen.
+    try:
+        return suche(was)
+    except Exception:
+        logger.exception("Unerwarteter Fehler in Quelle %r (was=%r)", quelle, was)
+        return fetch.Suchergebnis([], [f"{was}: unerwarteter Fehler"])
 
 
 if __name__ == "__main__":

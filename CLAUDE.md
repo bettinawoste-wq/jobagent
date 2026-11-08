@@ -45,7 +45,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 ## Konventionen
 - Kleine Funktionen, Typannotationen, keine versteckten Seiteneffekte
 - Bewertung liefert strikt JSON: `score` (1-5), `passt` (Liste), `passt_nicht` (Liste), `luecken` (Liste), `kurzfazit`
-- Fehler einer Quelle dürfen den Lauf nicht abbrechen, sie werden geloggt
+- Fehler einer Quelle dürfen den Lauf nicht abbrechen, sie werden geloggt und im Quellenstatus des Reports ausgewiesen
 - Eine Aufgabe pro Durchgang, danach committen
 
 ## Commits und Versionen

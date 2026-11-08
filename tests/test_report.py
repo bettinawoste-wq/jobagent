@@ -3,7 +3,7 @@
 from datetime import date
 from pathlib import Path
 
-from jobagent.fetch import Anzeige
+from jobagent.fetch import Anzeige, Quellenstatus
 from jobagent.report import schreibe_report
 from jobagent.score import Bewertung
 
@@ -143,6 +143,42 @@ def test_dritter_lauf_am_selben_tag_bekommt_naechste_laufnummer(tmp_path: Path) 
     dritter = _schreibe_pfad([], tag, ausgabe_verzeichnis=tmp_path)
 
     assert dritter == tmp_path / "2026-11-05-3.md"
+
+
+def test_quellenstatus_steht_vor_den_treffern(tmp_path: Path) -> None:
+    quellen = [Quellenstatus("Arbeitnow", 3, []), Quellenstatus("Bundesagentur", 1, [])]
+
+    pfad = _schreibe_pfad(
+        [(_anzeige("a-1", "Stelle"), _bewertung(4))],
+        date(2026, 11, 5),
+        ausgabe_verzeichnis=tmp_path,
+        quellen=quellen,
+    )
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "- Arbeitnow: 3 Anzeigen" in inhalt
+    assert "- Bundesagentur: 1 Anzeige\n" in inhalt
+    assert inhalt.index("Arbeitnow") < inhalt.index("## 1. Stelle")
+
+
+def test_quellenstatus_nennt_fehler_auch_bei_teilergebnis(tmp_path: Path) -> None:
+    quellen = [Quellenstatus("Arbeitnow", 2, ["Data Scientist: HTTP 500", "IT: HTTP 503"])]
+
+    pfad = _schreibe_pfad([], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path, quellen=quellen)
+
+    assert "- Arbeitnow: FEHLER, 2 Anzeigen (Data Scientist: HTTP 500; IT: HTTP 503)" in (
+        pfad.read_text(encoding="utf-8")
+    )
+
+
+def test_ohne_treffer_steht_quellenausfall_trotzdem_im_report(tmp_path: Path) -> None:
+    quellen = [Quellenstatus("Arbeitnow", 0, ["IT: keine Verbindung"])]
+
+    pfad = _schreibe_pfad([], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path, quellen=quellen)
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert "FEHLER" in inhalt
+    assert "Keine neuen Treffer" in inhalt
 
 
 def test_schreibe_report_erstellt_ausgabeverzeichnis(tmp_path: Path) -> None:

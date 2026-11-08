@@ -5,7 +5,7 @@ import html
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -25,6 +25,8 @@ _GREENHOUSE_URL = "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs
 _GREENHOUSE_DETAIL_URL = "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs/{job_id}"
 _LEVER_URL = "https://api.lever.co/v0/postings/{company_slug}"
 
+_UNGUELTIGE_ANTWORT = "ungültige Antwort"
+
 
 @dataclass(frozen=True, slots=True)
 class Anzeige:
@@ -36,6 +38,29 @@ class Anzeige:
     beschreibung: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Suchergebnis:
+    """Gefundene Anzeigen plus Fehler: leer und gescheitert sind verschiedene Dinge."""
+
+    anzeigen: list[Anzeige]
+    fehler: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Quellenstatus:
+    name: str
+    anzahl: int
+    fehler: list[str]
+
+
+def _grund(fehler: Exception) -> str:
+    if isinstance(fehler, httpx.HTTPStatusError):
+        return f"HTTP {fehler.response.status_code}"
+    if isinstance(fehler, httpx.HTTPError):
+        return "keine Verbindung"
+    return _UNGUELTIGE_ANTWORT
+
+
 def search(
     was: str,
     wo: str | None = None,
@@ -43,14 +68,14 @@ def search(
     veroeffentlichtseit: int | None = None,
     *,
     transport: httpx.BaseTransport | None = None,
-) -> list[Anzeige]:
+) -> Suchergebnis:
     """Durchsucht die Jobsuche-API der Bundesagentur fuer Arbeit.
 
     Holt zu jedem Treffer zusaetzlich die Jobdetails, um die Beschreibung
     zu befuellen. Schlaegt der Detail-Call fuer eine einzelne Anzeige fehl,
     bleibt nur deren Beschreibung leer statt den gesamten Lauf abzubrechen.
-    Bei Netzwerk- oder API-Fehlern der Suche selbst wird eine leere Liste
-    zurueckgegeben und der Fehler geloggt.
+    Netzwerk- oder API-Fehler der Suche selbst werden geloggt und im
+    Suchergebnis gemeldet.
     """
     params: dict[str, str | int] = {"was": was}
     if wo is not None:
@@ -65,14 +90,16 @@ def search(
             response = client.get(_SEARCH_URL, params=params, headers=_HEADERS)
             response.raise_for_status()
             daten = response.json()
-        except httpx.HTTPError:
+        except httpx.HTTPError as fehler:
             logger.exception("Jobsuche-API-Anfrage fehlgeschlagen (was=%r, wo=%r)", was, wo)
-            return []
-        except ValueError:
+            return Suchergebnis([], [f"{was}: {_grund(fehler)}"])
+        except ValueError as fehler:
             logger.exception("Jobsuche-API-Antwort ist kein gueltiges JSON")
-            return []
+            return Suchergebnis([], [f"{was}: {_grund(fehler)}"])
 
-        return [_zu_anzeige(eintrag, client) for eintrag in daten.get("ergebnisliste", [])]
+        return Suchergebnis(
+            [_zu_anzeige(eintrag, client) for eintrag in daten.get("ergebnisliste", [])]
+        )
 
 
 def _zu_anzeige(eintrag: dict, client: httpx.Client) -> Anzeige:
@@ -116,7 +143,7 @@ def search_arbeitnow(
     veroeffentlichtseit: int | None = None,
     *,
     transport: httpx.BaseTransport | None = None,
-) -> list[Anzeige]:
+) -> Suchergebnis:
     """Durchsucht die kostenlose Arbeitnow-API (kein API-Key noetig).
 
     Die API bietet keine serverseitige Stichwort- oder Ortssuche, daher wird
@@ -139,12 +166,12 @@ def search_arbeitnow(
                 response = client.get(url)
                 response.raise_for_status()
                 daten = response.json()
-            except httpx.HTTPError:
+            except httpx.HTTPError as fehler:
                 logger.exception("Arbeitnow-API-Anfrage fehlgeschlagen (was=%r, wo=%r)", was, wo)
-                return treffer
-            except ValueError:
+                return Suchergebnis(treffer, [f"{was}: {_grund(fehler)}"])
+            except ValueError as fehler:
                 logger.exception("Arbeitnow-API-Antwort ist kein gueltiges JSON")
-                return treffer
+                return Suchergebnis(treffer, [f"{was}: {_grund(fehler)}"])
 
             eintraege = daten.get("data", [])
             if not eintraege:
@@ -163,7 +190,7 @@ def search_arbeitnow(
                 break
             url = (daten.get("links") or {}).get("next")
 
-    return treffer
+    return Suchergebnis(treffer)
 
 
 def _arbeitnow_passt(eintrag: dict, was: str, wo: str | None) -> bool:
@@ -206,26 +233,31 @@ def search_watchlist(
     was: str,
     *,
     transport: httpx.BaseTransport | None = None,
-) -> list[Anzeige]:
+) -> Suchergebnis:
     """Durchsucht die oeffentlichen Jobboards konkret beobachteter Firmen.
 
     Jeder Eintrag in firmen braucht die Felder "name", "ats" ("greenhouse"
     oder "lever") und "slug" (Board-Token bzw. Firmen-Slug). Scheitert eine
-    einzelne Firma (falscher Slug, API-Fehler), wird das geloggt und die
-    uebrigen Firmen trotzdem durchsucht.
+    einzelne Firma (falscher Slug, API-Fehler), wird das geloggt, mit dem
+    Firmennamen gemeldet und die uebrigen Firmen trotzdem durchsucht.
     """
     treffer: list[Anzeige] = []
+    fehler: list[str] = []
     for firma in firmen:
         ats = firma.get("ats")
         slug = firma.get("slug")
         name = firma.get("name", slug)
         if ats == "greenhouse":
-            treffer.extend(search_greenhouse(slug, was, transport=transport))
+            ergebnis = search_greenhouse(slug, was, transport=transport)
         elif ats == "lever":
-            treffer.extend(search_lever(slug, name, was, transport=transport))
+            ergebnis = search_lever(slug, name, was, transport=transport)
         else:
             logger.error("Unbekannter ats-Typ in Watchlist: %r (firma=%r)", ats, name)
-    return treffer
+            fehler.append(f"{name}: unbekannter ats-Typ")
+            continue
+        treffer.extend(ergebnis.anzeigen)
+        fehler.extend(f"{name}: {grund}" for grund in ergebnis.fehler)
+    return Suchergebnis(treffer, fehler)
 
 
 def search_greenhouse(
@@ -233,7 +265,7 @@ def search_greenhouse(
     was: str,
     *,
     transport: httpx.BaseTransport | None = None,
-) -> list[Anzeige]:
+) -> Suchergebnis:
     """Durchsucht das oeffentliche Greenhouse-Jobboard einer einzelnen Firma.
 
     Keine serverseitige Stichwortsuche - Filterung nach Titel (was) passiert
@@ -247,18 +279,20 @@ def search_greenhouse(
             response = client.get(url)
             response.raise_for_status()
             daten = response.json()
-        except httpx.HTTPError:
+        except httpx.HTTPError as fehler:
             logger.exception("Greenhouse-Anfrage fehlgeschlagen (board=%r)", board_token)
-            return []
-        except ValueError:
+            return Suchergebnis([], [_grund(fehler)])
+        except ValueError as fehler:
             logger.exception("Greenhouse-Antwort ist kein gueltiges JSON (board=%r)", board_token)
-            return []
+            return Suchergebnis([], [_grund(fehler)])
 
-        return [
-            _greenhouse_zu_anzeige(eintrag, board_token, client)
-            for eintrag in daten.get("jobs", [])
-            if was.lower() in eintrag.get("title", "").lower()
-        ]
+        return Suchergebnis(
+            [
+                _greenhouse_zu_anzeige(eintrag, board_token, client)
+                for eintrag in daten.get("jobs", [])
+                if was.lower() in eintrag.get("title", "").lower()
+            ]
+        )
 
 
 def _greenhouse_zu_anzeige(eintrag: dict, board_token: str, client: httpx.Client) -> Anzeige:
@@ -303,7 +337,7 @@ def search_lever(
     was: str,
     *,
     transport: httpx.BaseTransport | None = None,
-) -> list[Anzeige]:
+) -> Suchergebnis:
     """Durchsucht die oeffentlichen Lever-Postings einer einzelnen Firma.
 
     Keine serverseitige Stichwortsuche - Filterung nach Titel (was) passiert
@@ -316,22 +350,24 @@ def search_lever(
             response = client.get(url, params={"mode": "json"})
             response.raise_for_status()
             daten = response.json()
-        except httpx.HTTPError:
+        except httpx.HTTPError as fehler:
             logger.exception("Lever-Anfrage fehlgeschlagen (firma=%r)", company_slug)
-            return []
-        except ValueError:
+            return Suchergebnis([], [_grund(fehler)])
+        except ValueError as fehler:
             logger.exception("Lever-Antwort ist kein gueltiges JSON (firma=%r)", company_slug)
-            return []
+            return Suchergebnis([], [_grund(fehler)])
 
     if not isinstance(daten, list):
         logger.error("Lever-Antwort hat unerwartetes Format (firma=%r): %r", company_slug, daten)
-        return []
+        return Suchergebnis([], [_UNGUELTIGE_ANTWORT])
 
-    return [
-        _lever_zu_anzeige(eintrag, company_slug, firma_name)
-        for eintrag in daten
-        if was.lower() in eintrag.get("text", "").lower()
-    ]
+    return Suchergebnis(
+        [
+            _lever_zu_anzeige(eintrag, company_slug, firma_name)
+            for eintrag in daten
+            if was.lower() in eintrag.get("text", "").lower()
+        ]
+    )
 
 
 def _lever_zu_anzeige(eintrag: dict, company_slug: str, firma_name: str) -> Anzeige:
