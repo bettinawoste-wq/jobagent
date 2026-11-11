@@ -8,8 +8,8 @@ import httpx2
 import pytest
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
-from jobagent.fetch import Anzeige
-from jobagent.score import score_anzeige
+from jobagent.job_ad import JobAd
+from jobagent.score import score_job_ad
 
 SCORE_FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "score_response.json").read_text(encoding="utf-8")
@@ -18,8 +18,8 @@ SCORE_FIXTURE = json.loads(
 _PROFIL = "# Suchprofil\nPython, SQL, München, Hybrid bevorzugt."
 
 
-def _anzeige() -> Anzeige:
-    return Anzeige(
+def _job_ad() -> JobAd:
+    return JobAd(
         id="10001-1003353506-S",
         titel="Softwareentwickler/in (m/w/d)",
         firma="Beispiel GmbH",
@@ -60,23 +60,23 @@ class _FakeClient:
         self.messages = _FakeMessages(ergebnis)
 
 
-def test_score_anzeige_erfolgreiche_bewertung() -> None:
+def test_score_job_ad_erfolgreiche_bewertung() -> None:
     client = _FakeClient(_nachricht_mit_tool_input(SCORE_FIXTURE))
 
-    bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+    assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
-    assert bewertung is not None
-    assert bewertung.score == 4
-    assert bewertung.passt == SCORE_FIXTURE["passt"]
-    assert bewertung.passt_nicht == []
-    assert bewertung.luecken == SCORE_FIXTURE["luecken"]
-    assert bewertung.kurzfazit == SCORE_FIXTURE["kurzfazit"]
+    assert assessment is not None
+    assert assessment.score == 4
+    assert assessment.passt == SCORE_FIXTURE["passt"]
+    assert assessment.passt_nicht == []
+    assert assessment.luecken == SCORE_FIXTURE["luecken"]
+    assert assessment.kurzfazit == SCORE_FIXTURE["kurzfazit"]
 
 
-def test_score_anzeige_sendet_profil_anzeige_und_tool_schema() -> None:
+def test_score_job_ad_sendet_profil_anzeige_und_tool_schema() -> None:
     client = _FakeClient(_nachricht_mit_tool_input(SCORE_FIXTURE))
 
-    score_anzeige(_anzeige(), _PROFIL, client=client)
+    score_job_ad(_job_ad(), _PROFIL, client=client)
 
     kwargs = client.messages.letzte_kwargs
     assert kwargs["tool_choice"] == {"type": "tool", "name": "bewertung_abgeben"}
@@ -87,32 +87,32 @@ def test_score_anzeige_sendet_profil_anzeige_und_tool_schema() -> None:
     assert "Kubernetes" in inhalt
 
 
-def test_score_anzeige_gibt_none_bei_api_fehler(caplog: pytest.LogCaptureFixture) -> None:
+def test_score_job_ad_gibt_none_bei_api_fehler(caplog: pytest.LogCaptureFixture) -> None:
     fehler = anthropic.APIConnectionError(
         request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     )
     client = _FakeClient(fehler)
 
     with caplog.at_level("ERROR"):
-        bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
-    assert bewertung is None
+    assert assessment is None
     assert "fehlgeschlagen" in caplog.text
 
 
-def test_score_anzeige_gibt_none_bei_fehlendem_api_key(caplog: pytest.LogCaptureFixture) -> None:
+def test_score_job_ad_gibt_none_bei_fehlendem_api_key(caplog: pytest.LogCaptureFixture) -> None:
     # Die SDK wirft hierfuer einen rohen TypeError statt eines AnthropicError
     # (Validierung erst beim Request-Aufbau, nicht bei Client.create()).
     client = _FakeClient(TypeError("Could not resolve authentication method."))
 
     with caplog.at_level("ERROR"):
-        bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
-    assert bewertung is None
+    assert assessment is None
     assert "fehlgeschlagen" in caplog.text
 
 
-def test_score_anzeige_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture) -> None:
+def test_score_job_ad_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture) -> None:
     nachricht = Message(
         id="msg_2",
         content=[TextBlock(text="Freitext statt Tool-Aufruf", type="text")],
@@ -126,9 +126,9 @@ def test_score_anzeige_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture)
     client = _FakeClient(nachricht)
 
     with caplog.at_level("ERROR"):
-        bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
-    assert bewertung is None
+    assert assessment is None
     assert "Keine Tool-Antwort" in caplog.text
 
 
@@ -140,19 +140,19 @@ def test_score_anzeige_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture)
         {k: v for k, v in SCORE_FIXTURE.items() if k != "kurzfazit"},
     ],
 )
-def test_score_anzeige_gibt_none_bei_ungueltiger_antwort(
+def test_score_job_ad_gibt_none_bei_ungueltiger_antwort(
     ungueltige_daten: dict, caplog: pytest.LogCaptureFixture
 ) -> None:
     client = _FakeClient(_nachricht_mit_tool_input(ungueltige_daten))
 
     with caplog.at_level("ERROR"):
-        bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
-    assert bewertung is None
+    assert assessment is None
     assert "Ungueltige Bewertungsantwort" in caplog.text
 
 
-def test_score_anzeige_akzeptiert_string_statt_liste() -> None:
+def test_score_job_ad_akzeptiert_string_statt_liste() -> None:
     # Claude liefert passt/passt_nicht/luecken manchmal als einzelnen String
     # statt als JSON-Array, obwohl das Tool-Schema ein Array vorgibt. Das
     # darf die Anzeige nicht verwerfen, sondern wird als Ein-Elemente-Liste
@@ -160,7 +160,7 @@ def test_score_anzeige_akzeptiert_string_statt_liste() -> None:
     daten = {**SCORE_FIXTURE, "passt": "München-Standort, Hybrid möglich"}
     client = _FakeClient(_nachricht_mit_tool_input(daten))
 
-    bewertung = score_anzeige(_anzeige(), _PROFIL, client=client)
+    assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
-    assert bewertung is not None
-    assert bewertung.passt == ["München-Standort, Hybrid möglich"]
+    assert assessment is not None
+    assert assessment.passt == ["München-Standort, Hybrid möglich"]

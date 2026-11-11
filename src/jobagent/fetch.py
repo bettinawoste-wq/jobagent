@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from jobagent.job_ad import JobAd
+
 logger = logging.getLogger(__name__)
 
 _SEARCH_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
@@ -29,20 +31,10 @@ _UNGUELTIGE_ANTWORT = "ungültige Antwort"
 
 
 @dataclass(frozen=True, slots=True)
-class Anzeige:
-    id: str
-    titel: str
-    firma: str | None
-    ort: str | None
-    link: str
-    beschreibung: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class Suchergebnis:
     """Gefundene Anzeigen plus Fehler: leer und gescheitert sind verschiedene Dinge."""
 
-    anzeigen: list[Anzeige]
+    job_ads: list[JobAd]
     fehler: list[str] = field(default_factory=list)
 
 
@@ -102,7 +94,7 @@ def search(
         )
 
 
-def _zu_anzeige(eintrag: dict, client: httpx.Client) -> Anzeige:
+def _zu_anzeige(eintrag: dict, client: httpx.Client) -> JobAd:
     # Hinweis: Die Live-API liefert ein anderes Schema als die Doku von
     # bundesAPI/jobsuche-api (dort z.B. "stellenangebote"/"refnr"/"arbeitsort"/
     # "externeUrl"). Feldnamen hier sind gegen echte API-Antworten verifiziert.
@@ -110,7 +102,7 @@ def _zu_anzeige(eintrag: dict, client: httpx.Client) -> Anzeige:
     lokationen = eintrag.get("stellenlokationen") or [{}]
     adresse = lokationen[0].get("adresse") or {}
     link = eintrag.get("externeURL") or f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}"
-    return Anzeige(
+    return JobAd(
         id=refnr,
         titel=eintrag.get("stellenangebotsTitel") or eintrag.get("hauptberuf", ""),
         firma=eintrag.get("firma"),
@@ -156,7 +148,7 @@ def search_arbeitnow(
     """
     grenze = time.time() - veroeffentlichtseit * 86400 if veroeffentlichtseit is not None else None
 
-    treffer: list[Anzeige] = []
+    treffer: list[JobAd] = []
     url: str | None = _ARBEITNOW_URL
     with httpx.Client(timeout=_TIMEOUT, transport=transport) as client:
         for _ in range(_ARBEITNOW_MAX_SEITEN):
@@ -204,8 +196,8 @@ def _arbeitnow_passt(eintrag: dict, was: str, wo: str | None) -> bool:
     return True
 
 
-def _arbeitnow_zu_anzeige(eintrag: dict) -> Anzeige:
-    return Anzeige(
+def _arbeitnow_zu_anzeige(eintrag: dict) -> JobAd:
+    return JobAd(
         id=f"arbeitnow:{eintrag['slug']}",
         titel=eintrag.get("title", ""),
         firma=eintrag.get("company_name"),
@@ -241,7 +233,7 @@ def search_watchlist(
     einzelne Firma (falscher Slug, API-Fehler), wird das geloggt, mit dem
     Firmennamen gemeldet und die uebrigen Firmen trotzdem durchsucht.
     """
-    treffer: list[Anzeige] = []
+    treffer: list[JobAd] = []
     fehler: list[str] = []
     for firma in firmen:
         ats = firma.get("ats")
@@ -255,7 +247,7 @@ def search_watchlist(
             logger.error("Unbekannter ats-Typ in Watchlist: %r (firma=%r)", ats, name)
             fehler.append(f"{name}: unbekannter ats-Typ")
             continue
-        treffer.extend(ergebnis.anzeigen)
+        treffer.extend(ergebnis.job_ads)
         fehler.extend(f"{name}: {grund}" for grund in ergebnis.fehler)
     return Suchergebnis(treffer, fehler)
 
@@ -295,9 +287,9 @@ def search_greenhouse(
         )
 
 
-def _greenhouse_zu_anzeige(eintrag: dict, board_token: str, client: httpx.Client) -> Anzeige:
+def _greenhouse_zu_anzeige(eintrag: dict, board_token: str, client: httpx.Client) -> JobAd:
     job_id = eintrag["id"]
-    return Anzeige(
+    return JobAd(
         id=f"greenhouse:{board_token}:{job_id}",
         titel=eintrag.get("title", ""),
         firma=eintrag.get("company_name"),
@@ -370,8 +362,8 @@ def search_lever(
     )
 
 
-def _lever_zu_anzeige(eintrag: dict, company_slug: str, firma_name: str) -> Anzeige:
-    return Anzeige(
+def _lever_zu_anzeige(eintrag: dict, company_slug: str, firma_name: str) -> JobAd:
+    return JobAd(
         id=f"lever:{company_slug}:{eintrag['id']}",
         titel=eintrag.get("text", ""),
         firma=firma_name,

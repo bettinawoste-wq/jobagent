@@ -5,14 +5,15 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from jobagent.fetch import Anzeige, Quellenstatus
-from jobagent.score import Bewertung
+from jobagent.fetch import Quellenstatus
+from jobagent.job_ad import JobAd
+from jobagent.score import Assessment
 from jobagent.store import Nachfasskandidat
 
 OUTPUT_DIR = Path("output")
 STANDARD_MINDEST_SCORE = 3
 
-Treffer = tuple[Anzeige, Bewertung]
+Treffer = tuple[JobAd, Assessment]
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +66,7 @@ def schreibe_report(
     voll = [eintrag for eintrag in nummeriert_offen if eintrag[1][1].score >= mindest_score]
     kompakt = [eintrag for eintrag in nummeriert_offen if eintrag[1][1].score < mindest_score]
 
-    teile = [_abschnitt(nummer, anzeige, bewertung) for nummer, (anzeige, bewertung) in voll]
+    teile = [_abschnitt(nummer, job_ad, assessment) for nummer, (job_ad, assessment) in voll]
     if kompakt:
         teile.append(_kompakter_block(kompakt, mindest_score))
     if beworben:
@@ -73,7 +74,7 @@ def schreibe_report(
 
     inhalt = kopf + "\n".join(teile)
     pfad.write_text(inhalt, encoding="utf-8")
-    return GeschriebenerReport(pfad, {anzeige.id: nummer for nummer, (anzeige, _) in nummeriert})
+    return GeschriebenerReport(pfad, {job_ad.id: nummer for nummer, (job_ad, _) in nummeriert})
 
 
 def _freier_pfad(ausgabe_verzeichnis: Path, datum: date) -> Path:
@@ -128,15 +129,15 @@ def _nachfass_zeile(kandidat: Nachfasskandidat, heute: date) -> str:
 
 def _kompakter_block(kompakt: list[tuple[int, Treffer]], mindest_score: int) -> str:
     zeilen = "\n".join(
-        _kompakte_zeile(nummer, anzeige, bewertung) for nummer, (anzeige, bewertung) in kompakt
+        _kompakte_zeile(nummer, job_ad, assessment) for nummer, (job_ad, assessment) in kompakt
     )
     return f"## Weitere Treffer (Score unter {mindest_score})\n{zeilen}\n"
 
 
-def _kompakte_zeile(nummer: int, anzeige: Anzeige, bewertung: Bewertung) -> str:
+def _kompakte_zeile(nummer: int, job_ad: JobAd, assessment: Assessment) -> str:
     return (
-        f"{_zeilenanfang(nummer, anzeige)} – "
-        f"Score {bewertung.score}/5: {bewertung.kurzfazit} – {anzeige.link}"
+        f"{_zeilenanfang(nummer, job_ad)} – "
+        f"Score {assessment.score}/5: {assessment.kurzfazit} – {job_ad.link}"
     )
 
 
@@ -144,41 +145,41 @@ def _beworben_block(
     nummeriert: list[tuple[int, Treffer]], bewerbungen: Mapping[str, BereitsBeworben]
 ) -> str:
     zeilen = "\n".join(
-        _beworben_zeile(nummer, anzeige, bewertung, bewerbungen[anzeige.id])
-        for nummer, (anzeige, bewertung) in nummeriert
+        _beworben_zeile(nummer, job_ad, assessment, bewerbungen[job_ad.id])
+        for nummer, (job_ad, assessment) in nummeriert
     )
     return f"## Bereits beworben\n{zeilen}\n"
 
 
 def _beworben_zeile(
-    nummer: int, anzeige: Anzeige, bewertung: Bewertung, bewerbung: BereitsBeworben
+    nummer: int, job_ad: JobAd, assessment: Assessment, bewerbung: BereitsBeworben
 ) -> str:
     return (
-        f"{_zeilenanfang(nummer, anzeige)} – Score {bewertung.score}/5 – "
+        f"{_zeilenanfang(nummer, job_ad)} – Score {assessment.score}/5 – "
         f"{bewerbung.status}, beworben am {bewerbung.beworben_am:%d.%m.%Y} – "
-        f"{bewerbung.textvergleich} – {anzeige.link}"
+        f"{bewerbung.textvergleich} – {job_ad.link}"
     )
 
 
-def _zeilenanfang(nummer: int, anzeige: Anzeige) -> str:
-    firma = anzeige.firma or "unbekannt"
-    ort = anzeige.ort or "unbekannt"
-    return f"- **{nummer}.** {anzeige.titel} ({firma}, {ort})"
+def _zeilenanfang(nummer: int, job_ad: JobAd) -> str:
+    firma = job_ad.firma or "unbekannt"
+    ort = job_ad.ort or "unbekannt"
+    return f"- **{nummer}.** {job_ad.titel} ({firma}, {ort})"
 
 
-def _abschnitt(nummer: int, anzeige: Anzeige, bewertung: Bewertung) -> str:
+def _abschnitt(nummer: int, job_ad: JobAd, assessment: Assessment) -> str:
     zeilen = [
-        f"## {nummer}. {anzeige.titel} – Score {bewertung.score}/5",
-        f"- Firma: {anzeige.firma or 'unbekannt'}",
-        f"- Ort: {anzeige.ort or 'unbekannt'}",
-        f"- Link: {anzeige.link}",
-        f"- Kurzfazit: {bewertung.kurzfazit}",
+        f"## {nummer}. {job_ad.titel} – Score {assessment.score}/5",
+        f"- Firma: {job_ad.firma or 'unbekannt'}",
+        f"- Ort: {job_ad.ort or 'unbekannt'}",
+        f"- Link: {job_ad.link}",
+        f"- Kurzfazit: {assessment.kurzfazit}",
     ]
-    if bewertung.passt:
-        zeilen.append(f"- Passt: {', '.join(bewertung.passt)}")
-    if bewertung.passt_nicht:
-        zeilen.append(f"- Passt nicht: {', '.join(bewertung.passt_nicht)}")
-    if bewertung.luecken:
-        zeilen.append(f"- Lücken: {', '.join(bewertung.luecken)}")
+    if assessment.passt:
+        zeilen.append(f"- Passt: {', '.join(assessment.passt)}")
+    if assessment.passt_nicht:
+        zeilen.append(f"- Passt nicht: {', '.join(assessment.passt_nicht)}")
+    if assessment.luecken:
+        zeilen.append(f"- Lücken: {', '.join(assessment.luecken)}")
     zeilen.append("")
     return "\n".join(zeilen)

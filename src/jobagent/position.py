@@ -31,7 +31,7 @@ _RECHTSFORMEN = {
 }
 
 
-def stellen_schluessel(firma: str | None, titel: str) -> str:
+def position_key(firma: str | None, titel: str) -> str:
     """Bildet den Vergleichswert, an dem dieselbe Stelle erkannt wird.
 
     Ignoriert Schreibweise, Geschlechtsangaben im Titel, die Rechtsform der

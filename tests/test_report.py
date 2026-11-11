@@ -3,14 +3,15 @@
 from datetime import date, timedelta
 from pathlib import Path
 
-from jobagent.fetch import Anzeige, Quellenstatus
+from jobagent.fetch import Quellenstatus
+from jobagent.job_ad import JobAd
 from jobagent.report import BereitsBeworben, schreibe_report
-from jobagent.score import Bewertung
+from jobagent.score import Assessment
 from jobagent.store import Nachfasskandidat
 
 
-def _anzeige(id_: str, titel: str) -> Anzeige:
-    return Anzeige(
+def _job_ad(id_: str, titel: str) -> JobAd:
+    return JobAd(
         id=id_,
         titel=titel,
         firma="Beispiel GmbH",
@@ -23,8 +24,8 @@ def _schreibe_pfad(*args, **kwargs) -> Path:
     return schreibe_report(*args, **kwargs).pfad
 
 
-def _bewertung(score: int, kurzfazit: str = "Passt gut.") -> Bewertung:
-    return Bewertung(
+def _assessment(score: int, kurzfazit: str = "Passt gut.") -> Assessment:
+    return Assessment(
         score=score,
         passt=["Python"],
         passt_nicht=[],
@@ -35,9 +36,9 @@ def _bewertung(score: int, kurzfazit: str = "Passt gut.") -> Bewertung:
 
 def test_schreibe_report_sortiert_nach_score_absteigend(tmp_path: Path) -> None:
     treffer = [
-        (_anzeige("a-1", "Niedrig"), _bewertung(2)),
-        (_anzeige("a-2", "Hoch"), _bewertung(5)),
-        (_anzeige("a-3", "Mittel"), _bewertung(3)),
+        (_job_ad("a-1", "Niedrig"), _assessment(2)),
+        (_job_ad("a-2", "Hoch"), _assessment(5)),
+        (_job_ad("a-3", "Mittel"), _assessment(3)),
     ]
 
     pfad = _schreibe_pfad(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
@@ -52,9 +53,9 @@ def test_schreibe_report_sortiert_nach_score_absteigend(tmp_path: Path) -> None:
 
 def test_treffer_werden_in_rangfolge_ab_eins_nummeriert(tmp_path: Path) -> None:
     treffer = [
-        (_anzeige("a-1", "Niedrig"), _bewertung(2)),
-        (_anzeige("a-2", "Hoch"), _bewertung(5)),
-        (_anzeige("a-3", "Mittel"), _bewertung(3)),
+        (_job_ad("a-1", "Niedrig"), _assessment(2)),
+        (_job_ad("a-2", "Hoch"), _assessment(5)),
+        (_job_ad("a-3", "Mittel"), _assessment(3)),
     ]
 
     geschrieben = schreibe_report(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
@@ -68,8 +69,8 @@ def test_treffer_werden_in_rangfolge_ab_eins_nummeriert(tmp_path: Path) -> None:
 
 def test_treffer_unter_mindest_score_werden_einzeilig(tmp_path: Path) -> None:
     treffer = [
-        (_anzeige("a-1", "Niedrig"), _bewertung(2, "Zu weit weg.")),
-        (_anzeige("a-2", "Grenzfall"), _bewertung(3)),
+        (_job_ad("a-1", "Niedrig"), _assessment(2, "Zu weit weg.")),
+        (_job_ad("a-2", "Grenzfall"), _assessment(3)),
     ]
 
     pfad = _schreibe_pfad(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path, mindest_score=3)
@@ -85,7 +86,7 @@ def test_treffer_unter_mindest_score_werden_einzeilig(tmp_path: Path) -> None:
 
 
 def test_nur_niedrige_treffer_beginnen_bei_nummer_eins(tmp_path: Path) -> None:
-    treffer = [(_anzeige("a-1", "Niedrig"), _bewertung(1))]
+    treffer = [(_job_ad("a-1", "Niedrig"), _assessment(1))]
 
     geschrieben = schreibe_report(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
 
@@ -95,7 +96,7 @@ def test_nur_niedrige_treffer_beginnen_bei_nummer_eins(tmp_path: Path) -> None:
 
 def test_ohne_niedrige_treffer_fehlt_der_kompakte_block(tmp_path: Path) -> None:
     pfad = _schreibe_pfad(
-        [(_anzeige("a-1", "Niedrig"), _bewertung(1))],
+        [(_job_ad("a-1", "Niedrig"), _assessment(1))],
         date(2026, 11, 5),
         ausgabe_verzeichnis=tmp_path,
         mindest_score=1,
@@ -107,10 +108,10 @@ def test_ohne_niedrige_treffer_fehlt_der_kompakte_block(tmp_path: Path) -> None:
 
 
 def test_kompakte_zeile_ohne_firma_und_ort(tmp_path: Path) -> None:
-    anzeige = Anzeige(id="a-1", titel="Niedrig", firma=None, ort=None, link="https://x.example")
+    job_ad = JobAd(id="a-1", titel="Niedrig", firma=None, ort=None, link="https://x.example")
 
     pfad = _schreibe_pfad(
-        [(anzeige, _bewertung(1))], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path
+        [(job_ad, _assessment(1))], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path
     )
 
     assert "Niedrig (unbekannt, unbekannt)" in pfad.read_text(encoding="utf-8")
@@ -118,10 +119,10 @@ def test_kompakte_zeile_ohne_firma_und_ort(tmp_path: Path) -> None:
 
 def test_jeder_report_beginnt_wieder_bei_eins(tmp_path: Path) -> None:
     tag = date(2026, 11, 5)
-    schreibe_report([(_anzeige("a-1", "Erster"), _bewertung(4))], tag, ausgabe_verzeichnis=tmp_path)
+    schreibe_report([(_job_ad("a-1", "Erster"), _assessment(4))], tag, ausgabe_verzeichnis=tmp_path)
 
     zweiter = schreibe_report(
-        [(_anzeige("a-2", "Zweiter"), _bewertung(3))], tag, ausgabe_verzeichnis=tmp_path
+        [(_job_ad("a-2", "Zweiter"), _assessment(3))], tag, ausgabe_verzeichnis=tmp_path
     )
 
     assert zweiter.nummern == {"a-2": 1}
@@ -135,7 +136,7 @@ def test_report_ohne_treffer_hat_keine_nummern(tmp_path: Path) -> None:
 
 
 def test_schreibe_report_enthaelt_alle_pflichtfelder(tmp_path: Path) -> None:
-    treffer = [(_anzeige("a-1", "Softwareentwickler"), _bewertung(4, "Gute Passung."))]
+    treffer = [(_job_ad("a-1", "Softwareentwickler"), _assessment(4, "Gute Passung."))]
 
     pfad = _schreibe_pfad(treffer, date(2026, 11, 5), ausgabe_verzeichnis=tmp_path)
     inhalt = pfad.read_text(encoding="utf-8")
@@ -161,11 +162,11 @@ def test_schreibe_report_ohne_treffer_schreibt_notiz_statt_leerer_datei(tmp_path
 def test_zweiter_lauf_am_selben_tag_ueberschreibt_ersten_report_nicht(tmp_path: Path) -> None:
     tag = date(2026, 11, 5)
     erster = _schreibe_pfad(
-        [(_anzeige("a-1", "Erster Lauf"), _bewertung(4))], tag, ausgabe_verzeichnis=tmp_path
+        [(_job_ad("a-1", "Erster Lauf"), _assessment(4))], tag, ausgabe_verzeichnis=tmp_path
     )
 
     zweiter = _schreibe_pfad(
-        [(_anzeige("a-2", "Zweiter Lauf"), _bewertung(3))], tag, ausgabe_verzeichnis=tmp_path
+        [(_job_ad("a-2", "Zweiter Lauf"), _assessment(3))], tag, ausgabe_verzeichnis=tmp_path
     )
 
     assert erster == tmp_path / "2026-11-05.md"
@@ -177,7 +178,7 @@ def test_zweiter_lauf_am_selben_tag_ueberschreibt_ersten_report_nicht(tmp_path: 
 def test_lauf_ohne_treffer_ueberschreibt_vorhandenen_report_nicht(tmp_path: Path) -> None:
     tag = date(2026, 11, 5)
     erster = _schreibe_pfad(
-        [(_anzeige("a-1", "Erster Lauf"), _bewertung(4))], tag, ausgabe_verzeichnis=tmp_path
+        [(_job_ad("a-1", "Erster Lauf"), _assessment(4))], tag, ausgabe_verzeichnis=tmp_path
     )
 
     zweiter = _schreibe_pfad([], tag, ausgabe_verzeichnis=tmp_path)
@@ -200,7 +201,7 @@ def test_quellenstatus_steht_vor_den_treffern(tmp_path: Path) -> None:
     quellen = [Quellenstatus("Arbeitnow", 3, []), Quellenstatus("Bundesagentur", 1, [])]
 
     pfad = _schreibe_pfad(
-        [(_anzeige("a-1", "Stelle"), _bewertung(4))],
+        [(_job_ad("a-1", "Stelle"), _assessment(4))],
         date(2026, 11, 5),
         ausgabe_verzeichnis=tmp_path,
         quellen=quellen,
@@ -237,8 +238,8 @@ _ABSAGE = BereitsBeworben("absage", date(2026, 10, 1), "Text identisch")
 
 def test_bereits_beworben_steht_im_eigenen_block_am_ende(tmp_path: Path) -> None:
     treffer = [
-        (_anzeige("a-1", "Beworben"), _bewertung(5)),
-        (_anzeige("a-2", "Offen"), _bewertung(4)),
+        (_job_ad("a-1", "Beworben"), _assessment(5)),
+        (_job_ad("a-2", "Offen"), _assessment(4)),
     ]
 
     pfad = _schreibe_pfad(
@@ -261,9 +262,9 @@ def test_bereits_beworben_steht_im_eigenen_block_am_ende(tmp_path: Path) -> None
 
 def test_nummern_laufen_ueber_alle_bloecke(tmp_path: Path) -> None:
     treffer = [
-        (_anzeige("a-1", "Beworben"), _bewertung(5)),
-        (_anzeige("a-2", "Voll"), _bewertung(4)),
-        (_anzeige("a-3", "Kompakt"), _bewertung(1)),
+        (_job_ad("a-1", "Beworben"), _assessment(5)),
+        (_job_ad("a-2", "Voll"), _assessment(4)),
+        (_job_ad("a-3", "Kompakt"), _assessment(1)),
     ]
 
     geschrieben = schreibe_report(
@@ -280,7 +281,7 @@ def test_nummern_laufen_ueber_alle_bloecke(tmp_path: Path) -> None:
 
 def test_ohne_bewerbungen_fehlt_der_block(tmp_path: Path) -> None:
     pfad = _schreibe_pfad(
-        [(_anzeige("a-1", "Offen"), _bewertung(4))],
+        [(_job_ad("a-1", "Offen"), _assessment(4))],
         date(2026, 11, 5),
         ausgabe_verzeichnis=tmp_path,
     )
@@ -290,7 +291,7 @@ def test_ohne_bewerbungen_fehlt_der_block(tmp_path: Path) -> None:
 
 def test_nur_bereits_beworbene_treffer(tmp_path: Path) -> None:
     geschrieben = schreibe_report(
-        [(_anzeige("a-1", "Beworben"), _bewertung(2))],
+        [(_job_ad("a-1", "Beworben"), _assessment(2))],
         date(2026, 11, 5),
         ausgabe_verzeichnis=tmp_path,
         bewerbungen={"a-1": _ABSAGE},
@@ -317,7 +318,7 @@ def _nachfassen(firma: str | None = "Firma X", vor_tagen: int = 14) -> Nachfassk
 
 def test_nachfass_hinweis_steht_nach_quellen_und_vor_treffern(tmp_path: Path) -> None:
     pfad = _schreibe_pfad(
-        [(_anzeige("a-1", "Stelle"), _bewertung(4))],
+        [(_job_ad("a-1", "Stelle"), _assessment(4))],
         date(2026, 11, 20),
         ausgabe_verzeichnis=tmp_path,
         quellen=[Quellenstatus("Arbeitnow", 0, [])],

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import anthropic
 
-from jobagent.fetch import Anzeige
+from jobagent.job_ad import JobAd
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ _SYSTEM_PROMPT = (
 
 
 @dataclass(frozen=True, slots=True)
-class Bewertung:
+class Assessment:
     score: int
     passt: list[str]
     passt_nicht: list[str]
@@ -56,12 +56,12 @@ class Bewertung:
     kurzfazit: str
 
 
-def score_anzeige(
-    anzeige: Anzeige,
+def score_job_ad(
+    job_ad: JobAd,
     profil: str,
     *,
     client: anthropic.Anthropic | None = None,
-) -> Bewertung | None:
+) -> Assessment | None:
     """Bewertet eine Anzeige gegen das Suchprofil mittels Claude Haiku.
 
     Gibt None zurueck und loggt, wenn die Anthropic-API nicht erreichbar ist
@@ -69,7 +69,7 @@ def score_anzeige(
     """
     aktiver_client = client or anthropic.Anthropic()
 
-    nutzertext = f"Suchprofil:\n{profil}\n\nStellenanzeige:\n{_anzeige_zu_text(anzeige)}"
+    nutzertext = f"Suchprofil:\n{profil}\n\nStellenanzeige:\n{_job_ad_as_text(job_ad)}"
     try:
         antwort = aktiver_client.messages.create(
             model=_MODEL,
@@ -82,44 +82,42 @@ def score_anzeige(
     except (anthropic.AnthropicError, TypeError):
         # TypeError: die SDK wirft dies statt eines AnthropicError, wenn z.B.
         # kein ANTHROPIC_API_KEY gesetzt ist (Validierung beim Request-Aufbau).
-        logger.exception("Anthropic-API-Anfrage fehlgeschlagen (anzeige=%r)", anzeige.id)
+        logger.exception("Anthropic-API-Anfrage fehlgeschlagen (anzeige=%r)", job_ad.id)
         return None
 
-    return _zu_bewertung(antwort, anzeige.id)
+    return _to_assessment(antwort, job_ad.id)
 
 
-def _anzeige_zu_text(anzeige: Anzeige) -> str:
+def _job_ad_as_text(job_ad: JobAd) -> str:
     zeilen = [
-        f"Titel: {anzeige.titel}",
-        f"Firma: {anzeige.firma or 'unbekannt'}",
-        f"Ort: {anzeige.ort or 'unbekannt'}",
+        f"Titel: {job_ad.titel}",
+        f"Firma: {job_ad.firma or 'unbekannt'}",
+        f"Ort: {job_ad.ort or 'unbekannt'}",
     ]
-    if anzeige.beschreibung:
-        zeilen.append(f"Beschreibung: {anzeige.beschreibung}")
+    if job_ad.beschreibung:
+        zeilen.append(f"Beschreibung: {job_ad.beschreibung}")
     return "\n".join(zeilen)
 
 
-def _zu_bewertung(antwort: anthropic.types.Message, anzeige_id: str) -> Bewertung | None:
+def _to_assessment(antwort: anthropic.types.Message, job_ad_id: str) -> Assessment | None:
     tool_use = next((block for block in antwort.content if block.type == "tool_use"), None)
     if tool_use is None:
-        logger.error("Keine Tool-Antwort von Claude erhalten (anzeige=%r)", anzeige_id)
+        logger.error("Keine Tool-Antwort von Claude erhalten (anzeige=%r)", job_ad_id)
         return None
 
     try:
         return _validiere(tool_use.input)
     except (KeyError, TypeError, ValueError):
-        logger.exception(
-            "Ungueltige Bewertungsantwort (anzeige=%r): %r", anzeige_id, tool_use.input
-        )
+        logger.exception("Ungueltige Bewertungsantwort (anzeige=%r): %r", job_ad_id, tool_use.input)
         return None
 
 
-def _validiere(daten: dict) -> Bewertung:
+def _validiere(daten: dict) -> Assessment:
     score = int(daten["score"])
     if not 1 <= score <= 5:
         raise ValueError(f"score ausserhalb 1-5: {score}")
 
-    return Bewertung(
+    return Assessment(
         score=score,
         passt=_als_string_liste(daten["passt"]),
         passt_nicht=_als_string_liste(daten["passt_nicht"]),

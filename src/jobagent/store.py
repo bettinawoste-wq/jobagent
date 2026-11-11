@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from jobagent.fetch import Anzeige
-from jobagent.score import Bewertung
+from jobagent.job_ad import JobAd
+from jobagent.score import Assessment
 
 BEWORBEN = "beworben"
 ZURUECKGEZOGEN = "zurückgezogen"
@@ -120,9 +120,7 @@ def is_new(conn: sqlite3.Connection, anzeige_id: str) -> bool:
     return row is None
 
 
-def mark_seen(
-    conn: sqlite3.Connection, anzeige: Anzeige, bewertung: Bewertung, datum: date
-) -> None:
+def mark_seen(conn: sqlite3.Connection, job_ad: JobAd, assessment: Assessment, datum: date) -> None:
     """Merkt eine Anzeige als gesehen, samt Bewertung und Hash der Beschreibung.
 
     Der Volltext der Anzeige wird nicht gespeichert.
@@ -132,14 +130,14 @@ def mark_seen(
         "(id, titel, firma, link, score, datum, beschreibung_hash, bewertung) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            anzeige.id,
-            anzeige.titel,
-            anzeige.firma,
-            anzeige.link,
-            bewertung.score,
+            job_ad.id,
+            job_ad.titel,
+            job_ad.firma,
+            job_ad.link,
+            assessment.score,
             datum.isoformat(),
-            beschreibung_hash(anzeige.beschreibung),
-            _bewertung_als_json(bewertung),
+            beschreibung_hash(job_ad.beschreibung),
+            _assessment_as_json(assessment),
         ),
     )
     conn.commit()
@@ -302,13 +300,13 @@ def beschreibung_hash(beschreibung: str | None) -> str | None:
     return hashlib.sha256(normalisiert.encode("utf-8")).hexdigest()
 
 
-def _bewertung_als_json(bewertung: Bewertung) -> str:
+def _assessment_as_json(assessment: Assessment) -> str:
     return json.dumps(
         {
-            "passt": bewertung.passt,
-            "passt_nicht": bewertung.passt_nicht,
-            "luecken": bewertung.luecken,
-            "kurzfazit": bewertung.kurzfazit,
+            "passt": assessment.passt,
+            "passt_nicht": assessment.passt_nicht,
+            "luecken": assessment.luecken,
+            "kurzfazit": assessment.kurzfazit,
         },
         ensure_ascii=False,
     )

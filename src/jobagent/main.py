@@ -12,7 +12,8 @@ from datetime import date
 from pathlib import Path
 
 from jobagent import demo, fetch, report, score, store
-from jobagent.stelle import stellen_schluessel
+from jobagent.job_ad import JobAd
+from jobagent.position import position_key
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ _PROFILVORSCHLAG_AB_FEEDBACK = 5
 Suche = Callable[[str], fetch.Suchergebnis]
 """Sucht in einer Quelle nach einem Stichwort (`was`)."""
 
-Bewerte = Callable[[fetch.Anzeige], score.Bewertung | None]
+Bewerte = Callable[[JobAd], score.Assessment | None]
 """Bewertet eine Anzeige; None heisst: diesmal nicht bewertbar, naechster Lauf versucht es neu."""
 
 
@@ -53,13 +54,13 @@ def main(
     if quellen is None:
         quellen = _quellen(konfig)
     if bewerte is None:
-        bewerte = _haiku_bewertung(profil_pfad.read_text(encoding="utf-8"))
+        bewerte = _haiku_assessment(profil_pfad.read_text(encoding="utf-8"))
     heute = date.today()
 
     conn = store.connect(db_pfad)
     try:
-        anzeigen, quellenstatus = _suche_alle(quellen, konfig.get("was", []))
-        neue_treffer = _neue_treffer(conn, anzeigen, bewerte, heute)
+        job_ads, quellenstatus = _suche_alle(quellen, konfig.get("was", []))
+        neue_treffer = _neue_treffer(conn, job_ads, bewerte, heute)
         geschrieben = report.schreibe_report(
             neue_treffer,
             heute,
@@ -86,31 +87,29 @@ def _lade_konfig(pfad: Path) -> dict:
         return tomllib.load(datei)
 
 
-def _haiku_bewertung(profil: str) -> Bewerte:
-    return lambda anzeige: score.score_anzeige(anzeige, profil)
+def _haiku_assessment(profil: str) -> Bewerte:
+    return lambda job_ad: score.score_job_ad(job_ad, profil)
 
 
 def _neue_treffer(
     conn: sqlite3.Connection,
-    anzeigen: list[fetch.Anzeige],
+    job_ads: list[JobAd],
     bewerte: Bewerte,
     heute: date,
 ) -> list[report.Treffer]:
     treffer: list[report.Treffer] = []
 
-    for anzeige in anzeigen:
-        if not store.is_new(conn, anzeige.id):
+    for job_ad in job_ads:
+        if not store.is_new(conn, job_ad.id):
             continue
 
-        bewertung = bewerte(anzeige)
-        if bewertung is None:
-            logger.warning(
-                "Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", anzeige.id
-            )
+        assessment = bewerte(job_ad)
+        if assessment is None:
+            logger.warning("Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", job_ad.id)
             continue
 
-        store.mark_seen(conn, anzeige, bewertung, heute)
-        treffer.append((anzeige, bewertung))
+        store.mark_seen(conn, job_ad, assessment, heute)
+        treffer.append((job_ad, assessment))
 
     return treffer
 
@@ -124,22 +123,22 @@ def _bereits_beworben(
     conn: sqlite3.Connection, treffer: list[report.Treffer]
 ) -> dict[str, report.BereitsBeworben]:
     ergebnis: dict[str, report.BereitsBeworben] = {}
-    for anzeige, _ in treffer:
-        if not anzeige.firma:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
+    for job_ad, _ in treffer:
+        if not job_ad.firma:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
             continue
-        bewerbung = store.letzte_bewerbung(conn, stellen_schluessel(anzeige.firma, anzeige.titel))
+        bewerbung = store.letzte_bewerbung(conn, position_key(job_ad.firma, job_ad.titel))
         if bewerbung is not None:
-            ergebnis[anzeige.id] = report.BereitsBeworben(
+            ergebnis[job_ad.id] = report.BereitsBeworben(
                 bewerbung.status,
                 bewerbung.beworben_am,
-                _textvergleich(
-                    store.beschreibung_hash(anzeige.beschreibung), bewerbung.beschreibung_hash
+                _text_differs(
+                    store.beschreibung_hash(job_ad.beschreibung), bewerbung.beschreibung_hash
                 ),
             )
     return ergebnis
 
 
-def _textvergleich(neu: str | None, bei_bewerbung: str | None) -> str:
+def _text_differs(neu: str | None, bei_bewerbung: str | None) -> str:
     if neu is None or bei_bewerbung is None:
         return "Text nicht vergleichbar"
     return "Text identisch" if neu == bei_bewerbung else "Text weicht von deiner Bewerbung ab"
@@ -147,8 +146,8 @@ def _textvergleich(neu: str | None, bei_bewerbung: str | None) -> str:
 
 def _suche_alle(
     quellen: Mapping[str, Suche], suchbegriffe: list[str]
-) -> tuple[list[fetch.Anzeige], list[fetch.Quellenstatus]]:
-    gefunden: dict[str, fetch.Anzeige] = {}
+) -> tuple[list[JobAd], list[fetch.Quellenstatus]]:
+    gefunden: dict[str, JobAd] = {}
     status: list[fetch.Quellenstatus] = []
 
     for name, suche in quellen.items():
@@ -157,9 +156,9 @@ def _suche_alle(
         for was in suchbegriffe:
             ergebnis = _sichere_suche(suche, was, name)
             fehler.update(dict.fromkeys(ergebnis.fehler))
-            for anzeige in ergebnis.anzeigen:
-                ids.add(anzeige.id)
-                gefunden.setdefault(anzeige.id, anzeige)
+            for job_ad in ergebnis.job_ads:
+                ids.add(job_ad.id)
+                gefunden.setdefault(job_ad.id, job_ad)
         status.append(fetch.Quellenstatus(name, len(ids), list(fehler)))
 
     return list(gefunden.values()), status

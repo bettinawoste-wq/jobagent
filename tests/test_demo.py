@@ -26,7 +26,7 @@ def leeres_projekt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         raise AssertionError("Demo-Lauf darf kein Modell fragen")
 
     monkeypatch.setattr(httpx.Client, "send", kein_netz)
-    monkeypatch.setattr(score, "score_anzeige", kein_modell)
+    monkeypatch.setattr(score, "score_job_ad", kein_modell)
     return tmp_path
 
 

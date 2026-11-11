@@ -9,9 +9,9 @@ import anthropic
 import pytest
 
 from jobagent import profilvorschlag, store
-from jobagent.fetch import Anzeige
+from jobagent.job_ad import JobAd
 from jobagent.profilvorschlag import Aenderung, erstelle_vorschlag, wende_an
-from jobagent.score import Bewertung
+from jobagent.score import Assessment
 
 _PROFIL = "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2\n"
 _JETZT = datetime(2026, 11, 8, 15, 1, 2)
@@ -66,12 +66,12 @@ def projekt(tmp_path: Path) -> dict[str, Path]:
 
 
 def _feedback_anlegen(db: Path, anzeige_id: str) -> None:
-    bewertung = Bewertung(
+    assessment = Assessment(
         score=2, passt=["Python"], passt_nicht=["Zeitarbeit"], luecken=[], kurzfazit="Eher nein."
     )
-    anzeige = Anzeige(id=anzeige_id, titel="Consultant", firma="KPMG AG", ort="M", link="l")
+    job_ad = JobAd(id=anzeige_id, titel="Consultant", firma="KPMG AG", ort="M", link="l")
     conn = store.connect(db)
-    store.mark_seen(conn, anzeige, bewertung, date(2026, 11, 8))
+    store.mark_seen(conn, job_ad, assessment, date(2026, 11, 8))
     store.speichere_feedback(conn, anzeige_id, 3, "KPMG ist keine Zeitarbeit", date(2026, 11, 8))
     conn.close()
 

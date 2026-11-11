@@ -11,9 +11,9 @@ from collections.abc import Callable
 from datetime import date, timedelta
 
 from jobagent import fetch, store
-from jobagent.fetch import Anzeige
-from jobagent.score import Bewertung
-from jobagent.stelle import stellen_schluessel
+from jobagent.job_ad import JobAd
+from jobagent.position import position_key
+from jobagent.score import Assessment
 
 KONFIG: dict = {
     "was": ["Full-Stack-Entwickler", "IT Consultant", "Embedded Entwickler", "Data Scientist"],
@@ -25,14 +25,14 @@ KONFIG: dict = {
 _LINK = "https://example.com/stellen/"
 
 
-def _anzeige(id_: str, titel: str, firma: str, ort: str, beschreibung: str) -> Anzeige:
-    return Anzeige(id_, titel, firma, ort, f"{_LINK}{id_}", beschreibung)
+def _job_ad(id_: str, titel: str, firma: str, ort: str, beschreibung: str) -> JobAd:
+    return JobAd(id_, titel, firma, ort, f"{_LINK}{id_}", beschreibung)
 
 
 # Je Quelle: Suchbegriff -> Anzeigen, die diese Demo-Quelle dafuer "findet".
 _BUNDESAGENTUR = {
     "Full-Stack-Entwickler": [
-        _anzeige(
+        _job_ad(
             "demo-ba-1",
             "Full-Stack-Entwickler (m/w/d) Python/TypeScript",
             "Fiktiva Software GmbH",
@@ -41,7 +41,7 @@ _BUNDESAGENTUR = {
         ),
     ],
     "IT Consultant": [
-        _anzeige(
+        _job_ad(
             "demo-ba-2",
             "IT Consultant (m/w/d) Prozessdigitalisierung",
             "Exempla Consulting GmbH",
@@ -50,7 +50,7 @@ _BUNDESAGENTUR = {
         ),
     ],
     "Embedded Entwickler": [
-        _anzeige(
+        _job_ad(
             "demo-ba-3",
             "Embedded-Softwareentwickler C++/Qt (m/w/d)",
             "Platzhalter Systems AG",
@@ -62,7 +62,7 @@ _BUNDESAGENTUR = {
 
 _ARBEITNOW = {
     "Full-Stack-Entwickler": [
-        _anzeige(
+        _job_ad(
             "demo-an-1",
             "Python Developer (w/m/d)",
             "Beispiel Tech",
@@ -71,7 +71,7 @@ _ARBEITNOW = {
         ),
     ],
     "Data Scientist": [
-        _anzeige(
+        _job_ad(
             "demo-an-2",
             "Data Scientist (m/w/d)",
             "Lorem Data GmbH",
@@ -80,7 +80,7 @@ _ARBEITNOW = {
         ),
     ],
     "IT Consultant": [
-        _anzeige(
+        _job_ad(
             "demo-an-3",
             "SAP-Berater FI/CO (m/w/d)",
             "Musterfirma Beratung GmbH",
@@ -92,7 +92,7 @@ _ARBEITNOW = {
 
 _WATCHLIST = {
     "Full-Stack-Entwickler": [
-        _anzeige(
+        _job_ad(
             "demo-wl-1",
             "DevOps Engineer (m/w/d)",
             "Testfeld Robotics GmbH",
@@ -101,7 +101,7 @@ _WATCHLIST = {
         ),
     ],
     "Data Scientist": [
-        _anzeige(
+        _job_ad(
             "demo-wl-2",
             "Werkstudent Data Analytics (m/w/d)",
             "Testfeld Robotics GmbH",
@@ -110,7 +110,7 @@ _WATCHLIST = {
         ),
     ],
 }
-_FRUEHERE_ANZEIGE = _anzeige(
+_EARLIER_JOB_AD = _job_ad(
     "demo-ba-alt",
     "Python Developer (m/w/d)",
     "Beispiel Tech GmbH",
@@ -120,57 +120,57 @@ _FRUEHERE_ANZEIGE = _anzeige(
 
 _WATCHLIST_FEHLER = "Musterwerk AG: Board nicht erreichbar"
 
-BEWERTUNGEN: dict[str, Bewertung] = {
-    "demo-ba-1": Bewertung(
+ASSESSMENTS: dict[str, Assessment] = {
+    "demo-ba-1": Assessment(
         5,
         ["Python und JavaScript/TypeScript", "Full-Stack wie gesucht", "Hybrid in Beispielstadt"],
         [],
         [],
         "Sehr guter Match für die erste Wunschrolle.",
     ),
-    "demo-an-1": Bewertung(
+    "demo-an-1": Assessment(
         4,
         ["Python, SQL", "Remote"],
         [],
         ["Kubernetes"],
         "Passt gut, Kubernetes wäre neu.",
     ),
-    "demo-an-2": Bewertung(
+    "demo-an-2": Assessment(
         4,
         ["Data Science mit Python", "Remote"],
         [],
         ["scikit-learn nur in Grundzügen"],
         "Gute Passung zur vierten Wunschrolle.",
     ),
-    "demo-ba-2": Bewertung(
+    "demo-ba-2": Assessment(
         3,
         ["IT Consultant als Wunschrolle", "Anforderungsanalyse"],
         ["Viel Präsenz beim Kunden"],
         [],
         "Rolle passt, Arbeitsmodell nur teilweise.",
     ),
-    "demo-ba-3": Bewertung(
+    "demo-ba-3": Assessment(
         3,
         ["C++ und Qt"],
         ["Vollständig vor Ort", "Musterhausen liegt am Rand des Umkreises"],
         [],
         "Technisch passend, Arbeitsmodell schwächer.",
     ),
-    "demo-wl-1": Bewertung(
+    "demo-wl-1": Assessment(
         3,
         ["Linux, CI/CD", "Hybrid"],
         [],
         ["Container-Orchestrierung"],
         "Solide Alternative in Richtung DevOps.",
     ),
-    "demo-wl-2": Bewertung(
+    "demo-wl-2": Assessment(
         2,
         ["SQL und Python"],
         ["Werkstudentenstelle trotz Berufserfahrung"],
         [],
         "Inhaltlich nah, aber falsches Level.",
     ),
-    "demo-an-3": Bewertung(
+    "demo-an-3": Assessment(
         1,
         [],
         ["80 % Reisetätigkeit"],
@@ -191,13 +191,13 @@ def quellen() -> dict[str, Suche]:
     }
 
 
-def _suche(anzeigen: dict[str, list[Anzeige]], fehler: list[str] | None = None) -> Suche:
-    return lambda was: fetch.Suchergebnis(list(anzeigen.get(was, [])), list(fehler or []))
+def _suche(job_ads: dict[str, list[JobAd]], fehler: list[str] | None = None) -> Suche:
+    return lambda was: fetch.Suchergebnis(list(job_ads.get(was, [])), list(fehler or []))
 
 
-def bewerte(anzeige: Anzeige) -> Bewertung | None:
+def bewerte(job_ad: JobAd) -> Assessment | None:
     """Vorgefertigte Bewertung statt Modellaufruf."""
-    return BEWERTUNGEN.get(anzeige.id)
+    return ASSESSMENTS.get(job_ad.id)
 
 
 def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
@@ -206,7 +206,7 @@ def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
     store.lege_bewerbung_an(
         conn,
         store.NeueBewerbung(
-            stellen_schluessel("Datenwerk Muster GmbH", "Data Engineer (m/w/d)"),
+            position_key("Datenwerk Muster GmbH", "Data Engineer (m/w/d)"),
             "Datenwerk Muster GmbH",
             "Data Engineer (m/w/d)",
             None,
@@ -218,14 +218,14 @@ def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
     # Bewerbung auf eine fruehere Anzeige derselben Stelle: Die neue Anzeige von Arbeitnow
     # (demo-an-1) schreibt Firma und Titel anders und hat einen anderen Text.
     beworben_am = heute - timedelta(days=35)
-    store.mark_seen(conn, _FRUEHERE_ANZEIGE, BEWERTUNGEN["demo-an-1"], beworben_am)
+    store.mark_seen(conn, _EARLIER_JOB_AD, ASSESSMENTS["demo-an-1"], beworben_am)
     store.lege_bewerbung_an(
         conn,
         store.NeueBewerbung(
-            stellen_schluessel(_FRUEHERE_ANZEIGE.firma, _FRUEHERE_ANZEIGE.titel),
-            _FRUEHERE_ANZEIGE.firma,
-            _FRUEHERE_ANZEIGE.titel,
-            _FRUEHERE_ANZEIGE.id,
+            position_key(_EARLIER_JOB_AD.firma, _EARLIER_JOB_AD.titel),
+            _EARLIER_JOB_AD.firma,
+            _EARLIER_JOB_AD.titel,
+            _EARLIER_JOB_AD.id,
         ),
         "gespräch",
         beworben_am,

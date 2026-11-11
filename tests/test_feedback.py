@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from jobagent import feedback, store
-from jobagent.fetch import Anzeige
-from jobagent.score import Bewertung
-from jobagent.stelle import stellen_schluessel
+from jobagent.job_ad import JobAd
+from jobagent.position import position_key
+from jobagent.score import Assessment
 
 _HEUTE = date(2026, 11, 8)
 _REPORT = "2026-11-06"
@@ -17,11 +17,11 @@ _REPORT = "2026-11-06"
 @pytest.fixture
 def db(tmp_path: Path) -> Path:
     pfad = tmp_path / "jobagent.db"
-    bewertung = Bewertung(score=3, passt=[], passt_nicht=[], luecken=[], kurzfazit="Geht.")
+    assessment = Assessment(score=3, passt=[], passt_nicht=[], luecken=[], kurzfazit="Geht.")
     conn = store.connect(pfad)
     for anzeige_id, titel in [("a-1", "Data Engineer (m/w/d)"), ("a-2", "Consultant")]:
-        anzeige = Anzeige(id=anzeige_id, titel=titel, firma="Beispiel GmbH", ort="M", link="l")
-        store.mark_seen(conn, anzeige, bewertung, date(2026, 11, 6))
+        job_ad = JobAd(id=anzeige_id, titel=titel, firma="Beispiel GmbH", ort="M", link="l")
+        store.mark_seen(conn, job_ad, assessment, date(2026, 11, 6))
     store.merke_treffernummern(conn, _REPORT, {"a-1": 1, "a-2": 2})
     conn.close()
     return pfad
@@ -59,7 +59,7 @@ def test_bewerbung_merkt_sich_stelle_firma_und_titel(db: Path) -> None:
 
     assert _abfrage(db, "SELECT stelle, firma, titel FROM bewerbungen") == [
         (
-            stellen_schluessel("Beispiel GmbH", "Data Engineer"),
+            position_key("Beispiel GmbH", "Data Engineer"),
             "Beispiel GmbH",
             "Data Engineer (m/w/d)",
         )
@@ -168,7 +168,7 @@ def test_manuelle_bewerbung_hat_keine_anzeige(db: Path) -> None:
     assert _lauf(db, "beworben", "--firma", "Firma X", "--titel", "Dev (m/w/d)") == 0
 
     assert _abfrage(db, "SELECT stelle, firma, titel, anzeige_id, status FROM bewerbungen") == [
-        (stellen_schluessel("Firma X", "Dev"), "Firma X", "Dev (m/w/d)", None, "beworben")
+        (position_key("Firma X", "Dev"), "Firma X", "Dev (m/w/d)", None, "beworben")
     ]
 
 

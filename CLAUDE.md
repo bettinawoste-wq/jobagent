@@ -15,7 +15,8 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md` (weitere Läufe am Tag: `-2`, `-3`, nie überschreiben), sortiert nach Score, unter `mindest_score` nur einzeilig, bereits beworbene Stellen im eigenen Block am Ende
 - `src/jobagent/main.py`: Ablauf: fetch, dedupe, score, report
 - `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
-- `src/jobagent/stelle.py`: erkennt dieselbe Stelle über normalisierte Firma + Titel
+- `src/jobagent/job_ad.py`: die Anzeige (`JobAd`)
+- `src/jobagent/position.py`: erkennt dieselbe Stelle über normalisierte Firma + Titel (`position_key`)
 - `src/jobagent/profilvorschlag.py`: leitet aus Feedback Änderungen an `profile.md` ab (Diff, Bestätigung, Sicherung)
 - `src/jobagent/demo.py`: Demo-Lauf mit erfundenen Anzeigen und vorgefertigten Bewertungen (öffentlich, im README zitiert: nur Fantasiefirmen und `example.com`)
 - `tests/`: Tests, Beispielantworten liegen in `tests/fixtures/`

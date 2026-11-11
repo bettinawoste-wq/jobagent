@@ -1,8 +1,8 @@
-"""Tests fuer stelle.py: Wann gelten zwei Anzeigen als dieselbe Stelle?"""
+"""Tests fuer position.py: Wann gelten zwei Anzeigen als dieselbe Stelle?"""
 
 import pytest
 
-from jobagent.stelle import stellen_schluessel
+from jobagent.position import position_key
 
 
 @pytest.mark.parametrize(
@@ -24,7 +24,7 @@ from jobagent.stelle import stellen_schluessel
     ],
 )
 def test_gleiche_stelle(firma_a: str, titel_a: str, firma_b: str, titel_b: str) -> None:
-    assert stellen_schluessel(firma_a, titel_a) == stellen_schluessel(firma_b, titel_b)
+    assert position_key(firma_a, titel_a) == position_key(firma_b, titel_b)
 
 
 @pytest.mark.parametrize(
@@ -38,16 +38,16 @@ def test_gleiche_stelle(firma_a: str, titel_a: str, firma_b: str, titel_b: str) 
     ],
 )
 def test_verschiedene_stellen(firma_a: str, titel_a: str, firma_b: str, titel_b: str) -> None:
-    assert stellen_schluessel(firma_a, titel_a) != stellen_schluessel(firma_b, titel_b)
+    assert position_key(firma_a, titel_a) != position_key(firma_b, titel_b)
 
 
 def test_firma_die_nur_aus_rechtsform_besteht_bleibt_erhalten() -> None:
-    assert stellen_schluessel("AG", "Dev") == "ag|dev"
+    assert position_key("AG", "Dev") == "ag|dev"
 
 
 def test_titel_der_nur_aus_firma_besteht_bleibt_erhalten() -> None:
-    assert stellen_schluessel("Firma X", "Firma X:") == "firma x|firma x"
+    assert position_key("Firma X", "Firma X:") == "firma x|firma x"
 
 
 def test_fehlende_firma_ist_erlaubt() -> None:
-    assert stellen_schluessel(None, "Dev") == "|dev"
+    assert position_key(None, "Dev") == "|dev"

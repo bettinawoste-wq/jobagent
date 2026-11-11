@@ -10,27 +10,27 @@ import httpx
 import pytest
 
 from jobagent import fetch
-from jobagent.fetch import Anzeige
+from jobagent.job_ad import JobAd
 
 
-def search(*args, **kwargs) -> list[Anzeige]:
-    return fetch.search(*args, **kwargs).anzeigen
+def search(*args, **kwargs) -> list[JobAd]:
+    return fetch.search(*args, **kwargs).job_ads
 
 
-def search_arbeitnow(*args, **kwargs) -> list[Anzeige]:
-    return fetch.search_arbeitnow(*args, **kwargs).anzeigen
+def search_arbeitnow(*args, **kwargs) -> list[JobAd]:
+    return fetch.search_arbeitnow(*args, **kwargs).job_ads
 
 
-def search_greenhouse(*args, **kwargs) -> list[Anzeige]:
-    return fetch.search_greenhouse(*args, **kwargs).anzeigen
+def search_greenhouse(*args, **kwargs) -> list[JobAd]:
+    return fetch.search_greenhouse(*args, **kwargs).job_ads
 
 
-def search_lever(*args, **kwargs) -> list[Anzeige]:
-    return fetch.search_lever(*args, **kwargs).anzeigen
+def search_lever(*args, **kwargs) -> list[JobAd]:
+    return fetch.search_lever(*args, **kwargs).job_ads
 
 
-def search_watchlist(*args, **kwargs) -> list[Anzeige]:
-    return fetch.search_watchlist(*args, **kwargs).anzeigen
+def search_watchlist(*args, **kwargs) -> list[JobAd]:
+    return fetch.search_watchlist(*args, **kwargs).job_ads
 
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -86,7 +86,7 @@ def test_search_mapt_antwort_auf_anzeigen_inklusive_details() -> None:
     )
 
     assert ergebnis == [
-        Anzeige(
+        JobAd(
             id="10001-1003353506-S",
             titel="Softwareentwickler/in Linux (m/w/d)",
             firma="Beispiel GmbH",
@@ -98,7 +98,7 @@ def test_search_mapt_antwort_auf_anzeigen_inklusive_details() -> None:
                 "Erfahrung mit Cloud-Migration von Vorteil."
             ),
         ),
-        Anzeige(
+        JobAd(
             id="10001-1003353507-S",
             titel="IT Consultant (m/w/d)",
             firma="Consulting AG",
@@ -197,7 +197,7 @@ def test_search_setzt_beschreibung_auf_none_bei_detailfehler(
         ergebnis = search("Softwareentwicklerin", transport=_transport(handler))
 
     assert len(ergebnis) == 2
-    assert all(anzeige.beschreibung is None for anzeige in ergebnis)
+    assert all(job_ad.beschreibung is None for job_ad in ergebnis)
     assert ergebnis[0].id == "10001-1003353506-S"
     assert "Jobdetails" in caplog.text
 
@@ -485,7 +485,7 @@ def test_search_ohne_fehler_meldet_keine_fehler() -> None:
 def test_search_meldet_fehlergrund(transport, erwartet: str) -> None:
     ergebnis = fetch.search("Data Science", transport=transport)
 
-    assert ergebnis.anzeigen == []
+    assert ergebnis.job_ads == []
     assert ergebnis.fehler == [erwartet]
 
 
@@ -497,7 +497,7 @@ def test_detailfehler_gilt_nicht_als_quellenfehler() -> None:
 
     ergebnis = fetch.search("Softwareentwicklerin", transport=_transport(handler))
 
-    assert len(ergebnis.anzeigen) == 2
+    assert len(ergebnis.job_ads) == 2
     assert ergebnis.fehler == []
 
 
@@ -513,7 +513,7 @@ def test_search_arbeitnow_meldet_fehler_und_behaelt_bisherige_treffer() -> None:
         "Data Scientist", veroeffentlichtseit=14, transport=_transport(handler)
     )
 
-    assert len(ergebnis.anzeigen) == 1
+    assert len(ergebnis.job_ads) == 1
     assert ergebnis.fehler == ["Data Scientist: HTTP 503"]
 
 
@@ -542,7 +542,7 @@ def test_search_watchlist_nennt_gescheiterte_firma() -> None:
 
     ergebnis = fetch.search_watchlist(firmen, "Full-Stack", transport=_transport(handler))
 
-    assert len(ergebnis.anzeigen) == 1
+    assert len(ergebnis.job_ads) == 1
     assert ergebnis.fehler == ["Kaputte Firma: HTTP 500"]
 
 

@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from jobagent import store
-from jobagent.stelle import stellen_schluessel
+from jobagent.position import position_key
 
 _DB_PFAD = Path("jobagent.db")
 
@@ -96,7 +96,7 @@ def _treffer_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute:
         raise FeedbackFehler(f"Unerwartete Angaben nach {args.aktion}: {' '.join(args.werte)}")
 
     bewerbung = store.NeueBewerbung(
-        stelle=stellen_schluessel(treffer.firma, treffer.titel),
+        stelle=position_key(treffer.firma, treffer.titel),
         firma=treffer.firma,
         titel=treffer.titel,
         anzeige_id=treffer.id,
@@ -107,7 +107,7 @@ def _treffer_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute:
 
 def _manuelles_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute: date) -> str:
     bewerbung = store.NeueBewerbung(
-        stelle=stellen_schluessel(args.firma, args.titel),
+        stelle=position_key(args.firma, args.titel),
         firma=args.firma,
         titel=args.titel,
         anzeige_id=None,
