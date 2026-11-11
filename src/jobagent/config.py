@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from jobagent.report import DEFAULT_MIN_SCORE
+from jobagent.sources.watchlist import WatchlistCompany
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,7 @@ class Config:
     min_score: int = DEFAULT_MIN_SCORE
     follow_up_min_days: int = 14
     follow_up_max_days: int = 28
-    companies: list[dict] = field(default_factory=list)
+    companies: list[WatchlistCompany] = field(default_factory=list)
 
 
 # Die einzige Stelle, an der die deutschen Schluessel aus `config.toml` uebersetzt werden.
@@ -38,6 +39,13 @@ def load_config(path: Path) -> Config:
     """Liest `config.toml`; fehlende Schluessel behalten ihren Standardwert."""
     with path.open("rb") as file:
         raw = tomllib.load(file)
-    return Config(
-        **{english: raw[german] for german, english in _TOML_KEYS.items() if german in raw}
-    )
+    values = {english: raw[german] for german, english in _TOML_KEYS.items() if german in raw}
+    if "companies" in values:
+        values["companies"] = [_to_company(entry) for entry in values["companies"]]
+    return Config(**values)
+
+
+def _to_company(entry: dict) -> WatchlistCompany:
+    # Fehlt etwas, scheitert erst die Suche dieser Firma, nicht das Laden der Konfiguration.
+    slug = entry.get("slug", "")
+    return WatchlistCompany(name=entry.get("name", slug), ats=entry.get("ats", ""), slug=slug)

@@ -12,6 +12,7 @@ from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
 from jobagent.sources import SearchResult
+from jobagent.sources.watchlist import WatchlistCompany
 
 _CONFIG = """
 wo = "München"
@@ -282,7 +283,7 @@ def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:
 
 
 def test_default_sources_include_watchlist_with_companies_from_config() -> None:
-    config = Config(companies=[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}])
+    config = Config(companies=[WatchlistCompany(name="GitLab", ats="greenhouse", slug="gitlab")])
 
     names = [source.name for source in main.default_sources(config)]
 
@@ -305,7 +306,7 @@ def test_default_sources_search_with_location_radius_and_age_from_config() -> No
         location="München",
         radius=30,
         published_since=7,
-        companies=[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}],
+        companies=[WatchlistCompany(name="GitLab", ats="greenhouse", slug="gitlab")],
     )
 
     for source in main.default_sources(config, transport=httpx.MockTransport(handler)):
