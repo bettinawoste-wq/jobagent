@@ -17,12 +17,16 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
 - `src/jobagent/stelle.py`: erkennt dieselbe Stelle über normalisierte Firma + Titel
 - `src/jobagent/profilvorschlag.py`: leitet aus Feedback Änderungen an `profile.md` ab (Diff, Bestätigung, Sicherung)
+- `src/jobagent/demo.py`: Demo-Lauf mit erfundenen Anzeigen und vorgefertigten Bewertungen (öffentlich, im README zitiert: nur Fantasiefirmen und `example.com`)
 - `tests/`: Tests, Beispielantworten liegen in `tests/fixtures/`
 - `profile.md`: mein Suchprofil und meine Ausschlusskriterien
+- `GLOSSARY.md`: Fachbegriffe (Anzeige, Stelle, Treffer, Lauf …); Namen in Code, Tickets und Texten folgen ihm
+- `docs/adr/`: Grundsatzentscheidungen mit Begründung; vor Änderungen an Speicherung, Quellen, Rückkanal oder Modellwahl lesen
 
 ## Befehle
 - Tests: `pytest`
 - Lint/Format: `ruff check . && ruff format .`
+- Gesamtprobe ohne API-Key und Netz: `python -m jobagent.main --demo`
 - Lauf: `python -m jobagent.main`
 - Rückmeldung: `python -m jobagent.feedback --help`
 - Profil-Vorschlag: `python -m jobagent.profilvorschlag`
@@ -48,7 +52,6 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Bewusst nicht genutzt: Remotive-API - Suchparameter filtert praktisch nicht, winziger kaum Deutschland-relevanter Feed, und die API-Antwort selbst weist auf ein kostenpflichtiges Angebot für diesen Nutzungszweck hin.
 
 ## Konventionen
-- Kleine Funktionen, Typannotationen, keine versteckten Seiteneffekte
 - Bewertung liefert strikt JSON: `score` (1-5), `passt` (Liste), `passt_nicht` (Liste), `luecken` (Liste), `kurzfazit`
 - Fehler einer Quelle dürfen den Lauf nicht abbrechen, sie werden geloggt und im Quellenstatus des Reports ausgewiesen
 - Eine Aufgabe pro Durchgang, danach committen
@@ -60,8 +63,8 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Version in `pyproject.toml` dann nach SemVer (0.x): neue Quelle oder Funktion → Minor, nur Fixes → Patch; `uv.lock` mitziehen
 - Jede Versionsanhebung bekommt einen annotierten Tag `vX.Y.Z`
 
-## Nicht tun
-- Keine Anzeigen-Volltexte dauerhaft speichern, nur ID, Titel, Firma, Link, Score, Datum, Report und Treffernummer, einen Hash der Beschreibung sowie die Bewertung des Modells (`passt`, `passt_nicht`, `luecken`, `kurzfazit`)
-- Keine Scraper für Seiten, die automatisiertes Auslesen untersagen (LinkedIn, Xing, Indeed)
-- Keine automatischen Bewerbungen oder Nachrichten
-- `profile.md` nie ohne ausdrückliche Bestätigung ändern, den Bewerbungsstatus nie automatisch
+## Leitplanken
+Begründungen stehen in den ADRs, hier nur die harten Grenzen:
+- Gespeichert werden nur ID, Titel, Firma, Link, Score, Datum, Report, Treffernummer, Hash der Beschreibung und die Bewertung; Anzeigen-Volltexte bleiben flüchtig (ADR 0001)
+- Anzeigen kommen nur über öffentliche Schnittstellen; LinkedIn, Xing und Indeed bleiben außen vor (ADR 0002)
+- Der Agent liefert nur Vorschläge: Bewerbungen und Nachrichten schickt die Nutzerin selbst, den Bewerbungsstatus setzt nur sie, `profile.md` ändert sich erst nach ihrer ausdrücklichen Bestätigung (ADR 0003)
