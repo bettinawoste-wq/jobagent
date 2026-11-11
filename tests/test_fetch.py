@@ -1,6 +1,5 @@
 """Tests fuer fetch.py, ausschliesslich gegen gespeicherte Beispielantworten."""
 
-import base64
 import json
 import time
 from copy import deepcopy
@@ -11,10 +10,6 @@ import pytest
 
 from jobagent import fetch
 from jobagent.job_ad import JobAd
-
-
-def search(*args, **kwargs) -> list[JobAd]:
-    return fetch.search(*args, **kwargs).job_ads
 
 
 def search_arbeitnow(*args, **kwargs) -> list[JobAd]:
@@ -34,10 +29,6 @@ def search_watchlist(*args, **kwargs) -> list[JobAd]:
 
 
 _FIXTURES = Path(__file__).parent / "fixtures"
-JOBSUCHE_FIXTURE = json.loads((_FIXTURES / "jobsuche_response.json").read_text(encoding="utf-8"))
-JOBDETAILS_FIXTURE = json.loads(
-    (_FIXTURES / "jobdetails_response.json").read_text(encoding="utf-8")
-)
 ARBEITNOW_FIXTURE = json.loads((_FIXTURES / "arbeitnow_response.json").read_text(encoding="utf-8"))
 ARBEITNOW_SEITE1 = json.loads(
     (_FIXTURES / "arbeitnow_response_seite1.json").read_text(encoding="utf-8")
@@ -45,9 +36,6 @@ ARBEITNOW_SEITE1 = json.loads(
 ARBEITNOW_SEITE2 = json.loads(
     (_FIXTURES / "arbeitnow_response_seite2.json").read_text(encoding="utf-8")
 )
-
-_SEARCH_PATH = "/jobboerse/jobsuche-service/pc/v6/jobs"
-_DETAILS_PREFIX = "/jobboerse/jobsuche-service/pc/v4/jobdetails/"
 
 
 def _vor_tagen(tage: float) -> float:
@@ -64,142 +52,6 @@ def _mit_alter(daten: dict, alter_in_tagen: dict[int, float]) -> dict:
 
 def _transport(handler):
     return httpx.MockTransport(handler)
-
-
-def _erfolgreicher_handler(request: httpx.Request) -> httpx.Response:
-    if request.url.path == _SEARCH_PATH:
-        return httpx.Response(200, json=JOBSUCHE_FIXTURE)
-    if request.url.path.startswith(_DETAILS_PREFIX):
-        code = request.url.path.removeprefix(_DETAILS_PREFIX)
-        refnr = base64.b64decode(code).decode()
-        return httpx.Response(200, json=JOBDETAILS_FIXTURE[refnr])
-    raise AssertionError(f"Unerwartete URL: {request.url}")
-
-
-def test_search_maps_response_to_job_ads_including_details() -> None:
-    ergebnis = search(
-        "Softwareentwicklerin",
-        wo="München",
-        umkreis=30,
-        veroeffentlichtseit=7,
-        transport=_transport(_erfolgreicher_handler),
-    )
-
-    assert ergebnis == [
-        JobAd(
-            id="10001-1003353506-S",
-            title="Softwareentwickler/in Linux (m/w/d)",
-            company="Beispiel GmbH",
-            location="München",
-            link="https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003353506-S",
-            description=(
-                "Wir suchen eine Softwareentwicklerin fuer unser Backend-Team in "
-                "Python und C++. Aufgaben: API-Design, CI/CD, Code-Reviews. "
-                "Erfahrung mit Cloud-Migration von Vorteil."
-            ),
-        ),
-        JobAd(
-            id="10001-1003353507-S",
-            title="IT Consultant (m/w/d)",
-            company="Consulting AG",
-            location="Garching",
-            link="https://www.consulting-ag.example/karriere/it-consultant",
-            description=None,
-        ),
-    ]
-
-
-def test_search_sendet_erwartete_suchparameter_und_header() -> None:
-    captured_requests = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured_requests.append(request)
-        return _erfolgreicher_handler(request)
-
-    search(
-        "Softwareentwicklerin",
-        wo="München",
-        umkreis=30,
-        veroeffentlichtseit=7,
-        transport=_transport(handler),
-    )
-
-    suchanfrage = next(r for r in captured_requests if r.url.path == _SEARCH_PATH)
-    params = suchanfrage.url.params
-    assert params["was"] == "Softwareentwicklerin"
-    assert params["wo"] == "München"
-    assert params["umkreis"] == "30"
-    assert params["veroeffentlichtseit"] == "7"
-    assert suchanfrage.headers["X-API-Key"] == "jobboerse-jobsuche"
-
-    detailanfragen = [r for r in captured_requests if r.url.path.startswith(_DETAILS_PREFIX)]
-    assert len(detailanfragen) == 2
-    assert all(r.headers["X-API-Key"] == "jobboerse-jobsuche" for r in detailanfragen)
-
-
-def test_search_ohne_treffer_ruft_keine_details_ab() -> None:
-    aufrufe = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        aufrufe.append(request)
-        return httpx.Response(200, json={"ergebnisliste": []})
-
-    ergebnis = search("Data Science", transport=_transport(handler))
-
-    assert ergebnis == []
-    assert len(aufrufe) == 1
-
-
-def test_search_gibt_leere_liste_bei_http_fehler(caplog: pytest.LogCaptureFixture) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(500)
-
-    with caplog.at_level("ERROR"):
-        ergebnis = search("Data Science", transport=_transport(handler))
-
-    assert ergebnis == []
-    assert "fehlgeschlagen" in caplog.text
-
-
-def test_search_gibt_leere_liste_bei_netzwerkfehler(caplog: pytest.LogCaptureFixture) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("keine Verbindung", request=request)
-
-    with caplog.at_level("ERROR"):
-        ergebnis = search("Data Science", transport=_transport(handler))
-
-    assert ergebnis == []
-    assert "fehlgeschlagen" in caplog.text
-
-
-def test_search_gibt_leere_liste_bei_ungueltigem_json(caplog: pytest.LogCaptureFixture) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=b"nicht json")
-
-    with caplog.at_level("ERROR"):
-        ergebnis = search("Data Science", transport=_transport(handler))
-
-    assert ergebnis == []
-    assert "JSON" in caplog.text
-
-
-def test_search_setzt_beschreibung_auf_none_bei_detailfehler(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == _SEARCH_PATH:
-            return httpx.Response(200, json=JOBSUCHE_FIXTURE)
-        if request.url.path.startswith(_DETAILS_PREFIX):
-            return httpx.Response(500)
-        raise AssertionError(f"Unerwartete URL: {request.url}")
-
-    with caplog.at_level("ERROR"):
-        ergebnis = search("Softwareentwicklerin", transport=_transport(handler))
-
-    assert len(ergebnis) == 2
-    assert all(job_ad.description is None for job_ad in ergebnis)
-    assert ergebnis[0].id == "10001-1003353506-S"
-    assert "Jobdetails" in caplog.text
 
 
 def test_search_arbeitnow_filtert_nach_titel_und_ort() -> None:
@@ -455,50 +307,6 @@ def test_search_watchlist_isoliert_fehler_einer_firma() -> None:
 
 def _status(code: int):
     return _transport(lambda request: httpx.Response(code))
-
-
-def _kein_json():
-    return _transport(lambda request: httpx.Response(200, content=b"nicht json"))
-
-
-def _keine_verbindung():
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("keine Verbindung", request=request)
-
-    return _transport(handler)
-
-
-def test_search_ohne_fehler_meldet_keine_fehler() -> None:
-    transport = _transport(lambda request: httpx.Response(200, json={"ergebnisliste": []}))
-
-    assert fetch.search("Data Science", transport=transport).fehler == []
-
-
-@pytest.mark.parametrize(
-    ("transport", "erwartet"),
-    [
-        (_status(500), "Data Science: HTTP 500"),
-        (_keine_verbindung(), "Data Science: keine Verbindung"),
-        (_kein_json(), "Data Science: ungültige Antwort"),
-    ],
-)
-def test_search_meldet_fehlergrund(transport, erwartet: str) -> None:
-    ergebnis = fetch.search("Data Science", transport=transport)
-
-    assert ergebnis.job_ads == []
-    assert ergebnis.fehler == [erwartet]
-
-
-def test_detailfehler_gilt_nicht_als_quellenfehler() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == _SEARCH_PATH:
-            return httpx.Response(200, json=JOBSUCHE_FIXTURE)
-        return httpx.Response(500)
-
-    ergebnis = fetch.search("Softwareentwicklerin", transport=_transport(handler))
-
-    assert len(ergebnis.job_ads) == 2
-    assert ergebnis.fehler == []
 
 
 def test_search_arbeitnow_meldet_fehler_und_behaelt_bisherige_treffer() -> None:

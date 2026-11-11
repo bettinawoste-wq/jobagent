@@ -1,4 +1,4 @@
-"""Ablauf: fetch, dedupe, score, report."""
+"""Ablauf: suchen, dedupe, score, report."""
 
 import argparse
 import io
@@ -6,14 +6,19 @@ import logging
 import sqlite3
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
+
+import httpx
 
 from jobagent import demo, fetch, report, score, store
 from jobagent.config import Config, load_config
 from jobagent.job_ad import JobAd
 from jobagent.position import position_key
+from jobagent.sources import SearchResult, Source
+from jobagent.sources._legacy import LegacySource
+from jobagent.sources.bundesagentur import BundesagenturSource
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +26,6 @@ _CONFIG_PATH = Path("config.toml")
 _PROFILE_PATH = Path("profile.md")
 _DB_PATH = Path("jobagent.db")
 _PROFILE_SUGGESTION_MIN_FEEDBACK = 5
-
-Search = Callable[[str], fetch.Suchergebnis]
-"""Sucht in einer Quelle nach einem Suchbegriff."""
 
 Assess = Callable[[JobAd], score.Assessment | None]
 """Bewertet eine Anzeige; None heisst: diesmal nicht bewertbar, naechster Lauf versucht es neu."""
@@ -36,7 +38,7 @@ def main(
     db_path: Path = _DB_PATH,
     output_dir: Path = report.OUTPUT_DIR,
     config: Config | None = None,
-    sources: Mapping[str, Search] | None = None,
+    sources: Sequence[Source] | None = None,
     assess: Assess | None = None,
 ) -> Path:
     """Fuehrt einen Lauf aus: suchen, deduplizieren, bewerten, Report schreiben.
@@ -50,7 +52,7 @@ def main(
     if config is None:
         config = load_config(config_path)
     if sources is None:
-        sources = _sources(config)
+        sources = default_sources(config)
     if assess is None:
         assess = _haiku_assessment(profile_path.read_text(encoding="utf-8"))
     today = date.today()
@@ -138,52 +140,57 @@ def _text_differs(new: str | None, at_application: str | None) -> str:
 
 
 def _search_all(
-    sources: Mapping[str, Search], keywords: list[str]
+    sources: Sequence[Source], keywords: list[str]
 ) -> tuple[list[JobAd], list[fetch.Quellenstatus]]:
     found: dict[str, JobAd] = {}
     status: list[fetch.Quellenstatus] = []
 
-    for name, search in sources.items():
-        ids: set[str] = set()
-        errors: dict[str, None] = {}  # dict statt set: Reihenfolge bleibt erhalten
-        for keyword in keywords:
-            result = _safe_search(search, keyword, name)
-            errors.update(dict.fromkeys(result.fehler))
-            for job_ad in result.job_ads:
-                ids.add(job_ad.id)
-                found.setdefault(job_ad.id, job_ad)
-        status.append(fetch.Quellenstatus(name, len(ids), list(errors)))
+    for source in sources:
+        result = _safe_search(source, keywords)
+        ids = {job_ad.id for job_ad in result.job_ads}
+        for job_ad in result.job_ads:
+            found.setdefault(job_ad.id, job_ad)
+        errors = list(dict.fromkeys(result.errors))  # doppelte weg, Reihenfolge bleibt
+        status.append(fetch.Quellenstatus(source.name, len(ids), errors))
 
     return list(found.values()), status
 
 
-def _sources(config: Config) -> dict[str, Search]:
+def default_sources(
+    config: Config, *, transport: httpx.BaseTransport | None = None
+) -> list[Source]:
+    """Die eingebauten Quellen; die Firmen-Watchlist nur, wenn `config.toml` Firmen nennt."""
     location = config.location
-    radius = config.radius
     since = config.published_since
     companies = config.companies
 
-    sources: dict[str, Search] = {
-        "Bundesagentur für Arbeit": lambda keyword: fetch.search(
-            keyword, wo=location, umkreis=radius, veroeffentlichtseit=since
+    sources: list[Source] = [
+        BundesagenturSource(location, config.radius, since, transport=transport),
+        LegacySource(
+            "Arbeitnow",
+            lambda keyword: fetch.search_arbeitnow(
+                keyword, wo=location, veroeffentlichtseit=since, transport=transport
+            ),
         ),
-        "Arbeitnow": lambda keyword: fetch.search_arbeitnow(
-            keyword, wo=location, veroeffentlichtseit=since
-        ),
-    }
+    ]
     if companies:
-        sources["Firmen-Watchlist"] = lambda keyword: fetch.search_watchlist(companies, keyword)
+        sources.append(
+            LegacySource(
+                "Firmen-Watchlist",
+                lambda keyword: fetch.search_watchlist(companies, keyword, transport=transport),
+            )
+        )
     return sources
 
 
-def _safe_search(search: Search, keyword: str, source: str) -> fetch.Suchergebnis:
-    # Bekannte Netzwerk- und API-Fehler behandelt fetch selbst. Dieses Netz faengt
+def _safe_search(source: Source, keywords: list[str]) -> SearchResult:
+    # Bekannte Netzwerk- und API-Fehler behandelt die Quelle selbst. Dieses Netz faengt
     # z.B. ein geaendertes Antwortformat ab: Eine Quelle darf den Lauf nie abbrechen.
     try:
-        return search(keyword)
+        return source.search(keywords)
     except Exception:
-        logger.exception("Unerwarteter Fehler in Quelle %r (was=%r)", source, keyword)
-        return fetch.Suchergebnis([], [f"{keyword}: unerwarteter Fehler"])
+        logger.exception("Unerwarteter Fehler in Quelle %r", source.name)
+        return SearchResult([], ["unerwarteter Fehler"])
 
 
 def cli(argv: list[str] | None = None) -> None:

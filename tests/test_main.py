@@ -1,15 +1,17 @@
-"""Tests fuer main.py: Ablauf fetch -> dedupe -> score -> report, alles gemockt."""
+"""Tests fuer main.py: Ablauf suchen -> dedupe -> score -> report, mit Fake-Quellen."""
 
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 
-from jobagent import feedback, fetch, main, score, store
+from jobagent import feedback, main, score, store
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
+from jobagent.sources import SearchResult
 
 _CONFIG = """
 wo = "München"
@@ -21,10 +23,25 @@ was = ["Softwareentwickler"]
 _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
 
 
-@pytest.fixture(autouse=True)
-def _no_real_calls_to_second_and_third_source(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(fetch, "search_arbeitnow", lambda *a, **kw: fetch.Suchergebnis([]))
-    monkeypatch.setattr(fetch, "search_watchlist", lambda *a, **kw: fetch.Suchergebnis([]))
+@dataclass
+class FakeSource:
+    """Quelle am Interface `Source`, die feste Anzeigen und Fehler liefert."""
+
+    job_ads: list[JobAd] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    name: str = "Bundesagentur für Arbeit"
+    received: list[list[str]] = field(default_factory=list)
+
+    def search(self, keywords: list[str]) -> SearchResult:
+        self.received.append(keywords)
+        return SearchResult(list(self.job_ads), list(self.errors))
+
+
+class BrokenSource:
+    name = "Bundesagentur für Arbeit"
+
+    def search(self, keywords: list[str]) -> SearchResult:
+        raise KeyError("referenznummer")
 
 
 @pytest.fixture
@@ -39,6 +56,10 @@ def project(tmp_path: Path) -> dict[str, Path]:
         "db_path": tmp_path / "jobagent.db",
         "output_dir": tmp_path / "output",
     }
+
+
+def _run(project: dict[str, Path], *sources) -> Path:
+    return main.main(**project, sources=list(sources))
 
 
 def _job_ad(id_: str) -> JobAd:
@@ -66,42 +87,50 @@ def _score_and_record(calls: list[str]):
 def test_main_writes_report_for_new_matches(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    path = main.main(**project)
+    path = _run(project, FakeSource([_job_ad("a-1")]))
 
     content = path.read_text(encoding="utf-8")
     assert "Stelle a-1" in content
     assert "4/5" in content
 
 
+def test_main_passes_all_keywords_to_each_source_at_once(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project["config_path"].write_text('was = ["A", "B"]\n', encoding="utf-8")
+    first, second = FakeSource(), FakeSource(name="Arbeitnow")
+
+    _run(project, first, second)
+
+    assert first.received == [["A", "B"]]
+    assert second.received == [["A", "B"]]
+
+
 def test_main_writes_source_status_into_report(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], []))
-    monkeypatch.setattr(
-        fetch, "search_arbeitnow", lambda *a, **kw: fetch.Suchergebnis([], ["x: HTTP 500"])
-    )
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    content = main.main(**project).read_text(encoding="utf-8")
+    content = _run(
+        project,
+        FakeSource([_job_ad("a-1")]),
+        FakeSource([], ["x: HTTP 500"], name="Arbeitnow"),
+    ).read_text(encoding="utf-8")
 
     assert "- Bundesagentur für Arbeit: 1 Anzeige\n" in content
     assert "- Arbeitnow: FEHLER, 0 Anzeigen (x: HTTP 500)" in content
     assert "Firmen-Watchlist" not in content
 
 
-def test_main_counts_job_ads_once_across_keywords_and_merges_same_errors(
+def test_main_counts_job_ads_once_and_merges_same_errors(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    project["config_path"].write_text('was = ["A", "B"]\n', encoding="utf-8")
-    monkeypatch.setattr(
-        fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], ["kaputt"])
-    )
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
+    source = FakeSource([_job_ad("a-1"), _job_ad("a-1")], ["kaputt", "kaputt"])
 
-    content = main.main(**project).read_text(encoding="utf-8")
+    content = _run(project, source).read_text(encoding="utf-8")
 
     assert "- Bundesagentur für Arbeit: FEHLER, 1 Anzeige (kaputt)\n" in content
 
@@ -109,19 +138,13 @@ def test_main_counts_job_ads_once_across_keywords_and_merges_same_errors(
 def test_main_survives_unexpected_source_error(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def broken(*args, **kwargs):
-        raise KeyError("referenznummer")
-
-    monkeypatch.setattr(fetch, "search", broken)
-    monkeypatch.setattr(
-        fetch, "search_arbeitnow", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], [])
-    )
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    content = main.main(**project).read_text(encoding="utf-8")
+    content = _run(
+        project, BrokenSource(), FakeSource([_job_ad("a-1")], name="Arbeitnow")
+    ).read_text(encoding="utf-8")
 
-    assert "Bundesagentur für Arbeit: FEHLER" in content
-    assert "unerwarteter Fehler" in content
+    assert "- Bundesagentur für Arbeit: FEHLER, 0 Anzeigen (unerwarteter Fehler)" in content
     assert "Stelle a-1" in content
 
 
@@ -129,10 +152,9 @@ def test_main_takes_min_score_from_config(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project["config_path"].write_text('was = ["A"]\nmindest_score = 5\n', encoding="utf-8")
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], []))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    content = main.main(**project).read_text(encoding="utf-8")
+    content = _run(project, FakeSource([_job_ad("a-1")])).read_text(encoding="utf-8")
 
     assert "## Weitere Treffer (Score unter 5)" in content
     assert "- **1.** Stelle a-1" in content
@@ -141,10 +163,9 @@ def test_main_takes_min_score_from_config(
 def test_main_uses_default_min_score_without_config(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], []))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: replace(_assessment(), score=2))
 
-    content = main.main(**project).read_text(encoding="utf-8")
+    content = _run(project, FakeSource([_job_ad("a-1")])).read_text(encoding="utf-8")
 
     assert "## Weitere Treffer (Score unter 3)" in content
 
@@ -157,12 +178,9 @@ def test_main_remembers_report_and_match_number(
     def assess(job_ad: JobAd, profile: str) -> Assessment:
         return replace(_assessment(), score=scores[job_ad.id])
 
-    monkeypatch.setattr(
-        fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1"), _job_ad("a-2")])
-    )
     monkeypatch.setattr(score, "score_job_ad", assess)
 
-    path = main.main(**project)
+    path = _run(project, FakeSource([_job_ad("a-1"), _job_ad("a-2")]))
 
     conn = store.connect(project["db_path"])
     try:
@@ -178,11 +196,11 @@ def test_main_skips_already_seen_job_ads(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = []
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
     monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
+    source = FakeSource([_job_ad("a-1")])
 
-    main.main(**project)
-    second_run_path = main.main(**project)
+    _run(project, source)
+    second_run_path = _run(project, source)
 
     assert calls == ["a-1"]
     assert "Keine neuen Treffer" in second_run_path.read_text(encoding="utf-8")
@@ -191,10 +209,9 @@ def test_main_skips_already_seen_job_ads(
 def test_main_without_search_results_writes_note(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([]))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    path = main.main(**project)
+    path = _run(project, FakeSource())
 
     assert "Keine neuen Treffer" in path.read_text(encoding="utf-8")
 
@@ -202,35 +219,35 @@ def test_main_without_search_results_writes_note(
 def test_main_does_not_mark_seen_when_assessment_fails(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
+    source = FakeSource([_job_ad("a-1")])
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: None)
 
-    first_run = main.main(**project)
+    first_run = _run(project, source)
     assert "Keine neuen Treffer" in first_run.read_text(encoding="utf-8")
 
     calls = []
     monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
-    second_run = main.main(**project)
+    second_run = _run(project, source)
 
     assert calls == ["a-1"]
     assert "Stelle a-1" in second_run.read_text(encoding="utf-8")
 
 
-def test_main_deduplicates_matches_across_keywords(
+def test_main_deduplicates_matches_across_sources(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    project["config_path"].write_text(
-        'wo = "München"\numkreis = 30\nveroeffentlichtseit = 1\n'
-        'was = ["Softwareentwickler", "IT Consultant"]\n',
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
     calls = []
     monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
 
-    main.main(**project)
+    content = _run(
+        project,
+        FakeSource([_job_ad("a-1")]),
+        FakeSource([_job_ad("a-1")], name="Arbeitnow"),
+    ).read_text(encoding="utf-8")
 
     assert calls == ["a-1"]
+    assert "- Bundesagentur für Arbeit: 1 Anzeige\n" in content
+    assert "- Arbeitnow: 1 Anzeige\n" in content
 
 
 def test_main_combines_matches_from_both_sources(
@@ -243,14 +260,14 @@ def test_main_combines_matches_from_both_sources(
         location="Berlin",
         link="https://www.arbeitnow.com/jobs/companies/arbeitnow-firma/full-stack-entwickler-100",
     )
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
-    monkeypatch.setattr(
-        fetch, "search_arbeitnow", lambda *a, **kw: fetch.Suchergebnis([arbeitnow_job_ad])
-    )
     calls = []
     monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
 
-    path = main.main(**project)
+    path = _run(
+        project,
+        FakeSource([_job_ad("a-1")]),
+        FakeSource([arbeitnow_job_ad], name="Arbeitnow"),
+    )
 
     content = path.read_text(encoding="utf-8")
     assert "Stelle a-1" in content
@@ -258,36 +275,50 @@ def test_main_combines_matches_from_both_sources(
     assert sorted(calls) == ["a-1", "arbeitnow:full-stack-entwickler-100"]
 
 
-def test_main_includes_watchlist_companies_from_config(
-    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    project["config_path"].write_text(
-        'wo = "München"\numkreis = 30\nveroeffentlichtseit = 1\n'
-        'was = ["Softwareentwickler"]\n\n'
-        '[[firmen]]\nname = "GitLab"\nats = "greenhouse"\nslug = "gitlab"\n',
-        encoding="utf-8",
+def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:
+    names = [source.name for source in main.default_sources(Config())]
+
+    assert names == ["Bundesagentur für Arbeit", "Arbeitnow"]
+
+
+def test_default_sources_include_watchlist_with_companies_from_config() -> None:
+    config = Config(companies=[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}])
+
+    names = [source.name for source in main.default_sources(config)]
+
+    assert names == ["Bundesagentur für Arbeit", "Arbeitnow", "Firmen-Watchlist"]
+
+
+def test_default_sources_search_with_location_radius_and_age_from_config() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if "greenhouse" in request.url.host:
+            return httpx.Response(200, json={"jobs": []})
+        if "arbeitnow" in request.url.host:
+            return httpx.Response(200, json={"data": []})
+        return httpx.Response(200, json={"ergebnisliste": []})
+
+    config = Config(
+        keywords=["Python"],
+        location="München",
+        radius=30,
+        published_since=7,
+        companies=[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}],
     )
-    watchlist_job_ad = JobAd(
-        id="greenhouse:gitlab:999",
-        title="Full-Stack-Entwickler (m/w/d)",
-        company="GitLab",
-        location="Remote",
-        link="https://job-boards.greenhouse.io/gitlab/jobs/999",
-    )
-    received_companies = []
 
-    def fake_search_watchlist(companies, keyword, **kw):
-        received_companies.append(companies)
-        return fetch.Suchergebnis([watchlist_job_ad])
+    for source in main.default_sources(config, transport=httpx.MockTransport(handler)):
+        assert source.search(config.keywords).errors == []
 
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([]))
-    monkeypatch.setattr(fetch, "search_watchlist", fake_search_watchlist)
-    monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
-
-    path = main.main(**project)
-
-    assert received_companies == [[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}]]
-    assert "Full-Stack-Entwickler (m/w/d)" in path.read_text(encoding="utf-8")
+    hosts = [request.url.host for request in requests]
+    assert hosts == ["rest.arbeitsagentur.de", "www.arbeitnow.com", "boards-api.greenhouse.io"]
+    assert dict(requests[0].url.params) == {
+        "was": "Python",
+        "wo": "München",
+        "umkreis": "30",
+        "veroeffentlichtseit": "7",
+    }
 
 
 def _position_job_ad(
@@ -306,9 +337,8 @@ def _position_job_ad(
 def _run_finds(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, job_ad: JobAd
 ) -> tuple[Path, str]:
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([job_ad]))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
-    path = main.main(**project)
+    path = _run(project, FakeSource([job_ad]))
     return path, path.read_text(encoding="utf-8")
 
 
@@ -453,8 +483,7 @@ def _applied_days_ago(project: dict[str, Path], days: int, status: str = "beworb
 
 
 def _run_without_matches(project: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> str:
-    monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([]))
-    return main.main(**project).read_text(encoding="utf-8")
+    return _run(project, FakeSource()).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -548,9 +577,7 @@ def test_run_with_own_sources_assessment_and_config(
     def no_model(*args, **kwargs):
         raise AssertionError("Haiku-Bewertung darf nicht aufgerufen werden")
 
-    monkeypatch.setattr(fetch, "search", no_network)
-    monkeypatch.setattr(fetch, "search_arbeitnow", no_network)
-    monkeypatch.setattr(fetch, "search_watchlist", no_network)
+    monkeypatch.setattr(httpx.Client, "send", no_network)
     monkeypatch.setattr(score, "score_job_ad", no_model)
     scores = {"a-1": 3, "a-2": 5, "b-1": 4}
     assessed: list[str] = []
@@ -565,10 +592,10 @@ def test_run_with_own_sources_assessment_and_config(
         db_path=tmp_path / "jobagent.db",
         output_dir=tmp_path / "output",
         config=Config(keywords=["Python"]),
-        sources={
-            "Quelle A": lambda keyword: fetch.Suchergebnis([_job_ad("a-1"), _job_ad("a-2")]),
-            "Quelle B": lambda keyword: fetch.Suchergebnis([_job_ad("b-1")], ["Python: HTTP 503"]),
-        },
+        sources=[
+            FakeSource([_job_ad("a-1"), _job_ad("a-2")], name="Quelle A"),
+            FakeSource([_job_ad("b-1")], ["Python: HTTP 503"], name="Quelle B"),
+        ],
         assess=assess,
     )
 

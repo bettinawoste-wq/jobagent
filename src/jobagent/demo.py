@@ -7,14 +7,14 @@ kein Modell und liest oder speichert nichts Persoenliches.
 """
 
 import sqlite3
-from collections.abc import Callable
 from datetime import date, timedelta
 
-from jobagent import fetch, store
+from jobagent import store
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.position import position_key
 from jobagent.score import Assessment
+from jobagent.sources import SearchResult, Source
 
 CONFIG = Config(
     keywords=["Full-Stack-Entwickler", "IT Consultant", "Embedded Entwickler", "Data Scientist"],
@@ -180,20 +180,32 @@ ASSESSMENTS: dict[str, Assessment] = {
     ),
 }
 
-Search = Callable[[str], fetch.Suchergebnis]
+
+class DemoSource:
+    """Quelle am Interface `Source`, die je Suchbegriff erfundene Anzeigen "findet"."""
+
+    def __init__(
+        self, name: str, job_ads: dict[str, list[JobAd]], errors: list[str] | None = None
+    ) -> None:
+        self.name = name
+        self._job_ads = job_ads
+        self._errors = list(errors or [])
+
+    def search(self, keywords: list[str]) -> SearchResult:
+        found: dict[str, JobAd] = {}
+        for keyword in keywords:
+            for job_ad in self._job_ads.get(keyword, []):
+                found.setdefault(job_ad.id, job_ad)
+        return SearchResult(list(found.values()), list(self._errors))
 
 
-def sources() -> dict[str, Search]:
+def sources() -> list[Source]:
     """Drei Demo-Quellen, benannt wie die echten; die Firmen-Watchlist meldet einen Fehler."""
-    return {
-        "Bundesagentur für Arbeit (Demo)": _search(_BUNDESAGENTUR),
-        "Arbeitnow (Demo)": _search(_ARBEITNOW),
-        "Firmen-Watchlist (Demo)": _search(_WATCHLIST, [_WATCHLIST_ERROR]),
-    }
-
-
-def _search(job_ads: dict[str, list[JobAd]], errors: list[str] | None = None) -> Search:
-    return lambda keyword: fetch.Suchergebnis(list(job_ads.get(keyword, [])), list(errors or []))
+    return [
+        DemoSource("Bundesagentur für Arbeit (Demo)", _BUNDESAGENTUR),
+        DemoSource("Arbeitnow (Demo)", _ARBEITNOW),
+        DemoSource("Firmen-Watchlist (Demo)", _WATCHLIST, [_WATCHLIST_ERROR]),
+    ]
 
 
 def assess(job_ad: JobAd) -> Assessment | None:

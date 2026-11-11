@@ -9,11 +9,12 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `pytest` für Tests, `ruff` für Lint und Format
 
 ## Struktur
-- `src/jobagent/fetch.py`: Anzeigen von Quellen holen (Bundesagentur für Arbeit, Arbeitnow, Firmen-Watchlist via Greenhouse/Lever)
+- `src/jobagent/sources/`: Quellen am Seam `Source` (`name`, `search(keywords) -> SearchResult`); je Quelle ein Adapter, der alle Suchbegriffe auf einmal bekommt, intern dedupliziert und nie wirft. Fertig: `bundesagentur.py` (`BundesagenturSource`). Intern: `_http.py` (JSON-Abruf mit Fehlergrund), `_legacy.py` (Übergangsadapter für Arbeitnow und Watchlist)
+- `src/jobagent/fetch.py`: alter Quellen-Code für Arbeitnow und Firmen-Watchlist via Greenhouse/Lever, hängt übergangsweise per `_legacy.py` am Seam
 - `src/jobagent/store.py`: SQLite, merkt sich gesehene Anzeigen samt Report, Treffernummer, Hash und Bewertung
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md` (weitere Läufe am Tag: `-2`, `-3`, nie überschreiben), sortiert nach Score, unter `mindest_score` nur einzeilig, bereits beworbene Stellen im eigenen Block am Ende
-- `src/jobagent/main.py`: Ablauf: fetch, dedupe, score, report
+- `src/jobagent/main.py`: Ablauf: suchen (Liste von `Source`), dedupe, score, report; `default_sources` baut die eingebauten Quellen aus der Konfiguration
 - `src/jobagent/config.py`: liest `config.toml` und übersetzt die deutschen Schlüssel an genau dieser Stelle
 - `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
 - `src/jobagent/job_ad.py`: die Anzeige (`JobAd`)
