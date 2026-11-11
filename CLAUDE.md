@@ -14,6 +14,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md` (weitere Läufe am Tag: `-2`, `-3`, nie überschreiben), sortiert nach Score, unter `mindest_score` nur einzeilig, bereits beworbene Stellen im eigenen Block am Ende
 - `src/jobagent/main.py`: Ablauf: fetch, dedupe, score, report
+- `src/jobagent/config.py`: liest `config.toml` und übersetzt die deutschen Schlüssel an genau dieser Stelle
 - `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
 - `src/jobagent/job_ad.py`: die Anzeige (`JobAd`)
 - `src/jobagent/position.py`: erkennt dieselbe Stelle über normalisierte Firma + Titel (`position_key`)

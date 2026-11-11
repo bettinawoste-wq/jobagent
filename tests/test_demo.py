@@ -14,156 +14,156 @@ from jobagent import main, score
 
 
 @pytest.fixture
-def leeres_projekt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def empty_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Frischer Clone: kein API-Key, keine profile.md, keine config.toml, kein Netz, kein Modell."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-    def kein_netz(*args: object, **kwargs: object) -> None:
+    def no_network(*args: object, **kwargs: object) -> None:
         raise AssertionError("Demo-Lauf darf nicht ins Netz")
 
-    def kein_modell(*args: object, **kwargs: object) -> None:
+    def no_model(*args: object, **kwargs: object) -> None:
         raise AssertionError("Demo-Lauf darf kein Modell fragen")
 
-    monkeypatch.setattr(httpx.Client, "send", kein_netz)
-    monkeypatch.setattr(score, "score_job_ad", kein_modell)
+    monkeypatch.setattr(httpx.Client, "send", no_network)
+    monkeypatch.setattr(score, "score_job_ad", no_model)
     return tmp_path
 
 
-def _demo_lauf(capsys: pytest.CaptureFixture[str], *argumente: str) -> str:
-    main.cli(["--demo", *argumente])
+def _demo_run(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
+    main.cli(["--demo", *argv])
     return capsys.readouterr().out
 
 
-def test_demo_lauf_gibt_report_aus_ohne_etwas_anzulegen(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+def test_demo_run_prints_report_without_creating_anything(
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys)
+    output = _demo_run(capsys)
 
-    assert ausgabe.startswith("# Stellenvorschläge ")
-    assert list(leeres_projekt.iterdir()) == []
+    assert output.startswith("# Stellenvorschläge ")
+    assert list(empty_project.iterdir()) == []
 
 
-def test_demo_lauf_zeigt_scores_von_1_bis_5(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+def test_demo_run_shows_scores_from_1_to_5(
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys)
+    output = _demo_run(capsys)
 
-    for score_wert in range(1, 6):
-        assert f"Score {score_wert}/5" in ausgabe
+    for score_value in range(1, 6):
+        assert f"Score {score_value}/5" in output
 
 
-def test_demo_lauf_zeigt_schwache_treffer_einzeilig(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+def test_demo_run_shows_weak_matches_on_one_line(
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys)
+    output = _demo_run(capsys)
 
-    kompakt = ausgabe.split("## Weitere Treffer (Score unter 3)\n")[1]
-    assert "SAP-Berater FI/CO (m/w/d) (Musterfirma Beratung GmbH, Beispielstadt)" in kompakt
-    assert "Score 1/5" in kompakt
+    compact = output.split("## Weitere Treffer (Score unter 3)\n")[1]
+    assert "SAP-Berater FI/CO (m/w/d) (Musterfirma Beratung GmbH, Beispielstadt)" in compact
+    assert "Score 1/5" in compact
 
 
-def test_demo_lauf_meldet_ausgefallene_quelle_und_laeuft_weiter(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+def test_demo_run_reports_failed_source_and_continues(
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys)
+    output = _demo_run(capsys)
 
     assert (
         "- Firmen-Watchlist (Demo): FEHLER, 2 Anzeigen (Musterwerk AG: Board nicht erreichbar)"
-        in ausgabe
+        in output
     )
-    assert "- Bundesagentur für Arbeit (Demo): 3 Anzeigen" in ausgabe
+    assert "- Bundesagentur für Arbeit (Demo): 3 Anzeigen" in output
 
 
-def test_demo_lauf_zeigt_nachfass_hinweis(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+def test_demo_run_shows_follow_up_reminder(
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys)
+    output = _demo_run(capsys)
 
-    assert "## Nachfassen\n" in ausgabe
-    assert "seit 18 Tagen keine Antwort, nachhaken?" in ausgabe
+    assert "## Nachfassen\n" in output
+    assert "seit 18 Tagen keine Antwort, nachhaken?" in output
 
 
 def test_demo_run_detects_applied_position_whose_text_differs(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys)
+    output = _demo_run(capsys)
 
-    beworben = ausgabe.split("## Bereits beworben\n")[1]
-    assert "Python Developer (w/m/d) (Beispiel Tech, Remote)" in beworben
-    assert "gespräch, beworben am" in beworben
-    assert "Text weicht von deiner Bewerbung ab" in beworben
+    applied = output.split("## Bereits beworben\n")[1]
+    assert "Python Developer (w/m/d) (Beispiel Tech, Remote)" in applied
+    assert "gespräch, beworben am" in applied
+    assert "Text weicht von deiner Bewerbung ab" in applied
 
 
-def test_demo_lauf_schreibt_mit_ausgabe_zusaetzlich_eine_datei(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+def test_demo_run_with_output_also_writes_a_file(
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys, "--ausgabe", "demo-report")
+    output = _demo_run(capsys, "--ausgabe", "demo-report")
 
-    dateien = list((leeres_projekt / "demo-report").iterdir())
-    assert len(dateien) == 1
-    assert dateien[0].read_text(encoding="utf-8") == ausgabe
-    assert [eintrag.name for eintrag in leeres_projekt.iterdir()] == ["demo-report"]
+    files = list((empty_project / "demo-report").iterdir())
+    assert len(files) == 1
+    assert files[0].read_text(encoding="utf-8") == output
+    assert [entry.name for entry in empty_project.iterdir()] == ["demo-report"]
 
 
-def test_ausgabe_gibt_es_nur_im_demo_lauf(leeres_projekt: Path) -> None:
+def test_output_only_exists_in_demo_run(empty_project: Path) -> None:
     with pytest.raises(SystemExit):
         main.cli(["--ausgabe", "demo-report"])
 
 
-def _demo_lauf_am(
-    tag: date, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+def _demo_run_on(
+    day: date, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> str:
-    class Datum(date):
+    class FixedDate(date):
         @classmethod
         def today(cls) -> date:
-            return tag
+            return day
 
-    monkeypatch.setattr(main, "date", Datum)
-    return _demo_lauf(capsys)
+    monkeypatch.setattr(main, "date", FixedDate)
+    return _demo_run(capsys)
 
 
-def _ohne_datumsangaben(text: str) -> str:
+def _without_dates(text: str) -> str:
     return re.sub(r"\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{4}", "<datum>", text)
 
 
-def test_demo_lauf_ist_an_jedem_tag_gleich_bis_auf_datumsangaben(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+def test_demo_run_is_the_same_every_day_except_dates(
+    empty_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    im_winter = _demo_lauf_am(date(2026, 1, 5), capsys, monkeypatch)
-    im_sommer = _demo_lauf_am(date(2027, 7, 31), capsys, monkeypatch)
+    in_winter = _demo_run_on(date(2026, 1, 5), capsys, monkeypatch)
+    in_summer = _demo_run_on(date(2027, 7, 31), capsys, monkeypatch)
 
-    assert "2026-01-05" in im_winter
-    assert "2027-07-31" in im_sommer
-    assert _ohne_datumsangaben(im_winter) == _ohne_datumsangaben(im_sommer)
+    assert "2026-01-05" in in_winter
+    assert "2027-07-31" in in_summer
+    assert _without_dates(in_winter) == _without_dates(in_summer)
 
 
-def test_demo_lauf_verlinkt_nur_auf_example_com(
-    leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
+def test_demo_run_links_only_to_example_com(
+    empty_project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ausgabe = _demo_lauf(capsys)
+    output = _demo_run(capsys)
 
-    links = re.findall(r"https?://\S+", ausgabe)
+    links = re.findall(r"https?://\S+", output)
     assert len(links) == 8
     assert all(link.startswith("https://example.com/") for link in links)
 
 
-def test_demo_lauf_gibt_umlaute_als_utf8_aus(tmp_path: Path) -> None:
+def test_demo_run_prints_umlauts_as_utf8(tmp_path: Path) -> None:
     # Eigener Prozess ohne UTF-8-Vorgaben, so wie die Windows-Konsole ihn startet.
-    umgebung = {
-        name: wert
-        for name, wert in os.environ.items()
+    env = {
+        name: value
+        for name, value in os.environ.items()
         if name not in {"PYTHONIOENCODING", "PYTHONUTF8", "ANTHROPIC_API_KEY"}
     }
-    umgebung["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
+    env["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
 
-    ergebnis = subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-m", "jobagent.main", "--demo"],
         cwd=tmp_path,
-        env=umgebung,
+        env=env,
         capture_output=True,
         check=True,
     )
 
-    assert "# Stellenvorschläge" in ergebnis.stdout.decode("utf-8")
+    assert "# Stellenvorschläge" in result.stdout.decode("utf-8")
     assert list(tmp_path.iterdir()) == []

@@ -11,16 +11,17 @@ from collections.abc import Callable
 from datetime import date, timedelta
 
 from jobagent import fetch, store
+from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.position import position_key
 from jobagent.score import Assessment
 
-KONFIG: dict = {
-    "was": ["Full-Stack-Entwickler", "IT Consultant", "Embedded Entwickler", "Data Scientist"],
-    "mindest_score": 3,
-    "nachfassen_ab_tag": 14,
-    "nachfassen_bis_tag": 28,
-}
+CONFIG = Config(
+    keywords=["Full-Stack-Entwickler", "IT Consultant", "Embedded Entwickler", "Data Scientist"],
+    min_score=3,
+    follow_up_min_days=14,
+    follow_up_max_days=28,
+)
 
 _LINK = "https://example.com/stellen/"
 
@@ -118,7 +119,7 @@ _EARLIER_JOB_AD = _job_ad(
     "Backend mit Python und PostgreSQL, Remote in Deutschland.",
 )
 
-_WATCHLIST_FEHLER = "Musterwerk AG: Board nicht erreichbar"
+_WATCHLIST_ERROR = "Musterwerk AG: Board nicht erreichbar"
 
 ASSESSMENTS: dict[str, Assessment] = {
     "demo-ba-1": Assessment(
@@ -179,28 +180,28 @@ ASSESSMENTS: dict[str, Assessment] = {
     ),
 }
 
-Suche = Callable[[str], fetch.Suchergebnis]
+Search = Callable[[str], fetch.Suchergebnis]
 
 
-def quellen() -> dict[str, Suche]:
+def sources() -> dict[str, Search]:
     """Drei Demo-Quellen, benannt wie die echten; die Firmen-Watchlist meldet einen Fehler."""
     return {
-        "Bundesagentur für Arbeit (Demo)": _suche(_BUNDESAGENTUR),
-        "Arbeitnow (Demo)": _suche(_ARBEITNOW),
-        "Firmen-Watchlist (Demo)": _suche(_WATCHLIST, [_WATCHLIST_FEHLER]),
+        "Bundesagentur für Arbeit (Demo)": _search(_BUNDESAGENTUR),
+        "Arbeitnow (Demo)": _search(_ARBEITNOW),
+        "Firmen-Watchlist (Demo)": _search(_WATCHLIST, [_WATCHLIST_ERROR]),
     }
 
 
-def _suche(job_ads: dict[str, list[JobAd]], fehler: list[str] | None = None) -> Suche:
-    return lambda was: fetch.Suchergebnis(list(job_ads.get(was, [])), list(fehler or []))
+def _search(job_ads: dict[str, list[JobAd]], errors: list[str] | None = None) -> Search:
+    return lambda keyword: fetch.Suchergebnis(list(job_ads.get(keyword, [])), list(errors or []))
 
 
-def bewerte(job_ad: JobAd) -> Assessment | None:
+def assess(job_ad: JobAd) -> Assessment | None:
     """Vorgefertigte Bewertung statt Modellaufruf."""
     return ASSESSMENTS.get(job_ad.id)
 
 
-def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
+def create_applications(conn: sqlite3.Connection, today: date) -> None:
     """Legt die Bewerbungen an, die es vor dem Demo-Lauf schon gibt (Datum relativ zu heute)."""
     # Ohne Antwort und im Nachfass-Fenster: erscheint als Nachfass-Hinweis.
     store.create_application(
@@ -212,13 +213,13 @@ def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
             None,
         ),
         store.ApplicationStatus.APPLIED,
-        heute - timedelta(days=18),
+        today - timedelta(days=18),
     )
 
     # Bewerbung auf eine fruehere Anzeige derselben Stelle: Die neue Anzeige von Arbeitnow
     # (demo-an-1) schreibt Firma und Titel anders und hat einen anderen Text.
-    beworben_am = heute - timedelta(days=35)
-    store.mark_seen(conn, _EARLIER_JOB_AD, ASSESSMENTS["demo-an-1"], beworben_am)
+    applied_on = today - timedelta(days=35)
+    store.mark_seen(conn, _EARLIER_JOB_AD, ASSESSMENTS["demo-an-1"], applied_on)
     store.create_application(
         conn,
         store.NewApplication(
@@ -228,5 +229,5 @@ def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
             _EARLIER_JOB_AD.id,
         ),
         store.ApplicationStatus.INTERVIEW,
-        beworben_am,
+        applied_on,
     )

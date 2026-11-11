@@ -7,36 +7,37 @@ from pathlib import Path
 import pytest
 
 from jobagent import feedback, fetch, main, score, store
+from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
 
-_KONFIG = """
+_CONFIG = """
 wo = "München"
 umkreis = 30
 veroeffentlichtseit = 1
 was = ["Softwareentwickler"]
 """
 
-_PROFIL = "# Suchprofil\nPython, München, Hybrid bevorzugt."
+_PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
 
 
 @pytest.fixture(autouse=True)
-def _keine_echten_zweit_und_drittquellen_aufrufe(monkeypatch: pytest.MonkeyPatch) -> None:
+def _no_real_calls_to_second_and_third_source(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fetch, "search_arbeitnow", lambda *a, **kw: fetch.Suchergebnis([]))
     monkeypatch.setattr(fetch, "search_watchlist", lambda *a, **kw: fetch.Suchergebnis([]))
 
 
 @pytest.fixture
-def projekt(tmp_path: Path) -> dict[str, Path]:
-    konfig_pfad = tmp_path / "config.toml"
-    konfig_pfad.write_text(_KONFIG, encoding="utf-8")
-    profil_pfad = tmp_path / "profile.md"
-    profil_pfad.write_text(_PROFIL, encoding="utf-8")
+def project(tmp_path: Path) -> dict[str, Path]:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(_CONFIG, encoding="utf-8")
+    profile_path = tmp_path / "profile.md"
+    profile_path.write_text(_PROFILE, encoding="utf-8")
     return {
-        "konfig_pfad": konfig_pfad,
-        "profil_pfad": profil_pfad,
-        "db_pfad": tmp_path / "jobagent.db",
-        "ausgabe_verzeichnis": tmp_path / "output",
+        "config_path": config_path,
+        "profile_path": profile_path,
+        "db_path": tmp_path / "jobagent.db",
+        "output_dir": tmp_path / "output",
     }
 
 
@@ -54,29 +55,29 @@ def _assessment() -> Assessment:
     return Assessment(score=4, fits=["Python"], misfits=[], gaps=[], summary="Passt.")
 
 
-def _score_und_merke(aufrufe: list[str]):
-    def score_job_ad(job_ad: JobAd, profil: str) -> Assessment:
-        aufrufe.append(job_ad.id)
+def _score_and_record(calls: list[str]):
+    def score_job_ad(job_ad: JobAd, profile: str) -> Assessment:
+        calls.append(job_ad.id)
         return _assessment()
 
     return score_job_ad
 
 
-def test_main_schreibt_report_fuer_neue_treffer(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_writes_report_for_new_matches(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    pfad = main.main(**projekt)
+    path = main.main(**project)
 
-    inhalt = pfad.read_text(encoding="utf-8")
-    assert "Stelle a-1" in inhalt
-    assert "4/5" in inhalt
+    content = path.read_text(encoding="utf-8")
+    assert "Stelle a-1" in content
+    assert "4/5" in content
 
 
-def test_main_schreibt_quellenstatus_in_den_report(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_writes_source_status_into_report(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], []))
     monkeypatch.setattr(
@@ -84,156 +85,156 @@ def test_main_schreibt_quellenstatus_in_den_report(
     )
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    inhalt = main.main(**projekt).read_text(encoding="utf-8")
+    content = main.main(**project).read_text(encoding="utf-8")
 
-    assert "- Bundesagentur für Arbeit: 1 Anzeige\n" in inhalt
-    assert "- Arbeitnow: FEHLER, 0 Anzeigen (x: HTTP 500)" in inhalt
-    assert "Firmen-Watchlist" not in inhalt
+    assert "- Bundesagentur für Arbeit: 1 Anzeige\n" in content
+    assert "- Arbeitnow: FEHLER, 0 Anzeigen (x: HTTP 500)" in content
+    assert "Firmen-Watchlist" not in content
 
 
 def test_main_counts_job_ads_once_across_keywords_and_merges_same_errors(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    projekt["konfig_pfad"].write_text('was = ["A", "B"]\n', encoding="utf-8")
+    project["config_path"].write_text('was = ["A", "B"]\n', encoding="utf-8")
     monkeypatch.setattr(
         fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], ["kaputt"])
     )
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    inhalt = main.main(**projekt).read_text(encoding="utf-8")
+    content = main.main(**project).read_text(encoding="utf-8")
 
-    assert "- Bundesagentur für Arbeit: FEHLER, 1 Anzeige (kaputt)\n" in inhalt
+    assert "- Bundesagentur für Arbeit: FEHLER, 1 Anzeige (kaputt)\n" in content
 
 
-def test_main_ueberlebt_unerwarteten_fehler_einer_quelle(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_survives_unexpected_source_error(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def kaputt(*args, **kwargs):
+    def broken(*args, **kwargs):
         raise KeyError("referenznummer")
 
-    monkeypatch.setattr(fetch, "search", kaputt)
+    monkeypatch.setattr(fetch, "search", broken)
     monkeypatch.setattr(
         fetch, "search_arbeitnow", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], [])
     )
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    inhalt = main.main(**projekt).read_text(encoding="utf-8")
+    content = main.main(**project).read_text(encoding="utf-8")
 
-    assert "Bundesagentur für Arbeit: FEHLER" in inhalt
-    assert "unerwarteter Fehler" in inhalt
-    assert "Stelle a-1" in inhalt
+    assert "Bundesagentur für Arbeit: FEHLER" in content
+    assert "unerwarteter Fehler" in content
+    assert "Stelle a-1" in content
 
 
-def test_main_nimmt_mindest_score_aus_der_konfiguration(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_takes_min_score_from_config(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    projekt["konfig_pfad"].write_text('was = ["A"]\nmindest_score = 5\n', encoding="utf-8")
+    project["config_path"].write_text('was = ["A"]\nmindest_score = 5\n', encoding="utf-8")
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], []))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    inhalt = main.main(**projekt).read_text(encoding="utf-8")
+    content = main.main(**project).read_text(encoding="utf-8")
 
-    assert "## Weitere Treffer (Score unter 5)" in inhalt
-    assert "- **1.** Stelle a-1" in inhalt
+    assert "## Weitere Treffer (Score unter 5)" in content
+    assert "- **1.** Stelle a-1" in content
 
 
-def test_main_nutzt_standard_mindest_score_ohne_konfiguration(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_uses_default_min_score_without_config(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")], []))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: replace(_assessment(), score=2))
 
-    inhalt = main.main(**projekt).read_text(encoding="utf-8")
+    content = main.main(**project).read_text(encoding="utf-8")
 
-    assert "## Weitere Treffer (Score unter 3)" in inhalt
+    assert "## Weitere Treffer (Score unter 3)" in content
 
 
-def test_main_merkt_sich_report_und_treffernummer(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_remembers_report_and_match_number(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scores = {"a-1": 2, "a-2": 5}
 
-    def bewerte(job_ad: JobAd, profil: str) -> Assessment:
+    def assess(job_ad: JobAd, profile: str) -> Assessment:
         return replace(_assessment(), score=scores[job_ad.id])
 
     monkeypatch.setattr(
         fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1"), _job_ad("a-2")])
     )
-    monkeypatch.setattr(score, "score_job_ad", bewerte)
+    monkeypatch.setattr(score, "score_job_ad", assess)
 
-    pfad = main.main(**projekt)
+    path = main.main(**project)
 
-    conn = store.connect(projekt["db_pfad"])
+    conn = store.connect(project["db_path"])
     try:
-        zeilen = conn.execute(
+        rows = conn.execute(
             "SELECT id, report, nummer FROM gesehene_anzeigen ORDER BY id"
         ).fetchall()
     finally:
         conn.close()
-    assert zeilen == [("a-1", pfad.stem, 2), ("a-2", pfad.stem, 1)]
+    assert rows == [("a-1", path.stem, 2), ("a-2", path.stem, 1)]
 
 
 def test_main_skips_already_seen_job_ads(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    aufrufe = []
+    calls = []
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
-    monkeypatch.setattr(score, "score_job_ad", _score_und_merke(aufrufe))
+    monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
 
-    main.main(**projekt)
-    pfad_zweiter_lauf = main.main(**projekt)
+    main.main(**project)
+    second_run_path = main.main(**project)
 
-    assert aufrufe == ["a-1"]
-    assert "Keine neuen Treffer" in pfad_zweiter_lauf.read_text(encoding="utf-8")
+    assert calls == ["a-1"]
+    assert "Keine neuen Treffer" in second_run_path.read_text(encoding="utf-8")
 
 
-def test_main_ohne_suchtreffer_schreibt_notiz(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_without_search_results_writes_note(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([]))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    pfad = main.main(**projekt)
+    path = main.main(**project)
 
-    assert "Keine neuen Treffer" in pfad.read_text(encoding="utf-8")
+    assert "Keine neuen Treffer" in path.read_text(encoding="utf-8")
 
 
 def test_main_does_not_mark_seen_when_assessment_fails(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: None)
 
-    erster_lauf = main.main(**projekt)
-    assert "Keine neuen Treffer" in erster_lauf.read_text(encoding="utf-8")
+    first_run = main.main(**project)
+    assert "Keine neuen Treffer" in first_run.read_text(encoding="utf-8")
 
-    aufrufe = []
-    monkeypatch.setattr(score, "score_job_ad", _score_und_merke(aufrufe))
-    zweiter_lauf = main.main(**projekt)
+    calls = []
+    monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
+    second_run = main.main(**project)
 
-    assert aufrufe == ["a-1"]
-    assert "Stelle a-1" in zweiter_lauf.read_text(encoding="utf-8")
+    assert calls == ["a-1"]
+    assert "Stelle a-1" in second_run.read_text(encoding="utf-8")
 
 
-def test_main_dedupliziert_treffer_ueber_mehrere_suchbegriffe(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_deduplicates_matches_across_keywords(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    projekt["konfig_pfad"].write_text(
+    project["config_path"].write_text(
         'wo = "München"\numkreis = 30\nveroeffentlichtseit = 1\n'
         'was = ["Softwareentwickler", "IT Consultant"]\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
-    aufrufe = []
-    monkeypatch.setattr(score, "score_job_ad", _score_und_merke(aufrufe))
+    calls = []
+    monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
 
-    main.main(**projekt)
+    main.main(**project)
 
-    assert aufrufe == ["a-1"]
+    assert calls == ["a-1"]
 
 
-def test_main_kombiniert_treffer_aus_beiden_quellen(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_combines_matches_from_both_sources(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     arbeitnow_job_ad = JobAd(
         id="arbeitnow:full-stack-entwickler-100",
@@ -246,21 +247,21 @@ def test_main_kombiniert_treffer_aus_beiden_quellen(
     monkeypatch.setattr(
         fetch, "search_arbeitnow", lambda *a, **kw: fetch.Suchergebnis([arbeitnow_job_ad])
     )
-    aufrufe = []
-    monkeypatch.setattr(score, "score_job_ad", _score_und_merke(aufrufe))
+    calls = []
+    monkeypatch.setattr(score, "score_job_ad", _score_and_record(calls))
 
-    pfad = main.main(**projekt)
+    path = main.main(**project)
 
-    inhalt = pfad.read_text(encoding="utf-8")
-    assert "Stelle a-1" in inhalt
-    assert "Full-Stack-Entwickler (m/w/d)" in inhalt
-    assert sorted(aufrufe) == ["a-1", "arbeitnow:full-stack-entwickler-100"]
+    content = path.read_text(encoding="utf-8")
+    assert "Stelle a-1" in content
+    assert "Full-Stack-Entwickler (m/w/d)" in content
+    assert sorted(calls) == ["a-1", "arbeitnow:full-stack-entwickler-100"]
 
 
-def test_main_bindet_watchlist_firmen_aus_config_ein(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_includes_watchlist_companies_from_config(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    projekt["konfig_pfad"].write_text(
+    project["config_path"].write_text(
         'wo = "München"\numkreis = 30\nveroeffentlichtseit = 1\n'
         'was = ["Softwareentwickler"]\n\n'
         '[[firmen]]\nname = "GitLab"\nats = "greenhouse"\nslug = "gitlab"\n',
@@ -273,20 +274,20 @@ def test_main_bindet_watchlist_firmen_aus_config_ein(
         location="Remote",
         link="https://job-boards.greenhouse.io/gitlab/jobs/999",
     )
-    erhaltene_firmen = []
+    received_companies = []
 
-    def fake_search_watchlist(firmen, was, **kw):
-        erhaltene_firmen.append(firmen)
+    def fake_search_watchlist(companies, keyword, **kw):
+        received_companies.append(companies)
         return fetch.Suchergebnis([watchlist_job_ad])
 
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([]))
     monkeypatch.setattr(fetch, "search_watchlist", fake_search_watchlist)
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
-    pfad = main.main(**projekt)
+    path = main.main(**project)
 
-    assert erhaltene_firmen == [[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}]]
-    assert "Full-Stack-Entwickler (m/w/d)" in pfad.read_text(encoding="utf-8")
+    assert received_companies == [[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}]]
+    assert "Full-Stack-Entwickler (m/w/d)" in path.read_text(encoding="utf-8")
 
 
 def _position_job_ad(
@@ -302,282 +303,282 @@ def _position_job_ad(
     )
 
 
-def _lauf_findet(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, job_ad: JobAd
+def _run_finds(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, job_ad: JobAd
 ) -> tuple[Path, str]:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([job_ad]))
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
-    pfad = main.main(**projekt)
-    return pfad, pfad.read_text(encoding="utf-8")
+    path = main.main(**project)
+    return path, path.read_text(encoding="utf-8")
 
 
-def _manuell(projekt: dict[str, Path], aktion: str = "beworben", titel: str = "Data Engineer"):
-    argumente = [aktion, "--firma", "Beispiel", "--titel", titel]
-    assert feedback.main(argumente, db_pfad=projekt["db_pfad"]) == 0
+def _manual(project: dict[str, Path], action: str = "beworben", title: str = "Data Engineer"):
+    argv = [action, "--firma", "Beispiel", "--titel", title]
+    assert feedback.main(argv, db_pfad=project["db_path"]) == 0
 
 
-def _bewerbung_auf_erste_anzeige(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, beschreibung: str | None
+def _application_to_first_job_ad(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, description: str | None
 ) -> None:
-    pfad, _ = _lauf_findet(projekt, monkeypatch, _position_job_ad("alt", beschreibung))
-    assert feedback.main([pfad.stem, "1", "beworben"], db_pfad=projekt["db_pfad"]) == 0
+    path, _ = _run_finds(project, monkeypatch, _position_job_ad("alt", description))
+    assert feedback.main([path.stem, "1", "beworben"], db_pfad=project["db_path"]) == 0
 
 
 def test_main_moves_applied_position_to_own_block(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manuell(projekt)
+    _manual(project)
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu"))
 
-    assert "## Bereits beworben" in inhalt
-    assert "Data Engineer (Beispiel GmbH, München) – Score 4/5 – beworben, beworben am" in inhalt
-    assert "## 1. Data Engineer" not in inhalt
+    assert "## Bereits beworben" in content
+    assert "Data Engineer (Beispiel GmbH, München) – Score 4/5 – beworben, beworben am" in content
+    assert "## 1. Data Engineer" not in content
 
 
 def test_main_detects_position_despite_company_name_in_title(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manuell(projekt)
+    _manual(project)
     job_ad = _position_job_ad("neu", title="Beispiel GmbH: Data Engineer (w/m/x)")
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, job_ad)
+    _, content = _run_finds(project, monkeypatch, job_ad)
 
-    assert "## Bereits beworben" in inhalt
+    assert "## Bereits beworben" in content
 
 
-def test_main_zeigt_status_der_bewerbung(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_shows_application_status(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manuell(projekt)
-    _manuell(projekt, "absage")
+    _manual(project)
+    _manual(project, "absage")
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu"))
 
-    assert "– absage, beworben am" in inhalt
+    assert "– absage, beworben am" in content
 
 
-def test_main_zurueckgezogene_bewerbung_zaehlt_nicht(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_withdrawn_application_does_not_count(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manuell(projekt)
-    _manuell(projekt, "zurückgezogen")
+    _manual(project)
+    _manual(project, "zurückgezogen")
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu"))
 
-    assert "Bereits beworben" not in inhalt
-    assert "## 1. Data Engineer" in inhalt
+    assert "Bereits beworben" not in content
+    assert "## 1. Data Engineer" in content
 
 
 def test_main_other_position_stays_unmarked(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manuell(projekt, titel="Consultant")
+    _manual(project, title="Consultant")
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu"))
 
-    assert "Bereits beworben" not in inhalt
+    assert "Bereits beworben" not in content
 
 
 def test_main_job_ad_without_company_is_not_matched(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    argumente = ["beworben", "--firma", "", "--titel", "Data Engineer"]
-    feedback.main(argumente, db_pfad=projekt["db_pfad"])
-    ohne_firma = replace(_position_job_ad("neu"), company=None)
+    argv = ["beworben", "--firma", "", "--titel", "Data Engineer"]
+    feedback.main(argv, db_pfad=project["db_path"])
+    without_company = replace(_position_job_ad("neu"), company=None)
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, ohne_firma)
+    _, content = _run_finds(project, monkeypatch, without_company)
 
-    assert "Bereits beworben" not in inhalt
+    assert "Bereits beworben" not in content
 
 
-def test_main_meldet_identischen_text(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_reports_identical_text(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Gleicher Text")
+    _application_to_first_job_ad(project, monkeypatch, "Gleicher Text")
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu", "Gleicher   Text"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu", "Gleicher   Text"))
 
-    assert "– Text identisch –" in inhalt
+    assert "– Text identisch –" in content
 
 
 def test_main_reports_text_differs(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Alter Text")
+    _application_to_first_job_ad(project, monkeypatch, "Alter Text")
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu", "Neuer Text"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu", "Neuer Text"))
 
-    assert "– Text weicht von deiner Bewerbung ab –" in inhalt
+    assert "– Text weicht von deiner Bewerbung ab –" in content
 
 
-def test_main_manuelle_bewerbung_ist_nicht_vergleichbar(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_manual_application_is_not_comparable(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manuell(projekt)
+    _manual(project)
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu"))
 
-    assert "– Text nicht vergleichbar –" in inhalt
+    assert "– Text nicht vergleichbar –" in content
 
 
-def test_main_fehlende_neue_beschreibung_ist_nicht_vergleichbar(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_missing_new_description_is_not_comparable(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Alter Text")
+    _application_to_first_job_ad(project, monkeypatch, "Alter Text")
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("neu", None))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("neu", None))
 
-    assert "– Text nicht vergleichbar –" in inhalt
+    assert "– Text nicht vergleichbar –" in content
 
 
-def test_main_vergleicht_mit_letzter_bewerbung(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_compares_with_latest_application(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Erster Text")
-    pfad, _ = _lauf_findet(projekt, monkeypatch, _position_job_ad("zwei", "Zweiter Text"))
-    assert feedback.main([pfad.stem, "1", "beworben"], db_pfad=projekt["db_pfad"]) == 0
+    _application_to_first_job_ad(project, monkeypatch, "Erster Text")
+    path, _ = _run_finds(project, monkeypatch, _position_job_ad("zwei", "Zweiter Text"))
+    assert feedback.main([path.stem, "1", "beworben"], db_pfad=project["db_path"]) == 0
 
-    _, inhalt = _lauf_findet(projekt, monkeypatch, _position_job_ad("drei", "Zweiter Text"))
+    _, content = _run_finds(project, monkeypatch, _position_job_ad("drei", "Zweiter Text"))
 
-    assert "– Text identisch –" in inhalt
+    assert "– Text identisch –" in content
 
 
-def _beworben_vor(projekt: dict[str, Path], tagen: int, status: str = "beworben") -> None:
-    am = (date.today() - timedelta(days=tagen)).isoformat()
-    basis = ["--firma", "Firma X", "--titel", "Dev"]
-    assert feedback.main(["beworben", *basis, "--am", am], db_pfad=projekt["db_pfad"]) == 0
+def _applied_days_ago(project: dict[str, Path], days: int, status: str = "beworben") -> None:
+    applied_on = (date.today() - timedelta(days=days)).isoformat()
+    base = ["--firma", "Firma X", "--titel", "Dev"]
+    assert feedback.main(["beworben", *base, "--am", applied_on], db_pfad=project["db_path"]) == 0
     if status != "beworben":
-        assert feedback.main([status, *basis], db_pfad=projekt["db_pfad"]) == 0
+        assert feedback.main([status, *base], db_pfad=project["db_path"]) == 0
 
 
-def _lauf_ohne_treffer(projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> str:
+def _run_without_matches(project: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> str:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([]))
-    return main.main(**projekt).read_text(encoding="utf-8")
+    return main.main(**project).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
-    ("tage", "erwartet"), [(13, False), (14, True), (20, True), (28, True), (29, False)]
+    ("days", "expected"), [(13, False), (14, True), (20, True), (28, True), (29, False)]
 )
-def test_main_nachfass_fenster(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, tage: int, erwartet: bool
+def test_main_follow_up_window(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, days: int, expected: bool
 ) -> None:
-    _beworben_vor(projekt, tage)
+    _applied_days_ago(project, days)
 
-    inhalt = _lauf_ohne_treffer(projekt, monkeypatch)
+    content = _run_without_matches(project, monkeypatch)
 
-    assert ("## Nachfassen" in inhalt) is erwartet
-    if erwartet:
-        assert f"seit {tage} Tagen keine Antwort" in inhalt
+    assert ("## Nachfassen" in content) is expected
+    if expected:
+        assert f"seit {days} Tagen keine Antwort" in content
 
 
 @pytest.mark.parametrize("status", ["gespräch", "absage", "zusage", "zurückgezogen"])
-def test_main_nachfassen_nur_bei_status_beworben(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, status: str
+def test_main_follow_up_only_for_status_applied(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, status: str
 ) -> None:
-    _beworben_vor(projekt, 20, status)
+    _applied_days_ago(project, 20, status)
 
-    assert "Nachfassen" not in _lauf_ohne_treffer(projekt, monkeypatch)
+    assert "Nachfassen" not in _run_without_matches(project, monkeypatch)
 
 
-def test_main_nachfass_tage_aus_konfiguration(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_follow_up_days_from_config(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    projekt["konfig_pfad"].write_text(
+    project["config_path"].write_text(
         'was = ["A"]\nnachfassen_ab_tag = 3\nnachfassen_bis_tag = 5\n', encoding="utf-8"
     )
-    _beworben_vor(projekt, 4)
+    _applied_days_ago(project, 4)
 
-    assert "seit 4 Tagen keine Antwort" in _lauf_ohne_treffer(projekt, monkeypatch)
+    assert "seit 4 Tagen keine Antwort" in _run_without_matches(project, monkeypatch)
 
 
-def test_main_nachfass_hinweis_aendert_den_status_nicht(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_follow_up_reminder_does_not_change_status(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _beworben_vor(projekt, 60)
+    _applied_days_ago(project, 60)
 
-    _lauf_ohne_treffer(projekt, monkeypatch)
+    _run_without_matches(project, monkeypatch)
 
-    conn = store.connect(projekt["db_pfad"])
+    conn = store.connect(project["db_path"])
     try:
         assert conn.execute("SELECT status FROM bewerbungen").fetchall() == [("beworben",)]
     finally:
         conn.close()
 
 
-def _offenes_feedback(projekt: dict[str, Path], anzahl: int) -> None:
-    conn = store.connect(projekt["db_pfad"])
-    for nummer in range(anzahl):
-        anzeige_id = f"f-{nummer}"
-        store.mark_seen(conn, _job_ad(anzeige_id), _assessment(), date.today())
-        store.save_feedback(conn, anzeige_id, 3, None, date.today())
+def _open_feedback(project: dict[str, Path], count: int) -> None:
+    conn = store.connect(project["db_path"])
+    for number in range(count):
+        job_ad_id = f"f-{number}"
+        store.mark_seen(conn, _job_ad(job_ad_id), _assessment(), date.today())
+        store.save_feedback(conn, job_ad_id, 3, None, date.today())
     conn.close()
 
 
-@pytest.mark.parametrize(("anzahl", "erwartet"), [(4, False), (5, True), (7, True)])
-def test_main_hinweis_auf_profil_vorschlag_ab_fuenf_feedbacks(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch, anzahl: int, erwartet: bool
+@pytest.mark.parametrize(("count", "expected"), [(4, False), (5, True), (7, True)])
+def test_main_profile_suggestion_hint_from_five_feedbacks(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, count: int, expected: bool
 ) -> None:
-    _offenes_feedback(projekt, anzahl)
+    _open_feedback(project, count)
 
-    inhalt = _lauf_ohne_treffer(projekt, monkeypatch)
+    content = _run_without_matches(project, monkeypatch)
 
-    assert ("## Profil-Vorschlag" in inhalt) is erwartet
-    if erwartet:
-        assert f"- {anzahl} Rückmeldungen warten" in inhalt
+    assert ("## Profil-Vorschlag" in content) is expected
+    if expected:
+        assert f"- {count} Rückmeldungen warten" in content
 
 
-def test_main_verarbeitetes_feedback_zaehlt_nicht(
-    projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+def test_main_processed_feedback_does_not_count(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _offenes_feedback(projekt, 5)
-    conn = store.connect(projekt["db_pfad"])
+    _open_feedback(project, 5)
+    conn = store.connect(project["db_path"])
     store.mark_feedback_processed(conn, ["f-0"])
     conn.close()
 
-    assert "Profil-Vorschlag" not in _lauf_ohne_treffer(projekt, monkeypatch)
+    assert "Profil-Vorschlag" not in _run_without_matches(project, monkeypatch)
 
 
 def test_run_with_own_sources_assessment_and_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def kein_netz(*args, **kwargs):
+    def no_network(*args, **kwargs):
         raise AssertionError("Eingebaute Quelle darf nicht aufgerufen werden")
 
-    def kein_modell(*args, **kwargs):
+    def no_model(*args, **kwargs):
         raise AssertionError("Haiku-Bewertung darf nicht aufgerufen werden")
 
-    monkeypatch.setattr(fetch, "search", kein_netz)
-    monkeypatch.setattr(fetch, "search_arbeitnow", kein_netz)
-    monkeypatch.setattr(fetch, "search_watchlist", kein_netz)
-    monkeypatch.setattr(score, "score_job_ad", kein_modell)
+    monkeypatch.setattr(fetch, "search", no_network)
+    monkeypatch.setattr(fetch, "search_arbeitnow", no_network)
+    monkeypatch.setattr(fetch, "search_watchlist", no_network)
+    monkeypatch.setattr(score, "score_job_ad", no_model)
     scores = {"a-1": 3, "a-2": 5, "b-1": 4}
-    bewertet: list[str] = []
+    assessed: list[str] = []
 
-    def bewerte(job_ad: JobAd) -> Assessment:
-        bewertet.append(job_ad.id)
+    def assess(job_ad: JobAd) -> Assessment:
+        assessed.append(job_ad.id)
         return replace(_assessment(), score=scores[job_ad.id])
 
-    pfad = main.main(
-        konfig_pfad=tmp_path / "fehlt.toml",
-        profil_pfad=tmp_path / "fehlt.md",
-        db_pfad=tmp_path / "jobagent.db",
-        ausgabe_verzeichnis=tmp_path / "output",
-        konfig={"was": ["Python"]},
-        quellen={
-            "Quelle A": lambda was: fetch.Suchergebnis([_job_ad("a-1"), _job_ad("a-2")]),
-            "Quelle B": lambda was: fetch.Suchergebnis([_job_ad("b-1")], ["Python: HTTP 503"]),
+    path = main.main(
+        config_path=tmp_path / "fehlt.toml",
+        profile_path=tmp_path / "fehlt.md",
+        db_path=tmp_path / "jobagent.db",
+        output_dir=tmp_path / "output",
+        config=Config(keywords=["Python"]),
+        sources={
+            "Quelle A": lambda keyword: fetch.Suchergebnis([_job_ad("a-1"), _job_ad("a-2")]),
+            "Quelle B": lambda keyword: fetch.Suchergebnis([_job_ad("b-1")], ["Python: HTTP 503"]),
         },
-        bewerte=bewerte,
+        assess=assess,
     )
 
-    inhalt = pfad.read_text(encoding="utf-8")
-    assert sorted(bewertet) == ["a-1", "a-2", "b-1"]
-    assert "- Quelle A: 2 Anzeigen\n" in inhalt
-    assert "- Quelle B: FEHLER, 1 Anzeige (Python: HTTP 503)\n" in inhalt
-    assert "Bundesagentur" not in inhalt
+    content = path.read_text(encoding="utf-8")
+    assert sorted(assessed) == ["a-1", "a-2", "b-1"]
+    assert "- Quelle A: 2 Anzeigen\n" in content
+    assert "- Quelle B: FEHLER, 1 Anzeige (Python: HTTP 503)\n" in content
+    assert "Bundesagentur" not in content
     assert (
-        inhalt.index("## 1. Stelle a-2")
-        < inhalt.index("## 2. Stelle b-1")
-        < inhalt.index("## 3. Stelle a-1")
+        content.index("## 1. Stelle a-2")
+        < content.index("## 2. Stelle b-1")
+        < content.index("## 3. Stelle a-1")
     )
