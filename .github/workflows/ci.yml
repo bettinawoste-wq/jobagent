@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, Format und Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv installieren
+        uses: astral-sh/setup-uv@v6
+
+      - name: Abhängigkeiten installieren (inkl. Dev-Gruppe)
+        # Python-Version kommt aus .python-version (3.12), --locked hält uv.lock verbindlich.
+        run: uv sync --locked
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: pytest
+        # Kein ANTHROPIC_API_KEY, kein Netz: alle Quellen und die Bewertung sind in den Tests gemockt.
+        run: uv run pytest
