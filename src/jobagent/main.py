@@ -18,6 +18,7 @@ from jobagent.job_ad import JobAd
 from jobagent.position import position_key
 from jobagent.sources import SearchResult, Source
 from jobagent.sources._legacy import LegacySource
+from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
 
 logger = logging.getLogger(__name__)
@@ -166,12 +167,7 @@ def default_sources(
 
     sources: list[Source] = [
         BundesagenturSource(location, config.radius, since, transport=transport),
-        LegacySource(
-            "Arbeitnow",
-            lambda keyword: fetch.search_arbeitnow(
-                keyword, wo=location, veroeffentlichtseit=since, transport=transport
-            ),
-        ),
+        ArbeitnowSource(location, since, transport=transport),
     ]
     if companies:
         sources.append(
