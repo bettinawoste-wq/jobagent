@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from jobagent.config import Config, load_config
+from jobagent.sources.watchlist import WatchlistCompany
 
 
 def test_load_config_reads_german_keys_from_config_toml(tmp_path: Path) -> None:
@@ -23,7 +24,7 @@ def test_load_config_reads_german_keys_from_config_toml(tmp_path: Path) -> None:
         min_score=4,
         follow_up_min_days=10,
         follow_up_max_days=20,
-        companies=[{"name": "GitLab", "ats": "greenhouse", "slug": "gitlab"}],
+        companies=[WatchlistCompany(name="GitLab", ats="greenhouse", slug="gitlab")],
     )
 
 

@@ -19,6 +19,7 @@ from jobagent.position import position_key
 from jobagent.sources import SearchResult, Source
 from jobagent.sources._legacy import LegacySource
 from jobagent.sources.bundesagentur import BundesagenturSource
+from jobagent.sources.watchlist import WatchlistSource
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,6 @@ def default_sources(
     """Die eingebauten Quellen; die Firmen-Watchlist nur, wenn `config.toml` Firmen nennt."""
     location = config.location
     since = config.published_since
-    companies = config.companies
 
     sources: list[Source] = [
         BundesagenturSource(location, config.radius, since, transport=transport),
@@ -173,13 +173,8 @@ def default_sources(
             ),
         ),
     ]
-    if companies:
-        sources.append(
-            LegacySource(
-                "Firmen-Watchlist",
-                lambda keyword: fetch.search_watchlist(companies, keyword, transport=transport),
-            )
-        )
+    if config.companies:
+        sources.append(WatchlistSource(config.companies, transport=transport))
     return sources
 
 
