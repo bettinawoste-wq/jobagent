@@ -510,7 +510,7 @@ def _offenes_feedback(projekt: dict[str, Path], anzahl: int) -> None:
     for nummer in range(anzahl):
         anzeige_id = f"f-{nummer}"
         store.mark_seen(conn, _job_ad(anzeige_id), _assessment(), date.today())
-        store.speichere_feedback(conn, anzeige_id, 3, None, date.today())
+        store.save_feedback(conn, anzeige_id, 3, None, date.today())
     conn.close()
 
 
@@ -532,7 +532,7 @@ def test_main_verarbeitetes_feedback_zaehlt_nicht(
 ) -> None:
     _offenes_feedback(projekt, 5)
     conn = store.connect(projekt["db_pfad"])
-    store.markiere_feedback_verarbeitet(conn, ["f-0"])
+    store.mark_feedback_processed(conn, ["f-0"])
     conn.close()
 
     assert "Profil-Vorschlag" not in _lauf_ohne_treffer(projekt, monkeypatch)

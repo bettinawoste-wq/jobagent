@@ -1,6 +1,5 @@
 """Leitet aus Feedback Aenderungen am Suchprofil ab, die erst nach Bestaetigung gelten."""
 
-import dataclasses
 import difflib
 import json
 import logging
@@ -81,14 +80,14 @@ class Vorschlag:
 
 def erstelle_vorschlag(
     profil: str,
-    rueckmeldungen: list[store.Rueckmeldung],
+    rueckmeldungen: list[store.Feedback],
     *,
     client: anthropic.Anthropic | None = None,
 ) -> Vorschlag | None:
     """Fragt das Modell nach Aenderungen; None, wenn keine brauchbare Antwort kommt."""
     aktiver_client = client or anthropic.Anthropic()
     daten = json.dumps(
-        [dataclasses.asdict(rueckmeldung) for rueckmeldung in rueckmeldungen],
+        [_als_modelldaten(rueckmeldung) for rueckmeldung in rueckmeldungen],
         ensure_ascii=False,
         indent=2,
     )
@@ -111,6 +110,30 @@ def erstelle_vorschlag(
         return None
 
     return _zu_vorschlag(antwort)
+
+
+def _als_modelldaten(feedback: store.Feedback) -> dict:
+    # Die Schluessel sind Teil des Prompts und bleiben deutsch, siehe _SYSTEM_PROMPT.
+    assessment = feedback.assessment
+    bewertung = (
+        {
+            "passt": assessment.fits,
+            "passt_nicht": assessment.misfits,
+            "luecken": assessment.gaps,
+            "kurzfazit": assessment.summary,
+        }
+        if assessment is not None
+        else {}
+    )
+    return {
+        "anzeige_id": feedback.job_ad_id,
+        "titel": feedback.title,
+        "firma": feedback.company,
+        "modell_score": feedback.model_score,
+        "bewertung": bewertung,
+        "eigener_score": feedback.own_score,
+        "grund": feedback.reason,
+    }
 
 
 def _zu_vorschlag(antwort: object) -> Vorschlag | None:
@@ -180,7 +203,7 @@ def _ablauf(
     eingabe: Callable[[str], str],
     jetzt: datetime,
 ) -> int:
-    rueckmeldungen = store.offene_rueckmeldungen(conn)
+    rueckmeldungen = store.open_feedback(conn)
     if not rueckmeldungen:
         print("Es gibt kein unverarbeitetes Feedback.")
         return 0
@@ -191,14 +214,14 @@ def _ablauf(
         print("Fehler: Kein brauchbarer Vorschlag, es wurde nichts geändert.", file=sys.stderr)
         return 1
 
-    ids = [rueckmeldung.anzeige_id for rueckmeldung in rueckmeldungen]
+    ids = [rueckmeldung.job_ad_id for rueckmeldung in rueckmeldungen]
     neues_profil, uebersprungen = wende_an(profil, vorschlag.aenderungen)
     _zeige_modellfehler(vorschlag.modellfehler)
     for aenderung in uebersprungen:
         print(f"Übersprungen, Auszug nicht eindeutig: {aenderung.alt}", file=sys.stderr)
 
     if not vorschlag.aenderungen:
-        store.markiere_feedback_verarbeitet(conn, ids)
+        store.mark_feedback_processed(conn, ids)
         print("Keine Änderung am Suchprofil nötig.")
         return 0
 
@@ -227,10 +250,10 @@ def _entscheide(
     if antwort in ("j", "ja"):
         sicherung = _sichere(profil_pfad, profil, jetzt)
         profil_pfad.write_text(neues_profil, encoding="utf-8")
-        store.markiere_feedback_verarbeitet(conn, ids)
+        store.mark_feedback_processed(conn, ids)
         print(f"Suchprofil geändert, Sicherung: {sicherung.name}")
     elif antwort in ("n", "nein"):
-        store.markiere_feedback_verarbeitet(conn, ids)
+        store.mark_feedback_processed(conn, ids)
         print("Vorschlag abgelehnt, Suchprofil unverändert.")
     else:
         print("Abgebrochen, nichts geändert. Das Feedback bleibt offen.")

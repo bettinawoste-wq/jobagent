@@ -72,7 +72,7 @@ def _feedback_anlegen(db: Path, anzeige_id: str) -> None:
     job_ad = JobAd(id=anzeige_id, title="Consultant", company="KPMG AG", location="M", link="l")
     conn = store.connect(db)
     store.mark_seen(conn, job_ad, assessment, date(2026, 11, 8))
-    store.speichere_feedback(conn, anzeige_id, 3, "KPMG ist keine Zeitarbeit", date(2026, 11, 8))
+    store.save_feedback(conn, anzeige_id, 3, "KPMG ist keine Zeitarbeit", date(2026, 11, 8))
     conn.close()
 
 
@@ -101,16 +101,63 @@ def _aenderung(alt: str, neu: str) -> Aenderung:
     return Aenderung(alt=alt, neu=neu, grund="g")
 
 
-def _rueckmeldung() -> store.Rueckmeldung:
-    return store.Rueckmeldung(
-        anzeige_id="a-1",
-        titel="Consultant",
-        firma="KPMG AG",
-        modell_score=2,
-        bewertung={"passt_nicht": ["Zeitarbeit"]},
-        eigener_score=3,
-        grund="KPMG ist keine Zeitarbeit",
+def _rueckmeldung() -> store.Feedback:
+    return store.Feedback(
+        job_ad_id="a-1",
+        title="Consultant",
+        company="KPMG AG",
+        model_score=2,
+        assessment=Assessment(
+            score=2, fits=["Python"], misfits=["Zeitarbeit"], gaps=[], summary="Eher nein."
+        ),
+        own_score=3,
+        reason="KPMG ist keine Zeitarbeit",
     )
+
+
+def test_vorschlag_schickt_rueckmeldungen_mit_deutschen_schluesseln() -> None:
+    ohne_bewertung = store.Feedback(
+        job_ad_id="a-0",
+        title="Alt",
+        company=None,
+        model_score=1,
+        assessment=None,
+        own_score=2,
+        reason=None,
+    )
+    client = _FakeClient(_vorschlag())
+
+    erstelle_vorschlag(_PROFIL, [ohne_bewertung, _rueckmeldung()], client=client)
+
+    text = client.aufrufe[0]["messages"][0]["content"]
+    daten = json.loads(text.split("Rueckmeldungen:\n", 1)[1])
+    assert daten == [
+        {
+            "anzeige_id": "a-0",
+            "titel": "Alt",
+            "firma": None,
+            "modell_score": 1,
+            "bewertung": {},
+            "eigener_score": 2,
+            "grund": None,
+        },
+        {
+            "anzeige_id": "a-1",
+            "titel": "Consultant",
+            "firma": "KPMG AG",
+            "modell_score": 2,
+            "bewertung": {
+                "passt": ["Python"],
+                "passt_nicht": ["Zeitarbeit"],
+                "luecken": [],
+                "kurzfazit": "Eher nein.",
+            },
+            "eigener_score": 3,
+            "grund": "KPMG ist keine Zeitarbeit",
+        },
+    ]
+    assert list(daten[1]) == list(daten[0])
+    assert list(daten[1]["bewertung"]) == ["passt", "passt_nicht", "luecken", "kurzfazit"]
 
 
 def test_wende_an_ersetzt_genau_den_auszug() -> None:

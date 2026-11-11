@@ -203,15 +203,15 @@ def bewerte(job_ad: JobAd) -> Assessment | None:
 def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
     """Legt die Bewerbungen an, die es vor dem Demo-Lauf schon gibt (Datum relativ zu heute)."""
     # Ohne Antwort und im Nachfass-Fenster: erscheint als Nachfass-Hinweis.
-    store.lege_bewerbung_an(
+    store.create_application(
         conn,
-        store.NeueBewerbung(
+        store.NewApplication(
             position_key("Datenwerk Muster GmbH", "Data Engineer (m/w/d)"),
             "Datenwerk Muster GmbH",
             "Data Engineer (m/w/d)",
             None,
         ),
-        store.BEWORBEN,
+        store.ApplicationStatus.APPLIED,
         heute - timedelta(days=18),
     )
 
@@ -219,14 +219,14 @@ def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
     # (demo-an-1) schreibt Firma und Titel anders und hat einen anderen Text.
     beworben_am = heute - timedelta(days=35)
     store.mark_seen(conn, _EARLIER_JOB_AD, ASSESSMENTS["demo-an-1"], beworben_am)
-    store.lege_bewerbung_an(
+    store.create_application(
         conn,
-        store.NeueBewerbung(
+        store.NewApplication(
             position_key(_EARLIER_JOB_AD.company, _EARLIER_JOB_AD.title),
             _EARLIER_JOB_AD.company,
             _EARLIER_JOB_AD.title,
             _EARLIER_JOB_AD.id,
         ),
-        "gespräch",
+        store.ApplicationStatus.INTERVIEW,
         beworben_am,
     )

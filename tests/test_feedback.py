@@ -22,7 +22,7 @@ def db(tmp_path: Path) -> Path:
     for anzeige_id, titel in [("a-1", "Data Engineer (m/w/d)"), ("a-2", "Consultant")]:
         job_ad = JobAd(id=anzeige_id, title=titel, company="Beispiel GmbH", location="M", link="l")
         store.mark_seen(conn, job_ad, assessment, date(2026, 11, 6))
-    store.merke_treffernummern(conn, _REPORT, {"a-1": 1, "a-2": 2})
+    store.save_match_numbers(conn, _REPORT, {"a-1": 1, "a-2": 2})
     conn.close()
     return pfad
 

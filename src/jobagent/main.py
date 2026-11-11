@@ -61,23 +61,23 @@ def main(
     try:
         job_ads, quellenstatus = _suche_alle(quellen, konfig.get("was", []))
         neue_treffer = _neue_treffer(conn, job_ads, bewerte, heute)
-        geschrieben = report.schreibe_report(
+        geschrieben = report.write_report(
             neue_treffer,
             heute,
             ausgabe_verzeichnis,
-            quellen=quellenstatus,
-            mindest_score=konfig.get("mindest_score", report.STANDARD_MINDEST_SCORE),
-            bewerbungen=_bereits_beworben(conn, neue_treffer),
-            nachfassen=store.zum_nachfassen(
+            sources=quellenstatus,
+            min_score=konfig.get("mindest_score", report.DEFAULT_MIN_SCORE),
+            applications=_bereits_beworben(conn, neue_treffer),
+            follow_ups=store.follow_up_reminders(
                 conn,
                 heute,
-                ab_tag=konfig.get("nachfassen_ab_tag", _NACHFASSEN_AB_TAG),
-                bis_tag=konfig.get("nachfassen_bis_tag", _NACHFASSEN_BIS_TAG),
+                min_days=konfig.get("nachfassen_ab_tag", _NACHFASSEN_AB_TAG),
+                max_days=konfig.get("nachfassen_bis_tag", _NACHFASSEN_BIS_TAG),
             ),
-            offenes_feedback=_offenes_feedback(conn),
+            open_feedback=_offenes_feedback(conn),
         )
-        store.merke_treffernummern(conn, geschrieben.pfad.stem, geschrieben.nummern)
-        return geschrieben.pfad
+        store.save_match_numbers(conn, geschrieben.path.stem, geschrieben.match_numbers)
+        return geschrieben.path
     finally:
         conn.close()
 
@@ -96,8 +96,8 @@ def _neue_treffer(
     job_ads: list[JobAd],
     bewerte: Bewerte,
     heute: date,
-) -> list[report.Treffer]:
-    treffer: list[report.Treffer] = []
+) -> list[report.Match]:
+    treffer: list[report.Match] = []
 
     for job_ad in job_ads:
         if not store.is_new(conn, job_ad.id):
@@ -115,24 +115,24 @@ def _neue_treffer(
 
 
 def _offenes_feedback(conn: sqlite3.Connection) -> int:
-    anzahl = store.anzahl_offenes_feedback(conn)
+    anzahl = store.count_open_feedback(conn)
     return anzahl if anzahl >= _PROFILVORSCHLAG_AB_FEEDBACK else 0
 
 
 def _bereits_beworben(
-    conn: sqlite3.Connection, treffer: list[report.Treffer]
-) -> dict[str, report.BereitsBeworben]:
-    ergebnis: dict[str, report.BereitsBeworben] = {}
+    conn: sqlite3.Connection, treffer: list[report.Match]
+) -> dict[str, report.AlreadyApplied]:
+    ergebnis: dict[str, report.AlreadyApplied] = {}
     for job_ad, _ in treffer:
         if not job_ad.company:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
             continue
-        bewerbung = store.letzte_bewerbung(conn, position_key(job_ad.company, job_ad.title))
+        bewerbung = store.latest_application(conn, position_key(job_ad.company, job_ad.title))
         if bewerbung is not None:
-            ergebnis[job_ad.id] = report.BereitsBeworben(
+            ergebnis[job_ad.id] = report.AlreadyApplied(
                 bewerbung.status,
-                bewerbung.beworben_am,
+                bewerbung.applied_on,
                 _text_differs(
-                    store.beschreibung_hash(job_ad.description), bewerbung.beschreibung_hash
+                    store.description_hash(job_ad.description), bewerbung.description_hash
                 ),
             )
     return ergebnis

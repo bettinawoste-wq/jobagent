@@ -12,7 +12,7 @@ from jobagent.position import position_key
 
 _DB_PFAD = Path("jobagent.db")
 
-_STATUS = [store.BEWORBEN, "gespräch", "absage", "zusage", store.ZURUECKGEZOGEN]
+_STATUS = [str(status) for status in store.ApplicationStatus]
 _ZURUECKNEHMEN = "zurücknehmen"
 _SCORE = "score"
 
@@ -82,7 +82,7 @@ def _manueller_parser() -> argparse.ArgumentParser:
 
 def _treffer_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute: date) -> str:
     report_name = args.report.removesuffix(".md")
-    treffer = store.finde_treffer(conn, report_name, args.nummer)
+    treffer = store.find_match(conn, report_name, args.nummer)
     if treffer is None:
         raise FeedbackFehler(
             f"Treffer {args.nummer} in Report {report_name} nicht gefunden. Reports vor "
@@ -95,31 +95,31 @@ def _treffer_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute:
     if args.werte:
         raise FeedbackFehler(f"Unerwartete Angaben nach {args.aktion}: {' '.join(args.werte)}")
 
-    bewerbung = store.NeueBewerbung(
-        stelle=position_key(treffer.firma, treffer.titel),
-        firma=treffer.firma,
-        titel=treffer.titel,
-        anzeige_id=treffer.id,
+    bewerbung = store.NewApplication(
+        position_key=position_key(treffer.company, treffer.title),
+        company=treffer.company,
+        title=treffer.title,
+        job_ad_id=treffer.id,
     )
-    bewerbung_id = store.bewerbung_zu_anzeige(conn, treffer.id)
+    bewerbung_id = store.application_for_job_ad(conn, treffer.id)
     return _aendere_bewerbung(conn, bewerbung_id, bewerbung, args, heute)
 
 
 def _manuelles_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute: date) -> str:
-    bewerbung = store.NeueBewerbung(
-        stelle=position_key(args.firma, args.titel),
-        firma=args.firma,
-        titel=args.titel,
-        anzeige_id=None,
+    bewerbung = store.NewApplication(
+        position_key=position_key(args.firma, args.titel),
+        company=args.firma,
+        title=args.titel,
+        job_ad_id=None,
     )
-    bewerbung_id = store.bewerbung_zu_stelle(conn, bewerbung.stelle)
+    bewerbung_id = store.application_for_position(conn, bewerbung.position_key)
     return _aendere_bewerbung(conn, bewerbung_id, bewerbung, args, heute)
 
 
 def _aendere_bewerbung(
     conn: sqlite3.Connection,
     bewerbung_id: int | None,
-    bewerbung: store.NeueBewerbung,
+    bewerbung: store.NewApplication,
     args: argparse.Namespace,
     heute: date,
 ) -> str:
@@ -127,7 +127,7 @@ def _aendere_bewerbung(
     if am is not None and args.aktion != "beworben":
         raise FeedbackFehler("--am gibt es nur zusammen mit beworben.")
 
-    bezeichnung = f"{bewerbung.titel} ({bewerbung.firma or 'unbekannt'})"
+    bezeichnung = f"{bewerbung.title} ({bewerbung.company or 'unbekannt'})"
 
     if bewerbung_id is None:
         if args.aktion != "beworben":
@@ -135,27 +135,27 @@ def _aendere_bewerbung(
                 f"Zu {bezeichnung} gibt es noch keine Bewerbung. Erfasse sie zuerst mit beworben."
             )
         datum = am or heute
-        store.lege_bewerbung_an(conn, bewerbung, args.aktion, datum)
+        store.create_application(conn, bewerbung, args.aktion, datum)
         return f"Bewerbung gespeichert: {bezeichnung}, beworben am {datum.isoformat()}"
 
     if args.aktion == _ZURUECKNEHMEN:
-        store.loesche_bewerbung(conn, bewerbung_id)
+        store.delete_application(conn, bewerbung_id)
         return f"Bewerbung zurückgenommen: {bezeichnung}"
 
-    store.aktualisiere_bewerbung(conn, bewerbung_id, args.aktion, am)
+    store.update_application(conn, bewerbung_id, args.aktion, am)
     return f"Status geändert: {bezeichnung} ist jetzt {args.aktion}"
 
 
 def _speichere_score(
     conn: sqlite3.Connection,
-    treffer: store.GespeicherterTreffer,
+    treffer: store.StoredMatch,
     werte: list[str],
     heute: date,
 ) -> str:
     score = _lies_score(werte)
     grund = " ".join(werte[1:]) or None
-    store.speichere_feedback(conn, treffer.id, score, grund, heute)
-    return f"Feedback gespeichert: {treffer.titel} bekommt von dir Score {score}"
+    store.save_feedback(conn, treffer.id, score, grund, heute)
+    return f"Feedback gespeichert: {treffer.title} bekommt von dir Score {score}"
 
 
 def _lies_score(werte: list[str]) -> int:
