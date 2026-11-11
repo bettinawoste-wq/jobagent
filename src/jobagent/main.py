@@ -3,7 +3,7 @@
 import logging
 import sqlite3
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date
 from pathlib import Path
 
@@ -19,6 +19,12 @@ _NACHFASSEN_AB_TAG = 14
 _NACHFASSEN_BIS_TAG = 28
 _PROFILVORSCHLAG_AB_FEEDBACK = 5
 
+Suche = Callable[[str], fetch.Suchergebnis]
+"""Sucht in einer Quelle nach einem Stichwort (`was`)."""
+
+Bewerte = Callable[[fetch.Anzeige], score.Bewertung | None]
+"""Bewertet eine Anzeige; None heisst: diesmal nicht bewertbar, naechster Lauf versucht es neu."""
+
 
 def main(
     *,
@@ -26,23 +32,35 @@ def main(
     profil_pfad: Path = _PROFIL_PFAD,
     db_pfad: Path = _DB_PFAD,
     ausgabe_verzeichnis: Path = report.OUTPUT_DIR,
+    konfig: dict | None = None,
+    quellen: Mapping[str, Suche] | None = None,
+    bewerte: Bewerte | None = None,
 ) -> Path:
-    """Fuehrt einen Durchgang aus: suchen, deduplizieren, bewerten, Report schreiben."""
+    """Fuehrt einen Lauf aus: suchen, deduplizieren, bewerten, Report schreiben.
+
+    Ohne `konfig`, `quellen` und `bewerte` gilt `config.toml`, die eingebauten Quellen
+    und die Haiku-Bewertung gegen `profile.md`. Wer sie angibt, ersetzt sie: Dann wird
+    die jeweilige Datei nicht gelesen und das jeweilige Netz bzw. Modell nicht gefragt.
+    """
     logging.basicConfig(level=logging.INFO)
 
-    konfig = _lade_konfig(konfig_pfad)
-    profil = profil_pfad.read_text(encoding="utf-8")
+    if konfig is None:
+        konfig = _lade_konfig(konfig_pfad)
+    if quellen is None:
+        quellen = _quellen(konfig)
+    if bewerte is None:
+        bewerte = _haiku_bewertung(profil_pfad.read_text(encoding="utf-8"))
     heute = date.today()
 
     conn = store.connect(db_pfad)
     try:
-        anzeigen, quellen = _suche_alle(konfig)
-        neue_treffer = _neue_treffer(conn, anzeigen, profil, heute)
+        anzeigen, quellenstatus = _suche_alle(quellen, konfig.get("was", []))
+        neue_treffer = _neue_treffer(conn, anzeigen, bewerte, heute)
         geschrieben = report.schreibe_report(
             neue_treffer,
             heute,
             ausgabe_verzeichnis,
-            quellen=quellen,
+            quellen=quellenstatus,
             mindest_score=konfig.get("mindest_score", report.STANDARD_MINDEST_SCORE),
             bewerbungen=_bereits_beworben(conn, neue_treffer),
             nachfassen=store.zum_nachfassen(
@@ -64,10 +82,14 @@ def _lade_konfig(pfad: Path) -> dict:
         return tomllib.load(datei)
 
 
+def _haiku_bewertung(profil: str) -> Bewerte:
+    return lambda anzeige: score.score_anzeige(anzeige, profil)
+
+
 def _neue_treffer(
     conn: sqlite3.Connection,
     anzeigen: list[fetch.Anzeige],
-    profil: str,
+    bewerte: Bewerte,
     heute: date,
 ) -> list[report.Treffer]:
     treffer: list[report.Treffer] = []
@@ -76,7 +98,7 @@ def _neue_treffer(
         if not store.is_new(conn, anzeige.id):
             continue
 
-        bewertung = score.score_anzeige(anzeige, profil)
+        bewertung = bewerte(anzeige)
         if bewertung is None:
             logger.warning(
                 "Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", anzeige.id
@@ -119,14 +141,16 @@ def _textvergleich(neu: str | None, bei_bewerbung: str | None) -> str:
     return "Text identisch" if neu == bei_bewerbung else "Text weicht von deiner Bewerbung ab"
 
 
-def _suche_alle(konfig: dict) -> tuple[list[fetch.Anzeige], list[fetch.Quellenstatus]]:
+def _suche_alle(
+    quellen: Mapping[str, Suche], suchbegriffe: list[str]
+) -> tuple[list[fetch.Anzeige], list[fetch.Quellenstatus]]:
     gefunden: dict[str, fetch.Anzeige] = {}
     status: list[fetch.Quellenstatus] = []
 
-    for name, suche in _quellen(konfig).items():
+    for name, suche in quellen.items():
         ids: set[str] = set()
         fehler: dict[str, None] = {}  # dict statt set: Reihenfolge bleibt erhalten
-        for was in konfig.get("was", []):
+        for was in suchbegriffe:
             ergebnis = _sichere_suche(suche, was, name)
             fehler.update(dict.fromkeys(ergebnis.fehler))
             for anzeige in ergebnis.anzeigen:
@@ -137,13 +161,13 @@ def _suche_alle(konfig: dict) -> tuple[list[fetch.Anzeige], list[fetch.Quellenst
     return list(gefunden.values()), status
 
 
-def _quellen(konfig: dict) -> dict[str, Callable[[str], fetch.Suchergebnis]]:
+def _quellen(konfig: dict) -> dict[str, Suche]:
     wo = konfig.get("wo")
     umkreis = konfig.get("umkreis")
     seit = konfig.get("veroeffentlichtseit")
     firmen = konfig.get("firmen", [])
 
-    quellen: dict[str, Callable[[str], fetch.Suchergebnis]] = {
+    quellen: dict[str, Suche] = {
         "Bundesagentur für Arbeit": lambda was: fetch.search(
             was, wo=wo, umkreis=umkreis, veroeffentlichtseit=seit
         ),
@@ -154,9 +178,7 @@ def _quellen(konfig: dict) -> dict[str, Callable[[str], fetch.Suchergebnis]]:
     return quellen
 
 
-def _sichere_suche(
-    suche: Callable[[str], fetch.Suchergebnis], was: str, quelle: str
-) -> fetch.Suchergebnis:
+def _sichere_suche(suche: Suche, was: str, quelle: str) -> fetch.Suchergebnis:
     # Bekannte Netzwerk- und API-Fehler behandelt fetch selbst. Dieses Netz faengt
     # z.B. ein geaendertes Antwortformat ab: Eine Quelle darf den Lauf nie abbrechen.
     try:

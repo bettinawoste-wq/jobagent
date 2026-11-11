@@ -534,3 +534,48 @@ def test_main_verarbeitetes_feedback_zaehlt_nicht(
     conn.close()
 
     assert "Profil-Vorschlag" not in _lauf_ohne_treffer(projekt, monkeypatch)
+
+
+def test_lauf_mit_eigenen_quellen_bewertung_und_konfiguration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def kein_netz(*args, **kwargs):
+        raise AssertionError("Eingebaute Quelle darf nicht aufgerufen werden")
+
+    def kein_modell(*args, **kwargs):
+        raise AssertionError("Haiku-Bewertung darf nicht aufgerufen werden")
+
+    monkeypatch.setattr(fetch, "search", kein_netz)
+    monkeypatch.setattr(fetch, "search_arbeitnow", kein_netz)
+    monkeypatch.setattr(fetch, "search_watchlist", kein_netz)
+    monkeypatch.setattr(score, "score_anzeige", kein_modell)
+    scores = {"a-1": 3, "a-2": 5, "b-1": 4}
+    bewertet: list[str] = []
+
+    def bewerte(anzeige: Anzeige) -> Bewertung:
+        bewertet.append(anzeige.id)
+        return replace(_bewertung(), score=scores[anzeige.id])
+
+    pfad = main.main(
+        konfig_pfad=tmp_path / "fehlt.toml",
+        profil_pfad=tmp_path / "fehlt.md",
+        db_pfad=tmp_path / "jobagent.db",
+        ausgabe_verzeichnis=tmp_path / "output",
+        konfig={"was": ["Python"]},
+        quellen={
+            "Quelle A": lambda was: fetch.Suchergebnis([_anzeige("a-1"), _anzeige("a-2")]),
+            "Quelle B": lambda was: fetch.Suchergebnis([_anzeige("b-1")], ["Python: HTTP 503"]),
+        },
+        bewerte=bewerte,
+    )
+
+    inhalt = pfad.read_text(encoding="utf-8")
+    assert sorted(bewertet) == ["a-1", "a-2", "b-1"]
+    assert "- Quelle A: 2 Anzeigen\n" in inhalt
+    assert "- Quelle B: FEHLER, 1 Anzeige (Python: HTTP 503)\n" in inhalt
+    assert "Bundesagentur" not in inhalt
+    assert (
+        inhalt.index("## 1. Stelle a-2")
+        < inhalt.index("## 2. Stelle b-1")
+        < inhalt.index("## 3. Stelle a-1")
+    )
