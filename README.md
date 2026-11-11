@@ -86,6 +86,9 @@ Die wichtigsten Grundsatzentscheidungen sind als ADRs in
 - [Haiku für die Bewertung, Sonnet für den Profil-Vorschlag](docs/adr/0004-modellwahl-haiku-sonnet.md):
   das günstige, schnelle Modell für viele kleine Bewertungen, das stärkere für
   den seltenen, anspruchsvollen Profil-Vorschlag.
+- [Englische Bezeichner, deutsche Fachsprache](docs/adr/0005-englische-bezeichner-deutsche-fachsprache.md):
+  Namen im Code sind englisch nach dem Glossar, alles, was Menschen lesen,
+  bleibt deutsch.
 
 ## Ablauf
 
