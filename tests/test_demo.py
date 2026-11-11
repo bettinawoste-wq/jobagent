@@ -84,7 +84,7 @@ def test_demo_lauf_zeigt_nachfass_hinweis(
     assert "seit 18 Tagen keine Antwort, nachhaken?" in ausgabe
 
 
-def test_demo_lauf_erkennt_beworbene_stelle_mit_textabweichung(
+def test_demo_run_detects_applied_position_whose_text_differs(
     leeres_projekt: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ausgabe = _demo_lauf(capsys)

@@ -23,21 +23,21 @@ def conn():
 def _example_job_ad(id_: str = "10001-1003353506-S") -> JobAd:
     return JobAd(
         id=id_,
-        titel="Softwareentwickler/in (m/w/d)",
-        firma="Beispiel GmbH",
-        ort="München",
+        title="Softwareentwickler/in (m/w/d)",
+        company="Beispiel GmbH",
+        location="München",
         link="https://www.arbeitsagentur.de/jobsuche/jobdetail/" + id_,
-        beschreibung="Lange Stellenbeschreibung, die nicht dauerhaft gespeichert werden darf.",
+        description="Lange Stellenbeschreibung, die nicht dauerhaft gespeichert werden darf.",
     )
 
 
 def _assessment(score: int = 4) -> Assessment:
     return Assessment(
         score=score,
-        passt=["Python"],
-        passt_nicht=["Reisen"],
-        luecken=["Kubernetes"],
-        kurzfazit="Passt gut für München.",
+        fits=["Python"],
+        misfits=["Reisen"],
+        gaps=["Kubernetes"],
+        summary="Passt gut für München.",
     )
 
 
@@ -70,8 +70,8 @@ def test_mark_seen_speichert_korrekte_werte(conn) -> None:
     ).fetchone()
     assert zeile == (
         job_ad.id,
-        job_ad.titel,
-        job_ad.firma,
+        job_ad.title,
+        job_ad.company,
         job_ad.link,
         4,
         "2026-11-05",
@@ -98,7 +98,7 @@ def test_mark_seen_speichert_keinen_volltext(conn) -> None:
     assert "Lange Stellenbeschreibung" not in gespeichert
 
 
-def test_mark_seen_speichert_bewertungsdetails(conn) -> None:
+def test_mark_seen_stores_assessment_details(conn) -> None:
     job_ad = _example_job_ad()
 
     mark_seen(conn, job_ad, assessment=_assessment(), datum=date(2026, 11, 5))
@@ -115,8 +115,8 @@ def test_mark_seen_speichert_bewertungsdetails(conn) -> None:
 
 
 def test_hash_ignoriert_unterschiede_im_leerraum(conn) -> None:
-    einzeilig = replace(_example_job_ad("a-1"), beschreibung="Python in München")
-    umbrochen = replace(_example_job_ad("a-2"), beschreibung="  Python\n\nin   München ")
+    einzeilig = replace(_example_job_ad("a-1"), description="Python in München")
+    umbrochen = replace(_example_job_ad("a-2"), description="  Python\n\nin   München ")
 
     mark_seen(conn, einzeilig, assessment=_assessment(), datum=date(2026, 11, 5))
     mark_seen(conn, umbrochen, assessment=_assessment(), datum=date(2026, 11, 5))
@@ -124,9 +124,9 @@ def test_hash_ignoriert_unterschiede_im_leerraum(conn) -> None:
     assert _hash_von(conn, "a-1") == _hash_von(conn, "a-2")
 
 
-def test_hash_unterscheidet_abweichenden_text(conn) -> None:
-    alt = replace(_example_job_ad("a-1"), beschreibung="Python in München")
-    neu = replace(_example_job_ad("a-2"), beschreibung="Python in Berlin")
+def test_hash_distinguishes_differing_text(conn) -> None:
+    alt = replace(_example_job_ad("a-1"), description="Python in München")
+    neu = replace(_example_job_ad("a-2"), description="Python in Berlin")
 
     mark_seen(conn, alt, assessment=_assessment(), datum=date(2026, 11, 5))
     mark_seen(conn, neu, assessment=_assessment(), datum=date(2026, 11, 5))
@@ -136,7 +136,7 @@ def test_hash_unterscheidet_abweichenden_text(conn) -> None:
 
 @pytest.mark.parametrize("beschreibung", [None, "", "  \n "])
 def test_kein_hash_ohne_beschreibung(conn, beschreibung: str | None) -> None:
-    job_ad = replace(_example_job_ad(), beschreibung=beschreibung)
+    job_ad = replace(_example_job_ad(), description=beschreibung)
 
     mark_seen(conn, job_ad, assessment=_assessment(), datum=date(2026, 11, 5))
 
@@ -202,7 +202,7 @@ def test_connect_erstellt_tabelle_in_datei(tmp_path: Path) -> None:
     assert db_pfad.exists()
 
 
-def test_mehrere_anzeigen_werden_unabhaengig_verfolgt(conn) -> None:
+def test_multiple_job_ads_are_tracked_independently(conn) -> None:
     mark_seen(conn, _example_job_ad("a-1"), assessment=_assessment(5), datum=date(2026, 11, 5))
 
     assert is_new(conn, "a-1") is False

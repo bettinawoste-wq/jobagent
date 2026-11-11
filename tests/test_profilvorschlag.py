@@ -67,9 +67,9 @@ def projekt(tmp_path: Path) -> dict[str, Path]:
 
 def _feedback_anlegen(db: Path, anzeige_id: str) -> None:
     assessment = Assessment(
-        score=2, passt=["Python"], passt_nicht=["Zeitarbeit"], luecken=[], kurzfazit="Eher nein."
+        score=2, fits=["Python"], misfits=["Zeitarbeit"], gaps=[], summary="Eher nein."
     )
-    job_ad = JobAd(id=anzeige_id, titel="Consultant", firma="KPMG AG", ort="M", link="l")
+    job_ad = JobAd(id=anzeige_id, title="Consultant", company="KPMG AG", location="M", link="l")
     conn = store.connect(db)
     store.mark_seen(conn, job_ad, assessment, date(2026, 11, 8))
     store.speichere_feedback(conn, anzeige_id, 3, "KPMG ist keine Zeitarbeit", date(2026, 11, 8))

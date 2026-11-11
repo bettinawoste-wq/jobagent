@@ -76,7 +76,7 @@ def _erfolgreicher_handler(request: httpx.Request) -> httpx.Response:
     raise AssertionError(f"Unerwartete URL: {request.url}")
 
 
-def test_search_mapt_antwort_auf_anzeigen_inklusive_details() -> None:
+def test_search_maps_response_to_job_ads_including_details() -> None:
     ergebnis = search(
         "Softwareentwicklerin",
         wo="München",
@@ -88,11 +88,11 @@ def test_search_mapt_antwort_auf_anzeigen_inklusive_details() -> None:
     assert ergebnis == [
         JobAd(
             id="10001-1003353506-S",
-            titel="Softwareentwickler/in Linux (m/w/d)",
-            firma="Beispiel GmbH",
-            ort="München",
+            title="Softwareentwickler/in Linux (m/w/d)",
+            company="Beispiel GmbH",
+            location="München",
             link="https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003353506-S",
-            beschreibung=(
+            description=(
                 "Wir suchen eine Softwareentwicklerin fuer unser Backend-Team in "
                 "Python und C++. Aufgaben: API-Design, CI/CD, Code-Reviews. "
                 "Erfahrung mit Cloud-Migration von Vorteil."
@@ -100,11 +100,11 @@ def test_search_mapt_antwort_auf_anzeigen_inklusive_details() -> None:
         ),
         JobAd(
             id="10001-1003353507-S",
-            titel="IT Consultant (m/w/d)",
-            firma="Consulting AG",
-            ort="Garching",
+            title="IT Consultant (m/w/d)",
+            company="Consulting AG",
+            location="Garching",
             link="https://www.consulting-ag.example/karriere/it-consultant",
-            beschreibung=None,
+            description=None,
         ),
     ]
 
@@ -197,7 +197,7 @@ def test_search_setzt_beschreibung_auf_none_bei_detailfehler(
         ergebnis = search("Softwareentwicklerin", transport=_transport(handler))
 
     assert len(ergebnis) == 2
-    assert all(job_ad.beschreibung is None for job_ad in ergebnis)
+    assert all(job_ad.description is None for job_ad in ergebnis)
     assert ergebnis[0].id == "10001-1003353506-S"
     assert "Jobdetails" in caplog.text
 
@@ -214,10 +214,10 @@ def test_search_arbeitnow_filtert_nach_titel_und_ort() -> None:
         "(m/w/d)", wo="Berlin", veroeffentlichtseit=14, transport=_transport(handler)
     )
 
-    assert [a.titel for a in ergebnis] == ["Full-Stack-Entwickler (m/w/d)"]
+    assert [a.title for a in ergebnis] == ["Full-Stack-Entwickler (m/w/d)"]
     assert ergebnis[0].id == "arbeitnow:full-stack-entwickler-berlin-100001"
-    assert ergebnis[0].firma == "Beispiel Tech GmbH"
-    assert ergebnis[0].ort == "Berlin"
+    assert ergebnis[0].company == "Beispiel Tech GmbH"
+    assert ergebnis[0].location == "Berlin"
 
 
 def test_search_arbeitnow_bereinigt_html_in_beschreibung() -> None:
@@ -226,8 +226,8 @@ def test_search_arbeitnow_bereinigt_html_in_beschreibung() -> None:
 
     ergebnis = search_arbeitnow("(m/w/d)", wo="Berlin", transport=_transport(handler))
 
-    assert [a.titel for a in ergebnis] == ["Full-Stack-Entwickler (m/w/d)"]
-    assert ergebnis[0].beschreibung == "Wir suchen Python & JavaScript Erfahrung."
+    assert [a.title for a in ergebnis] == ["Full-Stack-Entwickler (m/w/d)"]
+    assert ergebnis[0].description == "Wir suchen Python & JavaScript Erfahrung."
 
 
 def test_search_arbeitnow_stoppt_bei_zu_alten_eintraegen_ohne_naechste_seite() -> None:
@@ -333,11 +333,11 @@ def test_search_greenhouse_filtert_nach_titel_und_holt_beschreibung() -> None:
     assert len(ergebnis) == 1
     treffer = ergebnis[0]
     assert treffer.id == "greenhouse:beispiel:1001"
-    assert treffer.titel == "Full-Stack-Entwickler (m/w/d)"
-    assert treffer.firma == "Beispiel GmbH"
-    assert treffer.ort == "München, Deutschland"
+    assert treffer.title == "Full-Stack-Entwickler (m/w/d)"
+    assert treffer.company == "Beispiel GmbH"
+    assert treffer.location == "München, Deutschland"
     assert treffer.link == "https://job-boards.greenhouse.io/beispiel/jobs/1001"
-    assert treffer.beschreibung == "Wir suchen Python & JavaScript Erfahrung."
+    assert treffer.description == "Wir suchen Python & JavaScript Erfahrung."
 
 
 def test_search_greenhouse_ruft_keinen_detail_fuer_nicht_passende_jobs() -> None:
@@ -380,11 +380,11 @@ def test_search_lever_filtert_nach_titel_und_nutzt_plaintext_beschreibung() -> N
     assert len(ergebnis) == 1
     treffer = ergebnis[0]
     assert treffer.id == "lever:beispiel:posting-1"
-    assert treffer.titel == "Full-Stack-Entwickler (m/w/d)"
-    assert treffer.firma == "Beispiel GmbH"
-    assert treffer.ort == "München"
+    assert treffer.title == "Full-Stack-Entwickler (m/w/d)"
+    assert treffer.company == "Beispiel GmbH"
+    assert treffer.location == "München"
     assert treffer.link == "https://jobs.lever.co/beispiel/posting-1"
-    assert treffer.beschreibung == "Wir suchen Python Erfahrung."
+    assert treffer.description == "Wir suchen Python Erfahrung."
 
 
 def test_search_lever_gibt_leere_liste_bei_ungueltigem_json(

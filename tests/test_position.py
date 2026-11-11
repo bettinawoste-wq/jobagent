@@ -6,7 +6,7 @@ from jobagent.position import position_key
 
 
 @pytest.mark.parametrize(
-    ("firma_a", "titel_a", "firma_b", "titel_b"),
+    ("company_a", "title_a", "company_b", "title_b"),
     [
         ("Firma X", "Data Engineer (m/w/d)", "Firma X", "Data Engineer (w/m/x)"),
         ("Firma X", "Data Engineer (m/w/d)", "Firma X", "Data Engineer"),
@@ -23,12 +23,12 @@ from jobagent.position import position_key
         ("NTT DATA SE", "NTT DATA: Consultant", "NTT DATA SE", "Consultant"),
     ],
 )
-def test_gleiche_stelle(firma_a: str, titel_a: str, firma_b: str, titel_b: str) -> None:
-    assert position_key(firma_a, titel_a) == position_key(firma_b, titel_b)
+def test_same_position(company_a: str, title_a: str, company_b: str, title_b: str) -> None:
+    assert position_key(company_a, title_a) == position_key(company_b, title_b)
 
 
 @pytest.mark.parametrize(
-    ("firma_a", "titel_a", "firma_b", "titel_b"),
+    ("company_a", "title_a", "company_b", "title_b"),
     [
         ("Firma X", "Data Engineer", "Firma Y", "Data Engineer"),
         ("Firma X", "Data Engineer", "Firma X", "Senior Data Engineer"),
@@ -37,17 +37,17 @@ def test_gleiche_stelle(firma_a: str, titel_a: str, firma_b: str, titel_b: str) 
         ("Firma X", "Team Rot: Consultant", "Firma X", "Consultant"),
     ],
 )
-def test_verschiedene_stellen(firma_a: str, titel_a: str, firma_b: str, titel_b: str) -> None:
-    assert position_key(firma_a, titel_a) != position_key(firma_b, titel_b)
+def test_different_positions(company_a: str, title_a: str, company_b: str, title_b: str) -> None:
+    assert position_key(company_a, title_a) != position_key(company_b, title_b)
 
 
-def test_firma_die_nur_aus_rechtsform_besteht_bleibt_erhalten() -> None:
+def test_company_consisting_only_of_legal_form_is_kept() -> None:
     assert position_key("AG", "Dev") == "ag|dev"
 
 
-def test_titel_der_nur_aus_firma_besteht_bleibt_erhalten() -> None:
+def test_title_consisting_only_of_company_is_kept() -> None:
     assert position_key("Firma X", "Firma X:") == "firma x|firma x"
 
 
-def test_fehlende_firma_ist_erlaubt() -> None:
+def test_missing_company_is_allowed() -> None:
     assert position_key(None, "Dev") == "|dev"

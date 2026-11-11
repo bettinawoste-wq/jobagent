@@ -21,11 +21,11 @@ _PROFIL = "# Suchprofil\nPython, SQL, München, Hybrid bevorzugt."
 def _job_ad() -> JobAd:
     return JobAd(
         id="10001-1003353506-S",
-        titel="Softwareentwickler/in (m/w/d)",
-        firma="Beispiel GmbH",
-        ort="München",
+        title="Softwareentwickler/in (m/w/d)",
+        company="Beispiel GmbH",
+        location="München",
         link="https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003353506-S",
-        beschreibung="Python-Backend, CI/CD, etwas Kubernetes von Vorteil.",
+        description="Python-Backend, CI/CD, etwas Kubernetes von Vorteil.",
     )
 
 
@@ -60,20 +60,20 @@ class _FakeClient:
         self.messages = _FakeMessages(ergebnis)
 
 
-def test_score_job_ad_erfolgreiche_bewertung() -> None:
+def test_score_job_ad_returns_assessment() -> None:
     client = _FakeClient(_nachricht_mit_tool_input(SCORE_FIXTURE))
 
     assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
     assert assessment is not None
     assert assessment.score == 4
-    assert assessment.passt == SCORE_FIXTURE["passt"]
-    assert assessment.passt_nicht == []
-    assert assessment.luecken == SCORE_FIXTURE["luecken"]
-    assert assessment.kurzfazit == SCORE_FIXTURE["kurzfazit"]
+    assert assessment.fits == SCORE_FIXTURE["passt"]
+    assert assessment.misfits == []
+    assert assessment.gaps == SCORE_FIXTURE["luecken"]
+    assert assessment.summary == SCORE_FIXTURE["kurzfazit"]
 
 
-def test_score_job_ad_sendet_profil_anzeige_und_tool_schema() -> None:
+def test_score_job_ad_sends_profile_job_ad_and_tool_schema() -> None:
     client = _FakeClient(_nachricht_mit_tool_input(SCORE_FIXTURE))
 
     score_job_ad(_job_ad(), _PROFIL, client=client)
@@ -87,7 +87,7 @@ def test_score_job_ad_sendet_profil_anzeige_und_tool_schema() -> None:
     assert "Kubernetes" in inhalt
 
 
-def test_score_job_ad_gibt_none_bei_api_fehler(caplog: pytest.LogCaptureFixture) -> None:
+def test_score_job_ad_returns_none_on_api_error(caplog: pytest.LogCaptureFixture) -> None:
     fehler = anthropic.APIConnectionError(
         request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     )
@@ -100,7 +100,7 @@ def test_score_job_ad_gibt_none_bei_api_fehler(caplog: pytest.LogCaptureFixture)
     assert "fehlgeschlagen" in caplog.text
 
 
-def test_score_job_ad_gibt_none_bei_fehlendem_api_key(caplog: pytest.LogCaptureFixture) -> None:
+def test_score_job_ad_returns_none_without_api_key(caplog: pytest.LogCaptureFixture) -> None:
     # Die SDK wirft hierfuer einen rohen TypeError statt eines AnthropicError
     # (Validierung erst beim Request-Aufbau, nicht bei Client.create()).
     client = _FakeClient(TypeError("Could not resolve authentication method."))
@@ -112,7 +112,7 @@ def test_score_job_ad_gibt_none_bei_fehlendem_api_key(caplog: pytest.LogCaptureF
     assert "fehlgeschlagen" in caplog.text
 
 
-def test_score_job_ad_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture) -> None:
+def test_score_job_ad_returns_none_without_tool_use(caplog: pytest.LogCaptureFixture) -> None:
     nachricht = Message(
         id="msg_2",
         content=[TextBlock(text="Freitext statt Tool-Aufruf", type="text")],
@@ -140,7 +140,7 @@ def test_score_job_ad_gibt_none_ohne_tool_use(caplog: pytest.LogCaptureFixture) 
         {k: v for k, v in SCORE_FIXTURE.items() if k != "kurzfazit"},
     ],
 )
-def test_score_job_ad_gibt_none_bei_ungueltiger_antwort(
+def test_score_job_ad_returns_none_on_invalid_response(
     ungueltige_daten: dict, caplog: pytest.LogCaptureFixture
 ) -> None:
     client = _FakeClient(_nachricht_mit_tool_input(ungueltige_daten))
@@ -152,7 +152,7 @@ def test_score_job_ad_gibt_none_bei_ungueltiger_antwort(
     assert "Ungueltige Bewertungsantwort" in caplog.text
 
 
-def test_score_job_ad_akzeptiert_string_statt_liste() -> None:
+def test_score_job_ad_accepts_string_instead_of_list() -> None:
     # Claude liefert passt/passt_nicht/luecken manchmal als einzelnen String
     # statt als JSON-Array, obwohl das Tool-Schema ein Array vorgibt. Das
     # darf die Anzeige nicht verwerfen, sondern wird als Ein-Elemente-Liste
@@ -163,4 +163,4 @@ def test_score_job_ad_akzeptiert_string_statt_liste() -> None:
     assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
 
     assert assessment is not None
-    assert assessment.passt == ["München-Standort, Hybrid möglich"]
+    assert assessment.fits == ["München-Standort, Hybrid möglich"]

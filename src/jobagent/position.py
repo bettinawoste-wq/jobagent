@@ -2,16 +2,16 @@
 
 import re
 
-_GESCHLECHTSANGABE = re.compile(
+_GENDER_NOTE = re.compile(
     r"\(\s*(?:[mwdxfi]\s*[/|,]\s*)+[mwdxfi]\s*\)"  # (m/w/d), (w/m/x)
     r"|\(\s*(?:gn|all genders|alle geschlechter)\s*\)"
     r"|\b[mwdxf]\s*/\s*[mwdxf](?:\s*/\s*[mwdxfi])*\b"  # m/w/d ohne Klammern
     r"|/-?in\b",  # Entwickler/in
     re.IGNORECASE,
 )
-_KEIN_WORTZEICHEN = re.compile(r"[^\w]+")
-_EINGETRAGENER_VEREIN = re.compile(r"\be\.\s*v\.", re.IGNORECASE)
-_RECHTSFORMEN = {
+_NON_WORD = re.compile(r"[^\w]+")
+_REGISTERED_ASSOCIATION = re.compile(r"\be\.\s*v\.", re.IGNORECASE)
+_LEGAL_FORMS = {
     "gmbh",
     "mbh",
     "ag",
@@ -31,36 +31,36 @@ _RECHTSFORMEN = {
 }
 
 
-def position_key(firma: str | None, titel: str) -> str:
+def position_key(company: str | None, title: str) -> str:
     """Bildet den Vergleichswert, an dem dieselbe Stelle erkannt wird.
 
     Ignoriert Schreibweise, Geschlechtsangaben im Titel, die Rechtsform der
     Firma und einen vorangestellten Firmennamen im Titel.
     """
-    firma_normalisiert = _firma_normalisiert(firma or "")
-    titel_normalisiert = _titel_normalisiert(_ohne_firmen_vorsatz(titel, firma_normalisiert))
-    return f"{firma_normalisiert}|{titel_normalisiert}"
+    company_normalized = _normalized_company(company or "")
+    title_normalized = _normalized_title(_without_company_prefix(title, company_normalized))
+    return f"{company_normalized}|{title_normalized}"
 
 
-def _ohne_firmen_vorsatz(titel: str, firma_normalisiert: str) -> str:
+def _without_company_prefix(title: str, company_normalized: str) -> str:
     # Die Bundesagentur liefert manche Titel als "Firma GmbH: Eigentlicher Titel".
-    vorsatz, trenner, rest = titel.partition(":")
-    if trenner and rest.strip() and _firma_normalisiert(vorsatz) == firma_normalisiert:
+    prefix, separator, rest = title.partition(":")
+    if separator and rest.strip() and _normalized_company(prefix) == company_normalized:
         return rest
-    return titel
+    return title
 
 
-def _titel_normalisiert(titel: str) -> str:
-    return " ".join(_woerter(_GESCHLECHTSANGABE.sub(" ", titel)))
+def _normalized_title(title: str) -> str:
+    return " ".join(_words(_GENDER_NOTE.sub(" ", title)))
 
 
-def _firma_normalisiert(firma: str) -> str:
-    woerter = _woerter(_EINGETRAGENER_VEREIN.sub(" ", firma))
+def _normalized_company(company: str) -> str:
+    words = _words(_REGISTERED_ASSOCIATION.sub(" ", company))
     # Mindestens ein Wort bleibt, falls die Firma tatsaechlich so heisst.
-    while len(woerter) > 1 and woerter[-1] in _RECHTSFORMEN:
-        woerter.pop()
-    return " ".join(woerter)
+    while len(words) > 1 and words[-1] in _LEGAL_FORMS:
+        words.pop()
+    return " ".join(words)
 
 
-def _woerter(text: str) -> list[str]:
-    return _KEIN_WORTZEICHEN.sub(" ", text.casefold()).split()
+def _words(text: str) -> list[str]:
+    return _NON_WORD.sub(" ", text.casefold()).split()

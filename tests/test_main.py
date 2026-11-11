@@ -43,15 +43,15 @@ def projekt(tmp_path: Path) -> dict[str, Path]:
 def _job_ad(id_: str) -> JobAd:
     return JobAd(
         id=id_,
-        titel=f"Stelle {id_}",
-        firma="Beispiel GmbH",
-        ort="München",
+        title=f"Stelle {id_}",
+        company="Beispiel GmbH",
+        location="München",
         link=f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{id_}",
     )
 
 
 def _assessment() -> Assessment:
-    return Assessment(score=4, passt=["Python"], passt_nicht=[], luecken=[], kurzfazit="Passt.")
+    return Assessment(score=4, fits=["Python"], misfits=[], gaps=[], summary="Passt.")
 
 
 def _score_und_merke(aufrufe: list[str]):
@@ -91,7 +91,7 @@ def test_main_schreibt_quellenstatus_in_den_report(
     assert "Firmen-Watchlist" not in inhalt
 
 
-def test_main_zaehlt_anzeigen_ueber_suchbegriffe_einmal_und_kuerzt_gleiche_fehler(
+def test_main_counts_job_ads_once_across_keywords_and_merges_same_errors(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     projekt["konfig_pfad"].write_text('was = ["A", "B"]\n', encoding="utf-8")
@@ -173,7 +173,7 @@ def test_main_merkt_sich_report_und_treffernummer(
     assert zeilen == [("a-1", pfad.stem, 2), ("a-2", pfad.stem, 1)]
 
 
-def test_main_ueberspringt_bereits_gesehene_anzeigen(
+def test_main_skips_already_seen_job_ads(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     aufrufe = []
@@ -198,7 +198,7 @@ def test_main_ohne_suchtreffer_schreibt_notiz(
     assert "Keine neuen Treffer" in pfad.read_text(encoding="utf-8")
 
 
-def test_main_markiert_nicht_als_gesehen_wenn_bewertung_fehlschlaegt(
+def test_main_does_not_mark_seen_when_assessment_fails(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
@@ -237,9 +237,9 @@ def test_main_kombiniert_treffer_aus_beiden_quellen(
 ) -> None:
     arbeitnow_job_ad = JobAd(
         id="arbeitnow:full-stack-entwickler-100",
-        titel="Full-Stack-Entwickler (m/w/d)",
-        firma="Arbeitnow-Firma",
-        ort="Berlin",
+        title="Full-Stack-Entwickler (m/w/d)",
+        company="Arbeitnow-Firma",
+        location="Berlin",
         link="https://www.arbeitnow.com/jobs/companies/arbeitnow-firma/full-stack-entwickler-100",
     )
     monkeypatch.setattr(fetch, "search", lambda *a, **kw: fetch.Suchergebnis([_job_ad("a-1")]))
@@ -268,9 +268,9 @@ def test_main_bindet_watchlist_firmen_aus_config_ein(
     )
     watchlist_job_ad = JobAd(
         id="greenhouse:gitlab:999",
-        titel="Full-Stack-Entwickler (m/w/d)",
-        firma="GitLab",
-        ort="Remote",
+        title="Full-Stack-Entwickler (m/w/d)",
+        company="GitLab",
+        location="Remote",
         link="https://job-boards.greenhouse.io/gitlab/jobs/999",
     )
     erhaltene_firmen = []
@@ -290,15 +290,15 @@ def test_main_bindet_watchlist_firmen_aus_config_ein(
 
 
 def _position_job_ad(
-    id_: str, beschreibung: str | None = "Text", titel: str = "Data Engineer"
+    id_: str, description: str | None = "Text", title: str = "Data Engineer"
 ) -> JobAd:
     return JobAd(
         id=id_,
-        titel=titel,
-        firma="Beispiel GmbH",
-        ort="München",
+        title=title,
+        company="Beispiel GmbH",
+        location="München",
         link=f"https://x.example/{id_}",
-        beschreibung=beschreibung,
+        description=description,
     )
 
 
@@ -323,7 +323,7 @@ def _bewerbung_auf_erste_anzeige(
     assert feedback.main([pfad.stem, "1", "beworben"], db_pfad=projekt["db_pfad"]) == 0
 
 
-def test_main_verschiebt_bereits_beworbene_stelle_in_eigenen_block(
+def test_main_moves_applied_position_to_own_block(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _manuell(projekt)
@@ -335,11 +335,11 @@ def test_main_verschiebt_bereits_beworbene_stelle_in_eigenen_block(
     assert "## 1. Data Engineer" not in inhalt
 
 
-def test_main_erkennt_stelle_trotz_firmenname_im_titel(
+def test_main_detects_position_despite_company_name_in_title(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _manuell(projekt)
-    job_ad = _position_job_ad("neu", titel="Beispiel GmbH: Data Engineer (w/m/x)")
+    job_ad = _position_job_ad("neu", title="Beispiel GmbH: Data Engineer (w/m/x)")
 
     _, inhalt = _lauf_findet(projekt, monkeypatch, job_ad)
 
@@ -369,7 +369,7 @@ def test_main_zurueckgezogene_bewerbung_zaehlt_nicht(
     assert "## 1. Data Engineer" in inhalt
 
 
-def test_main_andere_stelle_bleibt_unmarkiert(
+def test_main_other_position_stays_unmarked(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _manuell(projekt, titel="Consultant")
@@ -379,12 +379,12 @@ def test_main_andere_stelle_bleibt_unmarkiert(
     assert "Bereits beworben" not in inhalt
 
 
-def test_main_anzeige_ohne_firma_wird_nicht_zugeordnet(
+def test_main_job_ad_without_company_is_not_matched(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     argumente = ["beworben", "--firma", "", "--titel", "Data Engineer"]
     feedback.main(argumente, db_pfad=projekt["db_pfad"])
-    ohne_firma = replace(_position_job_ad("neu"), firma=None)
+    ohne_firma = replace(_position_job_ad("neu"), company=None)
 
     _, inhalt = _lauf_findet(projekt, monkeypatch, ohne_firma)
 
@@ -401,7 +401,7 @@ def test_main_meldet_identischen_text(
     assert "– Text identisch –" in inhalt
 
 
-def test_main_meldet_textabweichung(
+def test_main_reports_text_differs(
     projekt: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _bewerbung_auf_erste_anzeige(projekt, monkeypatch, "Alter Text")
@@ -538,7 +538,7 @@ def test_main_verarbeitetes_feedback_zaehlt_nicht(
     assert "Profil-Vorschlag" not in _lauf_ohne_treffer(projekt, monkeypatch)
 
 
-def test_lauf_mit_eigenen_quellen_bewertung_und_konfiguration(
+def test_run_with_own_sources_assessment_and_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def kein_netz(*args, **kwargs):

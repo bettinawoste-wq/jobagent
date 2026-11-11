@@ -131,12 +131,12 @@ def mark_seen(conn: sqlite3.Connection, job_ad: JobAd, assessment: Assessment, d
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             job_ad.id,
-            job_ad.titel,
-            job_ad.firma,
+            job_ad.title,
+            job_ad.company,
             job_ad.link,
             assessment.score,
             datum.isoformat(),
-            beschreibung_hash(job_ad.beschreibung),
+            beschreibung_hash(job_ad.description),
             _assessment_as_json(assessment),
         ),
     )
@@ -303,10 +303,10 @@ def beschreibung_hash(beschreibung: str | None) -> str | None:
 def _assessment_as_json(assessment: Assessment) -> str:
     return json.dumps(
         {
-            "passt": assessment.passt,
-            "passt_nicht": assessment.passt_nicht,
-            "luecken": assessment.luecken,
-            "kurzfazit": assessment.kurzfazit,
+            "passt": assessment.fits,
+            "passt_nicht": assessment.misfits,
+            "luecken": assessment.gaps,
+            "kurzfazit": assessment.summary,
         },
         ensure_ascii=False,
     )

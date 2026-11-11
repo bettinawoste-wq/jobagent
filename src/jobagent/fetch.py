@@ -104,11 +104,11 @@ def _zu_anzeige(eintrag: dict, client: httpx.Client) -> JobAd:
     link = eintrag.get("externeURL") or f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}"
     return JobAd(
         id=refnr,
-        titel=eintrag.get("stellenangebotsTitel") or eintrag.get("hauptberuf", ""),
-        firma=eintrag.get("firma"),
-        ort=adresse.get("ort"),
+        title=eintrag.get("stellenangebotsTitel") or eintrag.get("hauptberuf", ""),
+        company=eintrag.get("firma"),
+        location=adresse.get("ort"),
         link=link,
-        beschreibung=_hole_beschreibung(client, refnr),
+        description=_hole_beschreibung(client, refnr),
     )
 
 
@@ -199,11 +199,11 @@ def _arbeitnow_passt(eintrag: dict, was: str, wo: str | None) -> bool:
 def _arbeitnow_zu_anzeige(eintrag: dict) -> JobAd:
     return JobAd(
         id=f"arbeitnow:{eintrag['slug']}",
-        titel=eintrag.get("title", ""),
-        firma=eintrag.get("company_name"),
-        ort=eintrag.get("location"),
+        title=eintrag.get("title", ""),
+        company=eintrag.get("company_name"),
+        location=eintrag.get("location"),
         link=eintrag.get("url", ""),
-        beschreibung=_html_zu_text(eintrag.get("description")),
+        description=_html_zu_text(eintrag.get("description")),
     )
 
 
@@ -291,11 +291,11 @@ def _greenhouse_zu_anzeige(eintrag: dict, board_token: str, client: httpx.Client
     job_id = eintrag["id"]
     return JobAd(
         id=f"greenhouse:{board_token}:{job_id}",
-        titel=eintrag.get("title", ""),
-        firma=eintrag.get("company_name"),
-        ort=(eintrag.get("location") or {}).get("name"),
+        title=eintrag.get("title", ""),
+        company=eintrag.get("company_name"),
+        location=(eintrag.get("location") or {}).get("name"),
         link=eintrag.get("absolute_url", ""),
-        beschreibung=_hole_greenhouse_beschreibung(client, board_token, job_id),
+        description=_hole_greenhouse_beschreibung(client, board_token, job_id),
     )
 
 
@@ -365,9 +365,9 @@ def search_lever(
 def _lever_zu_anzeige(eintrag: dict, company_slug: str, firma_name: str) -> JobAd:
     return JobAd(
         id=f"lever:{company_slug}:{eintrag['id']}",
-        titel=eintrag.get("text", ""),
-        firma=firma_name,
-        ort=(eintrag.get("categories") or {}).get("location"),
+        title=eintrag.get("text", ""),
+        company=firma_name,
+        location=(eintrag.get("categories") or {}).get("location"),
         link=eintrag.get("hostedUrl", ""),
-        beschreibung=eintrag.get("descriptionPlain"),
+        description=eintrag.get("descriptionPlain"),
     )

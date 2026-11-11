@@ -124,15 +124,15 @@ def _bereits_beworben(
 ) -> dict[str, report.BereitsBeworben]:
     ergebnis: dict[str, report.BereitsBeworben] = {}
     for job_ad, _ in treffer:
-        if not job_ad.firma:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
+        if not job_ad.company:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
             continue
-        bewerbung = store.letzte_bewerbung(conn, position_key(job_ad.firma, job_ad.titel))
+        bewerbung = store.letzte_bewerbung(conn, position_key(job_ad.company, job_ad.title))
         if bewerbung is not None:
             ergebnis[job_ad.id] = report.BereitsBeworben(
                 bewerbung.status,
                 bewerbung.beworben_am,
                 _text_differs(
-                    store.beschreibung_hash(job_ad.beschreibung), bewerbung.beschreibung_hash
+                    store.beschreibung_hash(job_ad.description), bewerbung.beschreibung_hash
                 ),
             )
     return ergebnis

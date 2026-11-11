@@ -10,12 +10,12 @@ from jobagent.score import Assessment
 from jobagent.store import Nachfasskandidat
 
 
-def _job_ad(id_: str, titel: str) -> JobAd:
+def _job_ad(id_: str, title: str) -> JobAd:
     return JobAd(
         id=id_,
-        titel=titel,
-        firma="Beispiel GmbH",
-        ort="München",
+        title=title,
+        company="Beispiel GmbH",
+        location="München",
         link=f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{id_}",
     )
 
@@ -24,13 +24,13 @@ def _schreibe_pfad(*args, **kwargs) -> Path:
     return schreibe_report(*args, **kwargs).pfad
 
 
-def _assessment(score: int, kurzfazit: str = "Passt gut.") -> Assessment:
+def _assessment(score: int, summary: str = "Passt gut.") -> Assessment:
     return Assessment(
         score=score,
-        passt=["Python"],
-        passt_nicht=[],
-        luecken=["Kubernetes"],
-        kurzfazit=kurzfazit,
+        fits=["Python"],
+        misfits=[],
+        gaps=["Kubernetes"],
+        summary=summary,
     )
 
 
@@ -108,7 +108,7 @@ def test_ohne_niedrige_treffer_fehlt_der_kompakte_block(tmp_path: Path) -> None:
 
 
 def test_kompakte_zeile_ohne_firma_und_ort(tmp_path: Path) -> None:
-    job_ad = JobAd(id="a-1", titel="Niedrig", firma=None, ort=None, link="https://x.example")
+    job_ad = JobAd(id="a-1", title="Niedrig", company=None, location=None, link="https://x.example")
 
     pfad = _schreibe_pfad(
         [(job_ad, _assessment(1))], date(2026, 11, 5), ausgabe_verzeichnis=tmp_path

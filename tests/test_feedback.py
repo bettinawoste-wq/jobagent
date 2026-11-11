@@ -17,10 +17,10 @@ _REPORT = "2026-11-06"
 @pytest.fixture
 def db(tmp_path: Path) -> Path:
     pfad = tmp_path / "jobagent.db"
-    assessment = Assessment(score=3, passt=[], passt_nicht=[], luecken=[], kurzfazit="Geht.")
+    assessment = Assessment(score=3, fits=[], misfits=[], gaps=[], summary="Geht.")
     conn = store.connect(pfad)
     for anzeige_id, titel in [("a-1", "Data Engineer (m/w/d)"), ("a-2", "Consultant")]:
-        job_ad = JobAd(id=anzeige_id, titel=titel, firma="Beispiel GmbH", ort="M", link="l")
+        job_ad = JobAd(id=anzeige_id, title=titel, company="Beispiel GmbH", location="M", link="l")
         store.mark_seen(conn, job_ad, assessment, date(2026, 11, 6))
     store.merke_treffernummern(conn, _REPORT, {"a-1": 1, "a-2": 2})
     conn.close()
@@ -54,7 +54,7 @@ def test_beworben_legt_bewerbung_an(db: Path, capsys: pytest.CaptureFixture) -> 
     assert "Data Engineer" in capsys.readouterr().out
 
 
-def test_bewerbung_merkt_sich_stelle_firma_und_titel(db: Path) -> None:
+def test_application_stores_position_key_company_and_title(db: Path) -> None:
     _lauf(db, _REPORT, "1", "beworben")
 
     assert _abfrage(db, "SELECT stelle, firma, titel FROM bewerbungen") == [
@@ -164,7 +164,7 @@ def test_ungueltiger_score_wird_abgelehnt(db: Path, argumente: list[str]) -> Non
     assert _feedback(db) == []
 
 
-def test_manuelle_bewerbung_hat_keine_anzeige(db: Path) -> None:
+def test_manual_application_has_no_job_ad(db: Path) -> None:
     assert _lauf(db, "beworben", "--firma", "Firma X", "--titel", "Dev (m/w/d)") == 0
 
     assert _abfrage(db, "SELECT stelle, firma, titel, anzeige_id, status FROM bewerbungen") == [
@@ -206,7 +206,7 @@ def test_manuell_zuruecknehmen(db: Path) -> None:
     assert _bewerbungen(db) == []
 
 
-def test_treffer_kann_neue_bewerbung_auf_bekannte_stelle_sein(db: Path) -> None:
+def test_match_can_be_new_application_for_known_position(db: Path) -> None:
     _lauf(db, "beworben", "--firma", "Beispiel GmbH", "--titel", "Data Engineer")
 
     _lauf(db, _REPORT, "1", "beworben")

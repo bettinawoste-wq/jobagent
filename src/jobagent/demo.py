@@ -25,8 +25,8 @@ KONFIG: dict = {
 _LINK = "https://example.com/stellen/"
 
 
-def _job_ad(id_: str, titel: str, firma: str, ort: str, beschreibung: str) -> JobAd:
-    return JobAd(id_, titel, firma, ort, f"{_LINK}{id_}", beschreibung)
+def _job_ad(id_: str, title: str, company: str, location: str, description: str) -> JobAd:
+    return JobAd(id_, title, company, location, f"{_LINK}{id_}", description)
 
 
 # Je Quelle: Suchbegriff -> Anzeigen, die diese Demo-Quelle dafuer "findet".
@@ -222,9 +222,9 @@ def lege_bewerbungen_an(conn: sqlite3.Connection, heute: date) -> None:
     store.lege_bewerbung_an(
         conn,
         store.NeueBewerbung(
-            position_key(_EARLIER_JOB_AD.firma, _EARLIER_JOB_AD.titel),
-            _EARLIER_JOB_AD.firma,
-            _EARLIER_JOB_AD.titel,
+            position_key(_EARLIER_JOB_AD.company, _EARLIER_JOB_AD.title),
+            _EARLIER_JOB_AD.company,
+            _EARLIER_JOB_AD.title,
             _EARLIER_JOB_AD.id,
         ),
         "gespräch",

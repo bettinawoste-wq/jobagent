@@ -137,7 +137,7 @@ def _kompakter_block(kompakt: list[tuple[int, Treffer]], mindest_score: int) -> 
 def _kompakte_zeile(nummer: int, job_ad: JobAd, assessment: Assessment) -> str:
     return (
         f"{_zeilenanfang(nummer, job_ad)} – "
-        f"Score {assessment.score}/5: {assessment.kurzfazit} – {job_ad.link}"
+        f"Score {assessment.score}/5: {assessment.summary} – {job_ad.link}"
     )
 
 
@@ -162,24 +162,24 @@ def _beworben_zeile(
 
 
 def _zeilenanfang(nummer: int, job_ad: JobAd) -> str:
-    firma = job_ad.firma or "unbekannt"
-    ort = job_ad.ort or "unbekannt"
-    return f"- **{nummer}.** {job_ad.titel} ({firma}, {ort})"
+    firma = job_ad.company or "unbekannt"
+    ort = job_ad.location or "unbekannt"
+    return f"- **{nummer}.** {job_ad.title} ({firma}, {ort})"
 
 
 def _abschnitt(nummer: int, job_ad: JobAd, assessment: Assessment) -> str:
     zeilen = [
-        f"## {nummer}. {job_ad.titel} – Score {assessment.score}/5",
-        f"- Firma: {job_ad.firma or 'unbekannt'}",
-        f"- Ort: {job_ad.ort or 'unbekannt'}",
+        f"## {nummer}. {job_ad.title} – Score {assessment.score}/5",
+        f"- Firma: {job_ad.company or 'unbekannt'}",
+        f"- Ort: {job_ad.location or 'unbekannt'}",
         f"- Link: {job_ad.link}",
-        f"- Kurzfazit: {assessment.kurzfazit}",
+        f"- Kurzfazit: {assessment.summary}",
     ]
-    if assessment.passt:
-        zeilen.append(f"- Passt: {', '.join(assessment.passt)}")
-    if assessment.passt_nicht:
-        zeilen.append(f"- Passt nicht: {', '.join(assessment.passt_nicht)}")
-    if assessment.luecken:
-        zeilen.append(f"- Lücken: {', '.join(assessment.luecken)}")
+    if assessment.fits:
+        zeilen.append(f"- Passt: {', '.join(assessment.fits)}")
+    if assessment.misfits:
+        zeilen.append(f"- Passt nicht: {', '.join(assessment.misfits)}")
+    if assessment.gaps:
+        zeilen.append(f"- Lücken: {', '.join(assessment.gaps)}")
     zeilen.append("")
     return "\n".join(zeilen)

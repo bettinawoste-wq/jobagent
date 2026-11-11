@@ -50,10 +50,10 @@ _SYSTEM_PROMPT = (
 @dataclass(frozen=True, slots=True)
 class Assessment:
     score: int
-    passt: list[str]
-    passt_nicht: list[str]
-    luecken: list[str]
-    kurzfazit: str
+    fits: list[str]
+    misfits: list[str]
+    gaps: list[str]
+    summary: str
 
 
 def score_job_ad(
@@ -90,12 +90,12 @@ def score_job_ad(
 
 def _job_ad_as_text(job_ad: JobAd) -> str:
     zeilen = [
-        f"Titel: {job_ad.titel}",
-        f"Firma: {job_ad.firma or 'unbekannt'}",
-        f"Ort: {job_ad.ort or 'unbekannt'}",
+        f"Titel: {job_ad.title}",
+        f"Firma: {job_ad.company or 'unbekannt'}",
+        f"Ort: {job_ad.location or 'unbekannt'}",
     ]
-    if job_ad.beschreibung:
-        zeilen.append(f"Beschreibung: {job_ad.beschreibung}")
+    if job_ad.description:
+        zeilen.append(f"Beschreibung: {job_ad.description}")
     return "\n".join(zeilen)
 
 
@@ -119,10 +119,10 @@ def _validiere(daten: dict) -> Assessment:
 
     return Assessment(
         score=score,
-        passt=_als_string_liste(daten["passt"]),
-        passt_nicht=_als_string_liste(daten["passt_nicht"]),
-        luecken=_als_string_liste(daten["luecken"]),
-        kurzfazit=str(daten["kurzfazit"]),
+        fits=_als_string_liste(daten["passt"]),
+        misfits=_als_string_liste(daten["passt_nicht"]),
+        gaps=_als_string_liste(daten["luecken"]),
+        summary=str(daten["kurzfazit"]),
     )
 
 

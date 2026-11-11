@@ -6,8 +6,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class JobAd:
     id: str
-    titel: str
-    firma: str | None
-    ort: str | None
+    title: str
+    company: str | None
+    location: str | None
     link: str
-    beschreibung: str | None = None
+    description: str | None = None
