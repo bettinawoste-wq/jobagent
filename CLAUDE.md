@@ -68,3 +68,17 @@ Begründungen stehen in den ADRs, hier nur die harten Grenzen:
 - Gespeichert werden nur ID, Titel, Firma, Link, Score, Datum, Report, Treffernummer, Hash der Beschreibung und die Bewertung; Anzeigen-Volltexte bleiben flüchtig (ADR 0001)
 - Anzeigen kommen nur über öffentliche Schnittstellen; LinkedIn, Xing und Indeed bleiben außen vor (ADR 0002)
 - Der Agent liefert nur Vorschläge: Bewerbungen und Nachrichten schickt die Nutzerin selbst, den Bewerbungsstatus setzt nur sie, `profile.md` ändert sich erst nach ihrer ausdrücklichen Bestätigung (ADR 0003)
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `bettinawoste-wq/jobagent` via `gh`, blocking as native issue dependencies. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the root. See `docs/agents/domain.md`.
