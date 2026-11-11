@@ -3,15 +3,14 @@
 Uebergangsweise: Die Bundesagentur ist schon `sources.bundesagentur.BundesagenturSource`.
 """
 
-import html
 import logging
-import re
 import time
 from dataclasses import dataclass, field
 
 import httpx
 
 from jobagent.job_ad import JobAd
+from jobagent.sources._http import html_to_text
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +18,6 @@ _TIMEOUT = 30.0
 
 _ARBEITNOW_URL = "https://www.arbeitnow.com/api/job-board-api"
 _ARBEITNOW_MAX_SEITEN = 10
-_TAG_PATTERN = re.compile(r"<[^>]+>")
-_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 _GREENHOUSE_URL = "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs"
 _GREENHOUSE_DETAIL_URL = "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs/{job_id}"
@@ -126,21 +123,8 @@ def _arbeitnow_zu_anzeige(eintrag: dict) -> JobAd:
         company=eintrag.get("company_name"),
         location=eintrag.get("location"),
         link=eintrag.get("url", ""),
-        description=_html_zu_text(eintrag.get("description")),
+        description=html_to_text(eintrag.get("description")),
     )
-
-
-def _html_zu_text(markup: str | None) -> str | None:
-    # Entschachtelt vor dem Tag-Strip, da Greenhouse HTML doppelt escaped
-    # liefert ("&lt;div&gt;..." statt "<div>..."); fuer einfach escapte
-    # Quellen (z.B. Arbeitnow) ist der erste unescape-Aufruf ein No-Op.
-    if not markup:
-        return None
-    entschachtelt = html.unescape(markup)
-    ohne_tags = _TAG_PATTERN.sub(" ", entschachtelt)
-    text = html.unescape(ohne_tags)
-    bereinigt = _WHITESPACE_PATTERN.sub(" ", text).strip()
-    return bereinigt or None
 
 
 def search_watchlist(
@@ -243,7 +227,7 @@ def _hole_greenhouse_beschreibung(
         )
         return None
 
-    return _html_zu_text(details.get("content"))
+    return html_to_text(details.get("content"))
 
 
 def search_lever(

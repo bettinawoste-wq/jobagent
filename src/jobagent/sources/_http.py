@@ -3,7 +3,9 @@
 Intern im Quellen-Paket, gehört nicht zum Interface `Source`.
 """
 
+import html
 import logging
+import re
 from collections.abc import Mapping
 
 import httpx
@@ -12,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = 30.0
 INVALID_RESPONSE = "ungültige Antwort"
+_TAG_PATTERN = re.compile(r"<[^>]+>")
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class FetchError(Exception):
@@ -47,3 +51,17 @@ def get_json(
     except ValueError as error:
         logger.exception("Antwort ist kein gültiges JSON (url=%r)", url)
         raise FetchError(INVALID_RESPONSE) from error
+
+
+def html_to_text(markup: str | None) -> str | None:
+    """Macht aus HTML-Beschreibungen reinen Text mit vereinheitlichtem Leerraum."""
+    # Entschachtelt vor dem Tag-Strip, da Greenhouse HTML doppelt escaped
+    # liefert ("&lt;div&gt;..." statt "<div>..."); für einfach escapte
+    # Quellen (z.B. Arbeitnow) ist der erste unescape-Aufruf ein No-Op.
+    if not markup:
+        return None
+    unescaped = html.unescape(markup)
+    without_tags = _TAG_PATTERN.sub(" ", unescaped)
+    text = html.unescape(without_tags)
+    cleaned = _WHITESPACE_PATTERN.sub(" ", text).strip()
+    return cleaned or None
