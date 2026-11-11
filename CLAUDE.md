@@ -19,7 +19,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
 - `src/jobagent/job_ad.py`: die Anzeige (`JobAd`)
 - `src/jobagent/position.py`: erkennt dieselbe Stelle über normalisierte Firma + Titel (`position_key`)
-- `src/jobagent/profilvorschlag.py`: leitet aus Feedback Änderungen an `profile.md` ab (Diff, Bestätigung, Sicherung)
+- `src/jobagent/profile_suggestion.py`: leitet aus Feedback Änderungen an `profile.md` ab (Diff, Bestätigung, Sicherung)
 - `src/jobagent/demo.py`: Demo-Lauf mit erfundenen Anzeigen und vorgefertigten Bewertungen (öffentlich, im README zitiert: nur Fantasiefirmen und `example.com`)
 - `tests/`: Tests, Beispielantworten liegen in `tests/fixtures/`
 - `profile.md`: mein Suchprofil und meine Ausschlusskriterien
@@ -32,7 +32,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Gesamtprobe ohne API-Key und Netz: `python -m jobagent.main --demo`
 - Lauf: `python -m jobagent.main`
 - Rückmeldung: `python -m jobagent.feedback --help`
-- Profil-Vorschlag: `python -m jobagent.profilvorschlag`
+- Profil-Vorschlag: `python -m jobagent.profile_suggestion`
 
 ## Quelle 1: Jobsuche-API der Bundesagentur für Arbeit
 - Doku und Beispiele: GitHub `bundesAPI/jobsuche-api`. Endpunkt, Header und Parameter immer dort gegenprüfen, nicht raten.

@@ -344,14 +344,14 @@ def _run_finds(
 
 def _manual(project: dict[str, Path], action: str = "beworben", title: str = "Data Engineer"):
     argv = [action, "--firma", "Beispiel", "--titel", title]
-    assert feedback.main(argv, db_pfad=project["db_path"]) == 0
+    assert feedback.main(argv, db_path=project["db_path"]) == 0
 
 
 def _application_to_first_job_ad(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, description: str | None
 ) -> None:
     path, _ = _run_finds(project, monkeypatch, _position_job_ad("alt", description))
-    assert feedback.main([path.stem, "1", "beworben"], db_pfad=project["db_path"]) == 0
+    assert feedback.main([path.stem, "1", "beworben"], db_path=project["db_path"]) == 0
 
 
 def test_main_moves_applied_position_to_own_block(
@@ -414,7 +414,7 @@ def test_main_job_ad_without_company_is_not_matched(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     argv = ["beworben", "--firma", "", "--titel", "Data Engineer"]
-    feedback.main(argv, db_pfad=project["db_path"])
+    feedback.main(argv, db_path=project["db_path"])
     without_company = replace(_position_job_ad("neu"), company=None)
 
     _, content = _run_finds(project, monkeypatch, without_company)
@@ -467,7 +467,7 @@ def test_main_compares_with_latest_application(
 ) -> None:
     _application_to_first_job_ad(project, monkeypatch, "Erster Text")
     path, _ = _run_finds(project, monkeypatch, _position_job_ad("zwei", "Zweiter Text"))
-    assert feedback.main([path.stem, "1", "beworben"], db_pfad=project["db_path"]) == 0
+    assert feedback.main([path.stem, "1", "beworben"], db_path=project["db_path"]) == 0
 
     _, content = _run_finds(project, monkeypatch, _position_job_ad("drei", "Zweiter Text"))
 
@@ -477,9 +477,9 @@ def test_main_compares_with_latest_application(
 def _applied_days_ago(project: dict[str, Path], days: int, status: str = "beworben") -> None:
     applied_on = (date.today() - timedelta(days=days)).isoformat()
     base = ["--firma", "Firma X", "--titel", "Dev"]
-    assert feedback.main(["beworben", *base, "--am", applied_on], db_pfad=project["db_path"]) == 0
+    assert feedback.main(["beworben", *base, "--am", applied_on], db_path=project["db_path"]) == 0
     if status != "beworben":
-        assert feedback.main([status, *base], db_pfad=project["db_path"]) == 0
+        assert feedback.main([status, *base], db_path=project["db_path"]) == 0
 
 
 def _run_without_matches(project: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> str:
