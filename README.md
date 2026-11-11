@@ -1,5 +1,11 @@
 [![CI](https://github.com/bettinawoste-wq/jobagent/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/bettinawoste-wq/jobagent/actions/workflows/ci.yml)
 
+*A personal agent that searches German job boards and selected company job
+boards for new postings, has Claude rate each one against a personal search
+profile and writes a ranked Markdown report. It never applies or sends
+anything on its own: it only makes suggestions, and every decision stays with
+the human. Try it in one command with `--demo`, no API key or network needed.*
+
 # Job-Agent
 
 Persönlicher Agent, der täglich (bzw. an festgelegten Tagen) neue, passende
@@ -8,6 +14,78 @@ eine Markdown-Datei mit den besten Treffern schreibt.
 
 **Wichtig:** Der Agent schickt nie Bewerbungen oder Nachrichten ab — er
 liefert ausschließlich Vorschläge zum manuellen Durchsehen.
+
+## Ausprobieren
+
+```bash
+uv sync
+uv run python -m jobagent.main --demo
+```
+
+Der Demo-Lauf zeigt einen vollständigen Report mit erfundenen Anzeigen und
+vorgefertigten Bewertungen. Er braucht keinen API-Key, holt nichts aus dem Netz
+und liest oder speichert nichts Persönliches; der Report erscheint nur in der
+Konsole (mit `--ausgabe ORDNER` zusätzlich als Datei).
+
+Auszug aus der Ausgabe (gekürzt, `…` markiert Auslassungen):
+
+```markdown
+# Stellenvorschläge 2026-11-11
+
+## Quellen
+- Bundesagentur für Arbeit (Demo): 3 Anzeigen
+- Arbeitnow (Demo): 3 Anzeigen
+- Firmen-Watchlist (Demo): FEHLER, 2 Anzeigen (Musterwerk AG: Board nicht erreichbar)
+
+## Nachfassen
+- Data Engineer (m/w/d) (Datenwerk Muster GmbH): seit 18 Tagen keine Antwort, nachhaken? (beworben am 24.10.2026)
+
+## 1. Full-Stack-Entwickler (m/w/d) Python/TypeScript – Score 5/5
+- Firma: Fiktiva Software GmbH
+- Ort: Beispielstadt
+- Link: https://example.com/stellen/demo-ba-1
+- Kurzfazit: Sehr guter Match für die erste Wunschrolle.
+- Passt: Python und JavaScript/TypeScript, Full-Stack wie gesucht, Hybrid in Beispielstadt
+
+## 2. Data Scientist (m/w/d) – Score 4/5
+- Firma: Lorem Data GmbH
+- Ort: Remote
+- Link: https://example.com/stellen/demo-an-2
+- Kurzfazit: Gute Passung zur vierten Wunschrolle.
+- Passt: Data Science mit Python, Remote
+- Lücken: scikit-learn nur in Grundzügen
+
+…
+
+## Weitere Treffer (Score unter 3)
+- **6.** Werkstudent Data Analytics (m/w/d) (Testfeld Robotics GmbH, Beispielstadt) – Score 2/5: Inhaltlich nah, aber falsches Level. – https://example.com/stellen/demo-wl-2
+…
+
+## Bereits beworben
+- **8.** Python Developer (w/m/d) (Beispiel Tech, Remote) – Score 4/5 – gespräch, beworben am 07.10.2026 – Text weicht von deiner Bewerbung ab – https://example.com/stellen/demo-an-1
+```
+
+Die Watchlist-Quelle fällt im Demo-Lauf absichtlich teilweise aus: So sieht
+man, dass eine gescheiterte Quelle den Lauf nicht abbricht, sondern im
+Quellenstatus ausgewiesen wird.
+
+## Entscheidungen
+
+Die wichtigsten Grundsatzentscheidungen sind als ADRs in
+[`docs/adr/`](docs/adr/) festgehalten:
+
+- [Keine Volltexte von Anzeigen speichern](docs/adr/0001-datensparsamkeit.md):
+  Gespeichert werden nur Metadaten, die Bewertung und ein Hash der
+  Beschreibung, über den Textabweichungen erkannt werden.
+- [Nur Quellen mit öffentlicher Schnittstelle nutzen](docs/adr/0002-nur-erlaubte-quellen.md):
+  Bundesagentur, Arbeitnow und Greenhouse/Lever ja, Scraper für LinkedIn,
+  Xing oder Indeed nein.
+- [Der Mensch entscheidet, der Agent schlägt nur vor](docs/adr/0003-der-mensch-entscheidet.md):
+  keine automatischen Bewerbungen, Bewerbungsstatus und Suchprofil ändern sich
+  nur durch eigene Angabe bzw. Bestätigung.
+- [Haiku für die Bewertung, Sonnet für den Profil-Vorschlag](docs/adr/0004-modellwahl-haiku-sonnet.md):
+  das günstige, schnelle Modell für viele kleine Bewertungen, das stärkere für
+  den seltenen, anspruchsvollen Profil-Vorschlag.
 
 ## Ablauf
 
