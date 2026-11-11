@@ -32,3 +32,7 @@ jobs:
       - name: pytest
         # Kein ANTHROPIC_API_KEY, kein Netz: alle Quellen und die Bewertung sind in den Tests gemockt.
         run: uv run pytest
+
+      - name: Demo-Lauf als Smoke-Test
+        # Läuft wie nach einem frischen Clone: ohne API-Key, profile.md, config.toml und Netz.
+        run: uv run python -m jobagent.main --demo
