@@ -36,6 +36,14 @@ _Avoid_: Rang, Punkte
 
 ## Report
 
+**Lauf**:
+Ein Durchgang aus Suchen, Bewerten und Report-Schreiben, der genau einen Report erzeugt.
+_Avoid_: Durchlauf, Job, Testlauf
+
+**Demo-Lauf**:
+Ein Lauf mit erfundenen Anzeigen und vorgefertigten Bewertungen, der nichts aus dem Netz holt und nichts Persönliches liest oder speichert.
+_Avoid_: Testlauf, Probelauf, Beispiellauf
+
 **Report**:
 Eine Datei mit den Treffern genau eines Laufs.
 _Avoid_: Liste, Tagesdatei
