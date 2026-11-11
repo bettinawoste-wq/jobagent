@@ -1,13 +1,17 @@
 """Ablauf: fetch, dedupe, score, report."""
 
+import argparse
+import io
 import logging
 import sqlite3
+import sys
+import tempfile
 import tomllib
 from collections.abc import Callable, Mapping
 from datetime import date
 from pathlib import Path
 
-from jobagent import fetch, report, score, store
+from jobagent import demo, fetch, report, score, store
 from jobagent.stelle import stellen_schluessel
 
 logger = logging.getLogger(__name__)
@@ -188,5 +192,60 @@ def _sichere_suche(suche: Suche, was: str, quelle: str) -> fetch.Suchergebnis:
         return fetch.Suchergebnis([], [f"{was}: unerwarteter Fehler"])
 
 
+def cli(argumente: list[str] | None = None) -> None:
+    """Kommandozeile: ein echter Lauf oder mit `--demo` ein Demo-Lauf."""
+    parser = argparse.ArgumentParser(prog="python -m jobagent.main")
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Demo-Lauf: erfundene Anzeigen und vorgefertigte Bewertungen, ohne API-Key und "
+        "ohne Netz; der Report erscheint auf stdout",
+    )
+    parser.add_argument(
+        "--ausgabe",
+        type=Path,
+        metavar="ORDNER",
+        help="nur mit --demo: Report zusätzlich als Datei in ORDNER schreiben",
+    )
+    args = parser.parse_args(argumente)
+    if args.ausgabe is not None and not args.demo:
+        parser.error("--ausgabe gibt es nur zusammen mit --demo")
+
+    if args.demo:
+        _schreibe_utf8(demo_lauf(args.ausgabe))
+    else:
+        main()
+
+
+def demo_lauf(ausgabe: Path | None = None) -> str:
+    """Fuehrt einen Demo-Lauf aus und liefert den Report-Text.
+
+    Datenbank und Report liegen in einem temporaeren Ordner, der danach verschwindet;
+    nur mit `ausgabe` bleibt der Report zusaetzlich dort als Datei liegen.
+    """
+    with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:
+        db_pfad = Path(temp) / "demo.db"
+        conn = store.connect(db_pfad)
+        try:
+            demo.lege_bewerbungen_an(conn, date.today())
+        finally:
+            conn.close()
+        pfad = main(
+            db_pfad=db_pfad,
+            ausgabe_verzeichnis=ausgabe or Path(temp),
+            konfig=demo.KONFIG,
+            quellen=demo.quellen(),
+            bewerte=demo.bewerte,
+        )
+        return pfad.read_text(encoding="utf-8")
+
+
+def _schreibe_utf8(text: str) -> None:
+    # Die Windows-Konsole nutzt sonst eine Codepage, in der Umlaute kaputtgehen.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.write(text)
+
+
 if __name__ == "__main__":
-    main()
+    cli()
