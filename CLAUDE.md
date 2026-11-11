@@ -20,7 +20,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/demo.py`: Demo-Lauf mit erfundenen Anzeigen und vorgefertigten Bewertungen (öffentlich, im README zitiert: nur Fantasiefirmen und `example.com`)
 - `tests/`: Tests, Beispielantworten liegen in `tests/fixtures/`
 - `profile.md`: mein Suchprofil und meine Ausschlusskriterien
-- `GLOSSARY.md`: Fachbegriffe (Anzeige, Stelle, Treffer, Lauf …); Namen in Code, Tickets und Texten folgen ihm
+- `GLOSSARY.md`: Fachbegriffe (Anzeige, Stelle, Treffer, Lauf …) mit ihrem Namen im Code; Namen in Code, Tickets und Texten folgen ihm
 - `docs/adr/`: Grundsatzentscheidungen mit Begründung; vor Änderungen an Speicherung, Quellen, Rückkanal oder Modellwahl lesen
 
 ## Befehle
@@ -52,6 +52,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Bewusst nicht genutzt: Remotive-API - Suchparameter filtert praktisch nicht, winziger kaum Deutschland-relevanter Feed, und die API-Antwort selbst weist auf ein kostenpflichtiges Angebot für diesen Nutzungszweck hin.
 
 ## Konventionen
+- Bezeichner und Dateinamen englisch nach der Spalte „Im Code“ in `GLOSSARY.md`; Texte für Menschen (Kommentare, Docstrings, Logs, Report, CLI-Ausgaben, Commits) deutsch mit den Glossar-Begriffen. Feldnamen fremder APIs, Schlüssel in `config.toml` und das DB-Schema bleiben, wie sie sind (ADR 0005)
 - Bewertung liefert strikt JSON: `score` (1-5), `passt` (Liste), `passt_nicht` (Liste), `luecken` (Liste), `kurzfazit`
 - Fehler einer Quelle dürfen den Lauf nicht abbrechen, sie werden geloggt und im Quellenstatus des Reports ausgewiesen
 - Eine Aufgabe pro Durchgang, danach committen
