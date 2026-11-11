@@ -1,3 +1,5 @@
+[![CI](https://github.com/bettinawoste-wq/jobagent/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/bettinawoste-wq/jobagent/actions/workflows/ci.yml)
+
 # Job-Agent
 
 Persönlicher Agent, der täglich (bzw. an festgelegten Tagen) neue, passende
