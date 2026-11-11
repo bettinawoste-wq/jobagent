@@ -10,15 +10,15 @@ from pathlib import Path
 from jobagent import store
 from jobagent.position import position_key
 
-_DB_PFAD = Path("jobagent.db")
+_DB_PATH = Path("jobagent.db")
 
-_STATUS = [str(status) for status in store.ApplicationStatus]
-_ZURUECKNEHMEN = "zurücknehmen"
+_STATUSES = [str(status) for status in store.ApplicationStatus]
+_WITHDRAW_ENTRY = "zurücknehmen"
 _SCORE = "score"
 
 _REPORT_NAME = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-_AUFRUF = """python -m jobagent.feedback REPORT NUMMER AKTION
+_USAGE = """python -m jobagent.feedback REPORT NUMMER AKTION
        python -m jobagent.feedback REPORT NUMMER score 1-5 [GRUND]
        python -m jobagent.feedback AKTION --firma FIRMA --titel TITEL
 
@@ -29,148 +29,148 @@ Beispiele:
   python -m jobagent.feedback absage --firma "Firma X" --titel "Data Engineer\""""
 
 
-class FeedbackFehler(Exception):
+class FeedbackError(Exception):
     """Ein Aufruf, der sich nicht ausfuehren laesst; die Meldung ist fuer die Nutzerin."""
 
 
 def main(
     argv: list[str] | None = None,
     *,
-    db_pfad: Path = _DB_PFAD,
-    heute: date | None = None,
+    db_path: Path = _DB_PATH,
+    today: date | None = None,
 ) -> int:
     """Fuehrt eine Rueckmeldung aus und gibt den Exit-Code zurueck."""
-    argumente = sys.argv[1:] if argv is None else argv
-    tag = heute or date.today()
+    arguments = sys.argv[1:] if argv is None else argv
+    day = today or date.today()
 
-    if argumente and _REPORT_NAME.match(argumente[0]):
-        parsed = _treffer_parser().parse_args(argumente)
-        ausfuehren = _treffer_kommando
+    if arguments and _REPORT_NAME.match(arguments[0]):
+        parsed = _match_parser().parse_args(arguments)
+        execute = _match_command
     else:
-        parsed = _manueller_parser().parse_args(argumente)
-        ausfuehren = _manuelles_kommando
+        parsed = _manual_parser().parse_args(arguments)
+        execute = _manual_command
 
-    conn = store.connect(db_pfad)
+    conn = store.connect(db_path)
     try:
-        print(ausfuehren(conn, parsed, tag))
+        print(execute(conn, parsed, day))
         return 0
-    except FeedbackFehler as fehler:
-        print(f"Fehler: {fehler}", file=sys.stderr)
+    except FeedbackError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
         return 1
     finally:
         conn.close()
 
 
-def _treffer_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(usage=_AUFRUF)
+def _match_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(usage=_USAGE)
     parser.add_argument("report")
     parser.add_argument("nummer", type=int)
-    parser.add_argument("aktion", choices=[*_STATUS, _ZURUECKNEHMEN, _SCORE])
+    parser.add_argument("aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY, _SCORE])
     parser.add_argument("werte", nargs="*")
     parser.add_argument("--am")
     return parser
 
 
-def _manueller_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(usage=_AUFRUF)
-    parser.add_argument("aktion", choices=[*_STATUS, _ZURUECKNEHMEN])
+def _manual_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(usage=_USAGE)
+    parser.add_argument("aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY])
     parser.add_argument("--firma", required=True)
     parser.add_argument("--titel", required=True)
     parser.add_argument("--am")
     return parser
 
 
-def _treffer_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute: date) -> str:
+def _match_command(conn: sqlite3.Connection, args: argparse.Namespace, today: date) -> str:
     report_name = args.report.removesuffix(".md")
-    treffer = store.find_match(conn, report_name, args.nummer)
-    if treffer is None:
-        raise FeedbackFehler(
+    match = store.find_match(conn, report_name, args.nummer)
+    if match is None:
+        raise FeedbackError(
             f"Treffer {args.nummer} in Report {report_name} nicht gefunden. Reports vor "
             "Version 0.3.0 haben keine Nummern; erfasse die Bewerbung dann mit --firma und --titel."
         )
 
     if args.aktion == _SCORE:
-        return _speichere_score(conn, treffer, args.werte, heute)
+        return _save_score(conn, match, args.werte, today)
 
     if args.werte:
-        raise FeedbackFehler(f"Unerwartete Angaben nach {args.aktion}: {' '.join(args.werte)}")
+        raise FeedbackError(f"Unerwartete Angaben nach {args.aktion}: {' '.join(args.werte)}")
 
-    bewerbung = store.NewApplication(
-        position_key=position_key(treffer.company, treffer.title),
-        company=treffer.company,
-        title=treffer.title,
-        job_ad_id=treffer.id,
+    application = store.NewApplication(
+        position_key=position_key(match.company, match.title),
+        company=match.company,
+        title=match.title,
+        job_ad_id=match.id,
     )
-    bewerbung_id = store.application_for_job_ad(conn, treffer.id)
-    return _aendere_bewerbung(conn, bewerbung_id, bewerbung, args, heute)
+    application_id = store.application_for_job_ad(conn, match.id)
+    return _change_application(conn, application_id, application, args, today)
 
 
-def _manuelles_kommando(conn: sqlite3.Connection, args: argparse.Namespace, heute: date) -> str:
-    bewerbung = store.NewApplication(
+def _manual_command(conn: sqlite3.Connection, args: argparse.Namespace, today: date) -> str:
+    application = store.NewApplication(
         position_key=position_key(args.firma, args.titel),
         company=args.firma,
         title=args.titel,
         job_ad_id=None,
     )
-    bewerbung_id = store.application_for_position(conn, bewerbung.position_key)
-    return _aendere_bewerbung(conn, bewerbung_id, bewerbung, args, heute)
+    application_id = store.application_for_position(conn, application.position_key)
+    return _change_application(conn, application_id, application, args, today)
 
 
-def _aendere_bewerbung(
+def _change_application(
     conn: sqlite3.Connection,
-    bewerbung_id: int | None,
-    bewerbung: store.NewApplication,
+    application_id: int | None,
+    application: store.NewApplication,
     args: argparse.Namespace,
-    heute: date,
+    today: date,
 ) -> str:
-    am = _lies_datum(args.am)
-    if am is not None and args.aktion != "beworben":
-        raise FeedbackFehler("--am gibt es nur zusammen mit beworben.")
+    applied_on = _parse_date(args.am)
+    if applied_on is not None and args.aktion != "beworben":
+        raise FeedbackError("--am gibt es nur zusammen mit beworben.")
 
-    bezeichnung = f"{bewerbung.title} ({bewerbung.company or 'unbekannt'})"
+    label = f"{application.title} ({application.company or 'unbekannt'})"
 
-    if bewerbung_id is None:
+    if application_id is None:
         if args.aktion != "beworben":
-            raise FeedbackFehler(
-                f"Zu {bezeichnung} gibt es noch keine Bewerbung. Erfasse sie zuerst mit beworben."
+            raise FeedbackError(
+                f"Zu {label} gibt es noch keine Bewerbung. Erfasse sie zuerst mit beworben."
             )
-        datum = am or heute
-        store.create_application(conn, bewerbung, args.aktion, datum)
-        return f"Bewerbung gespeichert: {bezeichnung}, beworben am {datum.isoformat()}"
+        applied = applied_on or today
+        store.create_application(conn, application, args.aktion, applied)
+        return f"Bewerbung gespeichert: {label}, beworben am {applied.isoformat()}"
 
-    if args.aktion == _ZURUECKNEHMEN:
-        store.delete_application(conn, bewerbung_id)
-        return f"Bewerbung zurückgenommen: {bezeichnung}"
+    if args.aktion == _WITHDRAW_ENTRY:
+        store.delete_application(conn, application_id)
+        return f"Bewerbung zurückgenommen: {label}"
 
-    store.update_application(conn, bewerbung_id, args.aktion, am)
-    return f"Status geändert: {bezeichnung} ist jetzt {args.aktion}"
+    store.update_application(conn, application_id, args.aktion, applied_on)
+    return f"Status geändert: {label} ist jetzt {args.aktion}"
 
 
-def _speichere_score(
+def _save_score(
     conn: sqlite3.Connection,
-    treffer: store.StoredMatch,
-    werte: list[str],
-    heute: date,
+    match: store.StoredMatch,
+    values: list[str],
+    today: date,
 ) -> str:
-    score = _lies_score(werte)
-    grund = " ".join(werte[1:]) or None
-    store.save_feedback(conn, treffer.id, score, grund, heute)
-    return f"Feedback gespeichert: {treffer.title} bekommt von dir Score {score}"
+    score = _parse_score(values)
+    reason = " ".join(values[1:]) or None
+    store.save_feedback(conn, match.id, score, reason, today)
+    return f"Feedback gespeichert: {match.title} bekommt von dir Score {score}"
 
 
-def _lies_score(werte: list[str]) -> int:
-    if not werte or not werte[0].isdecimal() or not 1 <= int(werte[0]) <= 5:
-        raise FeedbackFehler("Nach score wird eine Zahl von 1 bis 5 erwartet.")
-    return int(werte[0])
+def _parse_score(values: list[str]) -> int:
+    if not values or not values[0].isdecimal() or not 1 <= int(values[0]) <= 5:
+        raise FeedbackError("Nach score wird eine Zahl von 1 bis 5 erwartet.")
+    return int(values[0])
 
 
-def _lies_datum(text: str | None) -> date | None:
+def _parse_date(text: str | None) -> date | None:
     if text is None:
         return None
     try:
         return date.fromisoformat(text)
     except ValueError:
-        raise FeedbackFehler(f"Datum im Format JJJJ-MM-TT erwartet, bekam: {text}") from None
+        raise FeedbackError(f"Datum im Format JJJJ-MM-TT erwartet, bekam: {text}") from None
 
 
 if __name__ == "__main__":

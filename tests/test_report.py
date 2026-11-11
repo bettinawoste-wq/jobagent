@@ -365,7 +365,7 @@ def test_profile_suggestion_hint_comes_after_follow_ups(tmp_path: Path) -> None:
     content = path.read_text(encoding="utf-8")
     assert (
         "## Profil-Vorschlag\n- 5 Rückmeldungen warten auf Auswertung: "
-        "`python -m jobagent.profilvorschlag`\n"
+        "`python -m jobagent.profile_suggestion`\n"
     ) in content
     assert content.index("## Nachfassen") < content.index("## Profil-Vorschlag")
 

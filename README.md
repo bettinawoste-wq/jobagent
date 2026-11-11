@@ -191,7 +191,7 @@ und gleicher Titel, unabhängig von Schreibweise, (m/w/d) und Rechtsform.
 ## Suchprofil aus Feedback verbessern
 
 ```bash
-uv run python -m jobagent.profilvorschlag
+uv run python -m jobagent.profile_suggestion
 ```
 
 Claude Sonnet wertet das noch offene Feedback aus und unterscheidet dabei

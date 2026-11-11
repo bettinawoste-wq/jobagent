@@ -16,14 +16,16 @@ from jobagent import store
 
 logger = logging.getLogger(__name__)
 
-_DB_PFAD = Path("jobagent.db")
-_PROFIL_PFAD = Path("profile.md")
+_DB_PATH = Path("jobagent.db")
+_PROFILE_PATH = Path("profile.md")
 
 _MODEL = "claude-sonnet-5-5"
 _MAX_TOKENS = 16000
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
-_ANTWORT_SCHEMA = {
+# Schema und Prompt gehen an das Modell und bleiben deutsch; die Uebersetzung
+# in die englischen Namen passiert nur in _to_suggestion und _as_model_data.
+_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "aenderungen": {
@@ -66,41 +68,41 @@ _SYSTEM_PROMPT = (
 
 
 @dataclass(frozen=True, slots=True)
-class Aenderung:
-    alt: str
-    neu: str
-    grund: str
+class ProfileChange:
+    old: str
+    new: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)
-class Vorschlag:
-    aenderungen: list[Aenderung]
-    modellfehler: list[str]
+class ProfileSuggestion:
+    changes: list[ProfileChange]
+    model_errors: list[str]
 
 
-def erstelle_vorschlag(
-    profil: str,
-    rueckmeldungen: list[store.Feedback],
+def create_suggestion(
+    profile: str,
+    feedback: list[store.Feedback],
     *,
     client: anthropic.Anthropic | None = None,
-) -> Vorschlag | None:
+) -> ProfileSuggestion | None:
     """Fragt das Modell nach Aenderungen; None, wenn keine brauchbare Antwort kommt."""
-    aktiver_client = client or anthropic.Anthropic()
-    daten = json.dumps(
-        [_als_modelldaten(rueckmeldung) for rueckmeldung in rueckmeldungen],
+    active_client = client or anthropic.Anthropic()
+    data = json.dumps(
+        [_as_model_data(entry) for entry in feedback],
         ensure_ascii=False,
         indent=2,
     )
     try:
-        antwort = aktiver_client.beta.messages.create(
+        response = active_client.beta.messages.create(
             model=_MODEL,
             max_tokens=_MAX_TOKENS,
             betas=[_FALLBACK_BETA],
             fallbacks="default",
             system=_SYSTEM_PROMPT,
-            output_config={"format": {"type": "json_schema", "schema": _ANTWORT_SCHEMA}},
+            output_config={"format": {"type": "json_schema", "schema": _RESPONSE_SCHEMA}},
             messages=[
-                {"role": "user", "content": f"Suchprofil:\n{profil}\n\nRueckmeldungen:\n{daten}"}
+                {"role": "user", "content": f"Suchprofil:\n{profile}\n\nRueckmeldungen:\n{data}"}
             ],
         )
     except (anthropic.AnthropicError, TypeError):
@@ -109,13 +111,13 @@ def erstelle_vorschlag(
         logger.exception("Anthropic-API-Anfrage fuer den Profil-Vorschlag fehlgeschlagen")
         return None
 
-    return _zu_vorschlag(antwort)
+    return _to_suggestion(response)
 
 
-def _als_modelldaten(feedback: store.Feedback) -> dict:
+def _as_model_data(feedback: store.Feedback) -> dict:
     # Die Schluessel sind Teil des Prompts und bleiben deutsch, siehe _SYSTEM_PROMPT.
     assessment = feedback.assessment
-    bewertung = (
+    assessment_data = (
         {
             "passt": assessment.fits,
             "passt_nicht": assessment.misfits,
@@ -130,129 +132,129 @@ def _als_modelldaten(feedback: store.Feedback) -> dict:
         "titel": feedback.title,
         "firma": feedback.company,
         "modell_score": feedback.model_score,
-        "bewertung": bewertung,
+        "bewertung": assessment_data,
         "eigener_score": feedback.own_score,
         "grund": feedback.reason,
     }
 
 
-def _zu_vorschlag(antwort: object) -> Vorschlag | None:
-    if antwort.stop_reason != "end_turn":
-        logger.error("Profil-Vorschlag unvollstaendig (stop_reason=%r)", antwort.stop_reason)
+def _to_suggestion(response: object) -> ProfileSuggestion | None:
+    if response.stop_reason != "end_turn":
+        logger.error("Profil-Vorschlag unvollstaendig (stop_reason=%r)", response.stop_reason)
         return None
 
-    text = next((block.text for block in antwort.content if block.type == "text"), None)
+    text = next((block.text for block in response.content if block.type == "text"), None)
     if text is None:
         logger.error("Profil-Vorschlag enthaelt keinen Text")
         return None
 
     try:
-        daten = json.loads(text)
-        return Vorschlag(
-            aenderungen=[
-                Aenderung(alt=eintrag["alt"], neu=eintrag["neu"], grund=eintrag["grund"])
-                for eintrag in daten["aenderungen"]
+        data = json.loads(text)
+        return ProfileSuggestion(
+            changes=[
+                ProfileChange(old=entry["alt"], new=entry["neu"], reason=entry["grund"])
+                for entry in data["aenderungen"]
             ],
-            modellfehler=[str(eintrag) for eintrag in daten["modellfehler"]],
+            model_errors=[str(entry) for entry in data["modellfehler"]],
         )
     except (KeyError, TypeError, ValueError):
         logger.exception("Ungueltiger Profil-Vorschlag: %r", text)
         return None
 
 
-def wende_an(profil: str, aenderungen: list[Aenderung]) -> tuple[str, list[Aenderung]]:
+def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list[ProfileChange]]:
     """Wendet Ersetzungen an und liefert den neuen Text plus die unbrauchbaren Aenderungen.
 
     Eine Aenderung gilt nur, wenn ihr Auszug genau einmal vorkommt. So kann das
     Modell nichts unbemerkt weglassen oder an der falschen Stelle aendern.
     """
-    text = profil
-    uebersprungen: list[Aenderung] = []
-    for aenderung in aenderungen:
-        if aenderung.alt and text.count(aenderung.alt) == 1:
-            text = text.replace(aenderung.alt, aenderung.neu)
+    text = profile
+    skipped: list[ProfileChange] = []
+    for change in changes:
+        if change.old and text.count(change.old) == 1:
+            text = text.replace(change.old, change.new)
         else:
-            uebersprungen.append(aenderung)
-    return text, uebersprungen
+            skipped.append(change)
+    return text, skipped
 
 
 def main(
     *,
-    db_pfad: Path = _DB_PFAD,
-    profil_pfad: Path = _PROFIL_PFAD,
+    db_path: Path = _DB_PATH,
+    profile_path: Path = _PROFILE_PATH,
     client: anthropic.Anthropic | None = None,
-    eingabe: Callable[[str], str] = input,
-    jetzt: datetime | None = None,
+    ask: Callable[[str], str] = input,
+    now: datetime | None = None,
 ) -> int:
     """Erstellt einen Vorschlag, zeigt ihn an und fragt nach der Entscheidung."""
-    if not profil_pfad.exists():
-        print(f"Fehler: {profil_pfad} nicht gefunden.", file=sys.stderr)
+    if not profile_path.exists():
+        print(f"Fehler: {profile_path} nicht gefunden.", file=sys.stderr)
         return 1
 
-    conn = store.connect(db_pfad)
+    conn = store.connect(db_path)
     try:
-        return _ablauf(conn, profil_pfad, client, eingabe, jetzt or datetime.now())
+        return _suggest_and_decide(conn, profile_path, client, ask, now or datetime.now())
     finally:
         conn.close()
 
 
-def _ablauf(
+def _suggest_and_decide(
     conn: sqlite3.Connection,
-    profil_pfad: Path,
+    profile_path: Path,
     client: anthropic.Anthropic | None,
-    eingabe: Callable[[str], str],
-    jetzt: datetime,
+    ask: Callable[[str], str],
+    now: datetime,
 ) -> int:
-    rueckmeldungen = store.open_feedback(conn)
-    if not rueckmeldungen:
+    feedback = store.open_feedback(conn)
+    if not feedback:
         print("Es gibt kein unverarbeitetes Feedback.")
         return 0
 
-    profil = profil_pfad.read_text(encoding="utf-8")
-    vorschlag = erstelle_vorschlag(profil, rueckmeldungen, client=client)
-    if vorschlag is None:
+    profile = profile_path.read_text(encoding="utf-8")
+    suggestion = create_suggestion(profile, feedback, client=client)
+    if suggestion is None:
         print("Fehler: Kein brauchbarer Vorschlag, es wurde nichts geändert.", file=sys.stderr)
         return 1
 
-    ids = [rueckmeldung.job_ad_id for rueckmeldung in rueckmeldungen]
-    neues_profil, uebersprungen = wende_an(profil, vorschlag.aenderungen)
-    _zeige_modellfehler(vorschlag.modellfehler)
-    for aenderung in uebersprungen:
-        print(f"Übersprungen, Auszug nicht eindeutig: {aenderung.alt}", file=sys.stderr)
+    ids = [entry.job_ad_id for entry in feedback]
+    new_profile, skipped = apply_changes(profile, suggestion.changes)
+    _show_model_errors(suggestion.model_errors)
+    for change in skipped:
+        print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
 
-    if not vorschlag.aenderungen:
+    if not suggestion.changes:
         store.mark_feedback_processed(conn, ids)
         print("Keine Änderung am Suchprofil nötig.")
         return 0
 
-    if neues_profil == profil:
+    if new_profile == profile:
         print("Fehler: Keine Änderung ließ sich anwenden, Feedback bleibt offen.", file=sys.stderr)
         return 1
 
-    _zeige_aenderungen(profil, neues_profil, vorschlag.aenderungen, uebersprungen, profil_pfad.name)
-    return _entscheide(conn, profil_pfad, profil, neues_profil, ids, eingabe, jetzt)
+    _show_changes(profile, new_profile, suggestion.changes, skipped, profile_path.name)
+    return _decide(conn, profile_path, profile, new_profile, ids, ask, now)
 
 
-def _entscheide(
+def _decide(
     conn: sqlite3.Connection,
-    profil_pfad: Path,
-    profil: str,
-    neues_profil: str,
+    profile_path: Path,
+    profile: str,
+    new_profile: str,
     ids: list[str],
-    eingabe: Callable[[str], str],
-    jetzt: datetime,
+    ask: Callable[[str], str],
+    now: datetime,
 ) -> int:
     try:
-        antwort = eingabe("Übernehmen? [j]a, [n]ein, [a]bbrechen: ").strip().lower()
+        answer = ask("Übernehmen? [j]a, [n]ein, [a]bbrechen: ").strip().lower()
     except EOFError:
-        antwort = ""
+        answer = ""
 
-    if antwort in ("j", "ja"):
-        sicherung = _sichere(profil_pfad, profil, jetzt)
-        profil_pfad.write_text(neues_profil, encoding="utf-8")
+    if answer in ("j", "ja"):
+        backup = _back_up(profile_path, profile, now)
+        profile_path.write_text(new_profile, encoding="utf-8")
         store.mark_feedback_processed(conn, ids)
-        print(f"Suchprofil geändert, Sicherung: {sicherung.name}")
-    elif antwort in ("n", "nein"):
+        print(f"Suchprofil geändert, Sicherung: {backup.name}")
+    elif answer in ("n", "nein"):
         store.mark_feedback_processed(conn, ids)
         print("Vorschlag abgelehnt, Suchprofil unverändert.")
     else:
@@ -260,39 +262,39 @@ def _entscheide(
     return 0
 
 
-def _sichere(profil_pfad: Path, profil: str, jetzt: datetime) -> Path:
-    name = f"{profil_pfad.stem}.sicherung-{jetzt:%Y-%m-%d-%H%M%S}{profil_pfad.suffix}"
-    sicherung = profil_pfad.with_name(name)
-    with sicherung.open("x", encoding="utf-8") as datei:  # "x": nie ueberschreiben
-        datei.write(profil)
-    return sicherung
+def _back_up(profile_path: Path, profile: str, now: datetime) -> Path:
+    name = f"{profile_path.stem}.sicherung-{now:%Y-%m-%d-%H%M%S}{profile_path.suffix}"
+    backup = profile_path.with_name(name)
+    with backup.open("x", encoding="utf-8") as file:  # "x": nie ueberschreiben
+        file.write(profile)
+    return backup
 
 
-def _zeige_modellfehler(modellfehler: list[str]) -> None:
-    if modellfehler:
+def _show_model_errors(model_errors: list[str]) -> None:
+    if model_errors:
         print("Vermutlich Fehler der Bewertung, kein Anlass für eine Änderung:")
-        for eintrag in modellfehler:
-            print(f"  - {eintrag}")
+        for entry in model_errors:
+            print(f"  - {entry}")
         print()
 
 
-def _zeige_aenderungen(
-    profil: str,
-    neues_profil: str,
-    aenderungen: list[Aenderung],
-    uebersprungen: list[Aenderung],
-    dateiname: str,
+def _show_changes(
+    profile: str,
+    new_profile: str,
+    changes: list[ProfileChange],
+    skipped: list[ProfileChange],
+    file_name: str,
 ) -> None:
     print("Vorgeschlagene Änderungen:")
-    for aenderung in aenderungen:
-        if aenderung not in uebersprungen:
-            print(f"  - {aenderung.grund}")
+    for change in changes:
+        if change not in skipped:
+            print(f"  - {change.reason}")
     print()
     diff = difflib.unified_diff(
-        profil.splitlines(),
-        neues_profil.splitlines(),
-        f"{dateiname} (bisher)",
-        f"{dateiname} (neu)",
+        profile.splitlines(),
+        new_profile.splitlines(),
+        f"{file_name} (bisher)",
+        f"{file_name} (neu)",
         lineterm="",
     )
     print("\n".join(diff))

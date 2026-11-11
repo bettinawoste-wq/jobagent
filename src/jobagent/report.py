@@ -107,7 +107,7 @@ def _profile_hint(open_feedback: int) -> str:
         return ""
     return (
         f"## Profil-Vorschlag\n- {open_feedback} Rückmeldungen warten auf Auswertung: "
-        "`python -m jobagent.profilvorschlag`\n\n"
+        "`python -m jobagent.profile_suggestion`\n\n"
     )
 
 
