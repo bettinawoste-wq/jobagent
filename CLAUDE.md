@@ -13,6 +13,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/main.py`: der Lauf (suchen, dedupe, bewerten, Report) und `default_sources`, die die eingebauten Quellen aus der Konfiguration baut
 - `src/jobagent/demo.py`: Demo-Lauf, im README zitiert; nur Fantasiefirmen und `example.com`
 - `GLOSSARY.md`: Fachbegriffe mit ihrem Namen im Code
+- `CODING_STANDARDS.md`: Ermessensregeln, gegen die jedes Review prüft
 - `docs/adr/`: Grundsatzentscheidungen; vor Änderungen an Speicherung, Quellen, Rückkanal, Modellwahl oder Namen lesen
 - `profile.md`: mein Suchprofil, nicht im Repo (Vorlage: `profile.example.md`)
 
@@ -54,9 +55,9 @@ GitHub Issues in `bettinawoste-wq/jobagent` via `gh`, blocking as native issue d
 
 Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
-### Implementer worktrees
+### Worktree sessions
 
-Agents working on a ticket in their own worktree for an integration branch: see `docs/agents/worktrees.md`.
+Sessions working in their own worktree whose work another session integrates: see `docs/agents/worktrees.md`.
 
 ### Domain docs
 

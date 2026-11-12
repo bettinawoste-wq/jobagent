@@ -34,11 +34,11 @@ Create a GitHub issue.
 
 ## When a skill says "resolve the ticket" (closing work)
 
-Work is resolved by the session that integrates, never by an implementer agent:
+Work is resolved by the session that integrates, never by a worktree session that hands its work back (`docs/agents/worktrees.md`):
 
 1. Merge the integration branch into `master` and push, only after the user approved it.
 2. Close each ticket with a comment naming where the work lives, e.g. `gh issue close <n> --comment "Umgesetzt und in master enthalten, veröffentlicht mit v0.5.0 (9ce54f8)."`. Without a version bump: `"Umgesetzt und in master enthalten (<sha>)."`
-3. Clean up: `git worktree remove` each agent worktree, then delete only the agent branches that `git branch --merged <integration-branch>` lists, with `git branch -D` (`-d` refuses because they are merged into the integration branch, not into the current `master` checkout). Remove the integration worktree and branch last.
+3. Clean up: `git worktree remove` the worktree of each such session, then delete only their branches that `git branch --merged <integration-branch>` lists, with `git branch -D` (`-d` refuses because they are merged into the integration branch, not into the current `master` checkout). Remove the integration worktree and branch last.
 
 ## When a skill says "fetch the relevant ticket"
 
