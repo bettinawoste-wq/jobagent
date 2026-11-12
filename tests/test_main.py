@@ -139,13 +139,17 @@ def test_main_counts_job_ads_once_and_merges_same_errors(
 def test_main_survives_unexpected_source_error(
     project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    project["config_path"].write_text('was = ["Python", "Data"]\n', encoding="utf-8")
     monkeypatch.setattr(score, "score_job_ad", lambda *a, **kw: _assessment())
 
     content = _run(
         project, BrokenSource(), FakeSource([_job_ad("a-1")], name="Arbeitnow")
     ).read_text(encoding="utf-8")
 
-    assert "- Bundesagentur für Arbeit: FEHLER, 0 Anzeigen (unerwarteter Fehler)" in content
+    assert (
+        "- Bundesagentur für Arbeit: FEHLER, 0 Anzeigen (Python, Data: unerwarteter Fehler)"
+        in content
+    )
     assert "Stelle a-1" in content
 
 

@@ -190,7 +190,8 @@ def _safe_search(source: Source, keywords: list[str]) -> SearchResult:
         return source.search(keywords)
     except Exception:
         logger.exception("Unerwarteter Fehler in Quelle %r", source.name)
-        return SearchResult([], ["unerwarteter Fehler"])
+        # Wie bei Arbeitnow nennt der Fehler alle Suchbegriffe, denen die Suche galt.
+        return SearchResult([], [f"{', '.join(keywords)}: unerwarteter Fehler"])
 
 
 def cli(argv: list[str] | None = None) -> None:
