@@ -1,5 +1,6 @@
 """Tests fuer main.py: Ablauf suchen -> dedupe -> score -> report, mit Fake-Quellen."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from pathlib import Path
@@ -13,6 +14,9 @@ from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
 from jobagent.sources import SearchResult
 from jobagent.sources.watchlist import WatchlistCompany
+
+# Fester Tag für Tests, deren Ergebnis vom Datum abhängt.
+TODAY = date(2026, 3, 2)
 
 _CONFIG = """
 wo = "München"
@@ -479,8 +483,14 @@ def test_main_compares_with_latest_application(
     assert "– Text identisch –" in content
 
 
-def _applied_days_ago(project: dict[str, Path], days: int, status: str = "beworben") -> None:
-    applied_on = (date.today() - timedelta(days=days)).isoformat()
+def _applied_days_ago(
+    project: dict[str, Path],
+    fixed_today: Callable[[date], None],
+    days: int,
+    status: str = "beworben",
+) -> None:
+    fixed_today(TODAY)
+    applied_on = (TODAY - timedelta(days=days)).isoformat()
     base = ["--firma", "Firma X", "--titel", "Dev"]
     assert feedback.main(["beworben", *base, "--am", applied_on], db_path=project["db_path"]) == 0
     if status != "beworben":
@@ -495,9 +505,13 @@ def _run_without_matches(project: dict[str, Path], monkeypatch: pytest.MonkeyPat
     ("days", "expected"), [(13, False), (14, True), (20, True), (28, True), (29, False)]
 )
 def test_main_follow_up_window(
-    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, days: int, expected: bool
+    project: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    days: int,
+    expected: bool,
+    fixed_today: Callable[[date], None],
 ) -> None:
-    _applied_days_ago(project, days)
+    _applied_days_ago(project, fixed_today, days)
 
     content = _run_without_matches(project, monkeypatch)
 
@@ -508,28 +522,31 @@ def test_main_follow_up_window(
 
 @pytest.mark.parametrize("status", ["gespräch", "absage", "zusage", "zurückgezogen"])
 def test_main_follow_up_only_for_status_applied(
-    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, status: str
+    project: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    fixed_today: Callable[[date], None],
 ) -> None:
-    _applied_days_ago(project, 20, status)
+    _applied_days_ago(project, fixed_today, 20, status)
 
     assert "Nachfassen" not in _run_without_matches(project, monkeypatch)
 
 
 def test_main_follow_up_days_from_config(
-    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, fixed_today: Callable[[date], None]
 ) -> None:
     project["config_path"].write_text(
         'was = ["A"]\nnachfassen_ab_tag = 3\nnachfassen_bis_tag = 5\n', encoding="utf-8"
     )
-    _applied_days_ago(project, 4)
+    _applied_days_ago(project, fixed_today, 4)
 
     assert "seit 4 Tagen keine Antwort" in _run_without_matches(project, monkeypatch)
 
 
 def test_main_follow_up_reminder_does_not_change_status(
-    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch, fixed_today: Callable[[date], None]
 ) -> None:
-    _applied_days_ago(project, 60)
+    _applied_days_ago(project, fixed_today, 60)
 
     _run_without_matches(project, monkeypatch)
 
@@ -544,8 +561,8 @@ def _open_feedback(project: dict[str, Path], count: int) -> None:
     conn = store.connect(project["db_path"])
     for number in range(count):
         job_ad_id = f"f-{number}"
-        store.mark_seen(conn, _job_ad(job_ad_id), _assessment(), date.today())
-        store.save_feedback(conn, job_ad_id, 3, None, date.today())
+        store.mark_seen(conn, _job_ad(job_ad_id), _assessment(), TODAY)
+        store.save_feedback(conn, job_ad_id, 3, None, TODAY)
     conn.close()
 
 
