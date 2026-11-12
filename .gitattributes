@@ -1,0 +1,6 @@
+# Zeilenenden im Repo immer LF, unabhängig von core.autocrlf auf dem Rechner.
+* text=auto eol=lf
+
+# Binärdateien nie umwandeln.
+*.db binary
+*.png binary
