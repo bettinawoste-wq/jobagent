@@ -1,5 +1,7 @@
 # Startprompts für Claude Code
 
+> **Historisch.** Mit diesen Prompts ist Version 0.1 entstanden. Datei- und Funktionsnamen (`fetch.py`, `search(was, …)`, `mark_seen(anzeige)`) entsprechen nicht mehr dem Code; maßgeblich sind `CLAUDE.md`, `GLOSSARY.md` und `docs/`.
+
 Vorbereitung: leeren Ordner anlegen, `git init`, diese drei Dateien hineinkopieren, `claude` starten. Zuerst Plan Mode (Shift+Tab), Plan lesen, erst dann umsetzen lassen. Nach jedem Schritt Tests laufen lassen und committen.
 
 ## Schritt 0: Plan
