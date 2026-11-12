@@ -1,9 +1,11 @@
 """Kommando fuer Rueckmeldungen: Bewerbungen, Bewerbungsstatus und eigener Score."""
 
 import argparse
+import copy
 import re
 import sqlite3
 import sys
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -61,39 +63,53 @@ def main(
         conn.close()
 
 
+class _HelpFormatter(argparse.HelpFormatter):
+    # Die Auswahl-Position traegt metavar "aktion", damit Fehlermeldungen den
+    # deutschen Namen nennen; in der Hilfe soll trotzdem die Auswahl stehen.
+    def _metavar_formatter(
+        self, action: argparse.Action, default_metavar: str
+    ) -> Callable[[int], tuple[str, ...]]:
+        if action.choices is not None and not action.option_strings:
+            action = copy.copy(action)
+            action.metavar = None
+        return super()._metavar_formatter(action, default_metavar)
+
+
+# Die Namen in der CLI bleiben deutsch (metavar und Flags), die Attribute
+# im Code englisch (dest).
 def _match_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(usage=_USAGE)
+    parser = argparse.ArgumentParser(usage=_USAGE, formatter_class=_HelpFormatter)
     parser.add_argument("report")
-    parser.add_argument("nummer", type=int)
-    parser.add_argument("aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY, _SCORE])
-    parser.add_argument("werte", nargs="*")
-    parser.add_argument("--am")
+    parser.add_argument("number", metavar="nummer", type=int)
+    parser.add_argument("action", metavar="aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY, _SCORE])
+    parser.add_argument("values", metavar="werte", nargs="*")
+    parser.add_argument("--am", dest="applied_on", metavar="AM")
     return parser
 
 
 def _manual_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(usage=_USAGE)
-    parser.add_argument("aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY])
-    parser.add_argument("--firma", required=True)
-    parser.add_argument("--titel", required=True)
-    parser.add_argument("--am")
+    parser = argparse.ArgumentParser(usage=_USAGE, formatter_class=_HelpFormatter)
+    parser.add_argument("action", metavar="aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY])
+    parser.add_argument("--firma", dest="company", metavar="FIRMA", required=True)
+    parser.add_argument("--titel", dest="title", metavar="TITEL", required=True)
+    parser.add_argument("--am", dest="applied_on", metavar="AM")
     return parser
 
 
 def _match_command(conn: sqlite3.Connection, args: argparse.Namespace, today: date) -> str:
     report_name = args.report.removesuffix(".md")
-    match = store.find_match(conn, report_name, args.nummer)
+    match = store.find_match(conn, report_name, args.number)
     if match is None:
         raise FeedbackError(
-            f"Treffer {args.nummer} in Report {report_name} nicht gefunden. Reports vor "
+            f"Treffer {args.number} in Report {report_name} nicht gefunden. Reports vor "
             "Version 0.3.0 haben keine Nummern; erfasse die Bewerbung dann mit --firma und --titel."
         )
 
-    if args.aktion == _SCORE:
-        return _save_score(conn, match, args.werte, today)
+    if args.action == _SCORE:
+        return _save_score(conn, match, args.values, today)
 
-    if args.werte:
-        raise FeedbackError(f"Unerwartete Angaben nach {args.aktion}: {' '.join(args.werte)}")
+    if args.values:
+        raise FeedbackError(f"Unerwartete Angaben nach {args.action}: {' '.join(args.values)}")
 
     application = store.NewApplication(
         position_key=position_key(match.company, match.title),
@@ -107,9 +123,9 @@ def _match_command(conn: sqlite3.Connection, args: argparse.Namespace, today: da
 
 def _manual_command(conn: sqlite3.Connection, args: argparse.Namespace, today: date) -> str:
     application = store.NewApplication(
-        position_key=position_key(args.firma, args.titel),
-        company=args.firma,
-        title=args.titel,
+        position_key=position_key(args.company, args.title),
+        company=args.company,
+        title=args.title,
         job_ad_id=None,
     )
     application_id = store.application_for_position(conn, application.position_key)
@@ -123,27 +139,27 @@ def _change_application(
     args: argparse.Namespace,
     today: date,
 ) -> str:
-    applied_on = _parse_date(args.am)
-    if applied_on is not None and args.aktion != "beworben":
+    applied_on = _parse_date(args.applied_on)
+    if applied_on is not None and args.action != "beworben":
         raise FeedbackError("--am gibt es nur zusammen mit beworben.")
 
     label = f"{application.title} ({application.company or 'unbekannt'})"
 
     if application_id is None:
-        if args.aktion != "beworben":
+        if args.action != "beworben":
             raise FeedbackError(
                 f"Zu {label} gibt es noch keine Bewerbung. Erfasse sie zuerst mit beworben."
             )
         applied = applied_on or today
-        store.create_application(conn, application, args.aktion, applied)
+        store.create_application(conn, application, args.action, applied)
         return f"Bewerbung gespeichert: {label}, beworben am {applied.isoformat()}"
 
-    if args.aktion == _WITHDRAW_ENTRY:
+    if args.action == _WITHDRAW_ENTRY:
         store.delete_application(conn, application_id)
         return f"Bewerbung zurückgenommen: {label}"
 
-    store.update_application(conn, application_id, args.aktion, applied_on)
-    return f"Status geändert: {label} ist jetzt {args.aktion}"
+    store.update_application(conn, application_id, args.action, applied_on)
+    return f"Status geändert: {label} ist jetzt {args.action}"
 
 
 def _save_score(
