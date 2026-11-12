@@ -32,6 +32,14 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 
 Create a GitHub issue.
 
+## When a skill says "resolve the ticket" (closing work)
+
+Work is resolved by the session that integrates, never by an implementer agent:
+
+1. Merge the integration branch into `master` and push, only after the user approved it.
+2. Close each ticket with a comment naming where the work lives, e.g. `gh issue close <n> --comment "Umgesetzt und in master enthalten, veröffentlicht mit v0.5.0 (9ce54f8)."`. Without a version bump: `"Umgesetzt und in master enthalten (<sha>)."`
+3. Clean up: `git worktree remove` each agent worktree, then delete only the agent branches that `git branch --merged <integration-branch>` lists, with `git branch -D` (`-d` refuses because they are merged into the integration branch, not into the current `master` checkout). Remove the integration worktree and branch last.
+
 ## When a skill says "fetch the relevant ticket"
 
 Read it as in **Read an issue** above.
