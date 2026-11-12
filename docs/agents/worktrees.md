@@ -1,6 +1,6 @@
 # Ablauf für Sitzungen in einem eigenen Worktree
 
-Diese Datei gilt für jede Sitzung in einem eigenen Worktree, die ihre Arbeit nicht selbst integriert: für Agenten unter `/implement-spec` ebenso wie für Sitzungen, die eine andere Sitzung gestartet hat. Dein Auftrag nennt das Ticket und den Integrations-Branch, in den deine Arbeit zurückgeht. Alles andere steht hier.
+Diese Datei gilt für jede Sitzung in einem eigenen Worktree, die ihre Arbeit nicht selbst integriert: für Agenten unter `/implement` (ein Ticket) oder `/implement-spec` (mehrere Tickets) ebenso wie für Sitzungen, die eine andere Sitzung gestartet hat. Dein Auftrag nennt das Ticket und den Integrations-Branch, in den deine Arbeit zurückgeht. Alles andere steht hier.
 
 Fehlt eines davon, gilt:
 - Ohne Ticket tritt dein Auftrag an seine Stelle, und `Refs #<n>` entfällt.
@@ -26,7 +26,10 @@ Liegt der Integrations-Branch woanders, geht `git checkout -B <eigener-branch> <
 - Die Version hebst du nicht an. Das macht die Sitzung, die integriert, wenn die zusammenhängende Arbeit fertig ist.
 
 ## 4. Vor dem Bericht
-- Hast du nach einem Review (Skill `code-review`) noch etwas geändert, lass den Nachbesserungs-Diff mit demselben Skill noch einmal prüfen. Erst danach committest du ihn und lässt die Prüfungen unten laufen.
+- Es gibt zwei Reviews mit ähnlichem Namen:
+  - `mattpocock-skills:code-review` prüft gegen Konventionen und Auftrag. Es läuft immer.
+  - Das eingebaute `code-review` sucht nach Fehlern im Verhalten. Ändert der Diff Anwendungscode, ist es Pflicht und läuft auf Stufe high; bei reinen Doku- oder Test-Änderungen entfällt es.
+- Hast du nach einem Review noch etwas geändert, lass den Nachbesserungs-Diff von dem Review noch einmal prüfen, das die Befunde geliefert hat. Erst danach committest du ihn und lässt die Prüfungen unten laufen.
 - Lass alle Prüfungen wie in der CI laufen: `uv run ruff check .`, `uv run ruff format --check .` und `uv run pytest`.
 - Ob der Demo-Lauf zeichengleich ausgibt, prüft `tests/test_demo_snapshot.py` gegen den Snapshot `tests/fixtures/demo_report.md`. Vergleiche nicht per Hand. Ändert das Ticket den Report gewollt, schreib den Snapshot mit `JOBAGENT_UPDATE_SNAPSHOT=1 uv run pytest tests/test_demo_snapshot.py` neu und committe seinen Diff mit.
 - Merge die aktuelle Spitze des Integrations-Branch in deinen Branch und lass die Prüfungen danach noch einmal laufen.
