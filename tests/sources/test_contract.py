@@ -1,14 +1,16 @@
 """Vertragstest am Interface `Source`: Keine Quelle wirft, auch nicht bei kaputten Antworten.
 
 Jeder Adapter in `ADAPTERS` bekommt dieselben verformten Antworten. Für jeden Fall gilt:
-`search` wirft nicht, und jeder Fehler hat die Form "<Suchbegriff oder Firma>: <Grund>"
-mit einem der bekannten Gründe. Ein neuer Adapter ist abgedeckt, sobald er in `ADAPTERS`
-steht.
+`search` wirft nicht, und jeder Fehler hat die Form "<Suchbegriffe oder Firma>: <Grund>"
+mit einem der Gründe aus `_http.py`. Ein neuer Adapter ist abgedeckt, sobald er in
+`ADAPTERS` steht.
 """
 
+import copy
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 import pytest
@@ -19,8 +21,14 @@ from jobagent.sources.bundesagentur import BundesagenturSource
 from jobagent.sources.watchlist import WatchlistCompany, WatchlistSource
 
 _KEYWORD = "Entwickler"
+_TWO_KEYWORDS = [_KEYWORD, "Data Scientist"]
 _NOW = 1_700_000_000
-_KNOWN_REASONS = r"HTTP \d{3}|keine Verbindung|ungültige Antwort|unerwarteter Fehler"
+# Nur die Gründe, die `_http.py` vergibt; ein Auffanggrund wie "unerwarteter Fehler"
+# hieße, dass ein Adapter eine verformte Antwort nicht selbst erkennt.
+_KNOWN_REASONS = r"HTTP \d{3}|keine Verbindung|ungültige Antwort"
+
+# Weg zu einem Feld in einer JSON-Antwort: Schlüssel und Listenindizes.
+JsonPath = tuple[str | int, ...]
 
 
 @dataclass(frozen=True)
@@ -29,11 +37,12 @@ class Adapter:
 
     `search_body` beantwortet die Suche, `detail_body` (falls es einen Detail-Call gibt)
     die Detail-Anfragen; `is_detail` erkennt eine Detail-Anfrage an ihrer URL.
+    `subjects` nennt zu den Suchbegriffen, was vor dem Doppelpunkt eines Fehlers stehen darf.
     """
 
     name: str
     build: Callable[[httpx.BaseTransport], Source]
-    subject: str
+    subjects: Callable[[list[str]], list[str]]
     search_body: object
     detail_body: object | None = None
     is_detail: Callable[[httpx.Request], bool] = lambda request: False
@@ -46,7 +55,8 @@ ADAPTERS = [
     Adapter(
         name="Bundesagentur",
         build=lambda transport: BundesagenturSource("München", 25, 7, transport=transport),
-        subject=_KEYWORD,
+        # Je Suchbegriff eine Anfrage, also je Suchbegriff ein Fehler.
+        subjects=lambda keywords: keywords,
         search_body={
             "ergebnisliste": [
                 {
@@ -68,7 +78,8 @@ ADAPTERS = [
     Adapter(
         name="Arbeitnow",
         build=lambda transport: ArbeitnowSource("Berlin", 7, transport=transport, now=lambda: _NOW),
-        subject=_KEYWORD,
+        # Eine Anfrage für alle Suchbegriffe, also ein Fehler mit allen Begriffen.
+        subjects=lambda keywords: [", ".join(keywords)],
         search_body={
             "data": [
                 {
@@ -87,7 +98,7 @@ ADAPTERS = [
     Adapter(
         name="Watchlist-Greenhouse",
         build=lambda transport: WatchlistSource([_GREENHOUSE], transport=transport),
-        subject=_GREENHOUSE.name,
+        subjects=lambda keywords: [_GREENHOUSE.name],
         search_body={
             "jobs": [
                 {
@@ -100,12 +111,13 @@ ADAPTERS = [
             ]
         },
         detail_body={"content": "&lt;p&gt;Wir suchen eine Entwicklerin.&lt;/p&gt;"},
-        is_detail=lambda request: request.url.path.count("/") > 4,
+        # Suche: .../boards/{slug}/jobs, Detail: .../boards/{slug}/jobs/{id}
+        is_detail=lambda request: not request.url.path.endswith("/jobs"),
     ),
     Adapter(
         name="Watchlist-Lever",
         build=lambda transport: WatchlistSource([_LEVER], transport=transport),
-        subject=_LEVER.name,
+        subjects=lambda keywords: [_LEVER.name],
         search_body=[
             {
                 "id": "abc-123",
@@ -153,7 +165,7 @@ _WRONG_VALUES: dict[str, object] = {
 }
 
 
-def _paths(value: object, path: tuple = ()) -> Iterator[tuple]:
+def _paths(value: Any, path: JsonPath = ()) -> Iterator[JsonPath]:
     """Alle Pfade unterhalb von `value` (Schlüssel bzw. Listenindex), ohne die Wurzel."""
     children = (
         value.items()
@@ -167,30 +179,21 @@ def _paths(value: object, path: tuple = ()) -> Iterator[tuple]:
         yield from _paths(child, (*path, key))
 
 
-def _copy(value: object) -> object:
-    if isinstance(value, dict):
-        return {key: _copy(child) for key, child in value.items()}
-    if isinstance(value, list):
-        return [_copy(child) for child in value]
-    return value
-
-
-def _get(value: object, path: tuple) -> object:
+def _get(value: Any, path: JsonPath) -> Any:
     for key in path:
-        value = value[key]  # type: ignore[index]
+        value = value[key]
     return value
 
 
-def _replaced(body: object, path: tuple, new: object) -> object:
-    result = _copy(body)
-    _get(result, path[:-1])[path[-1]] = new  # type: ignore[index]
+def _replaced(body: object, path: JsonPath, new: object) -> object:
+    result = copy.deepcopy(body)
+    _get(result, path[:-1])[path[-1]] = new
     return result
 
 
-def _removed(body: object, path: tuple) -> object:
-    result = _copy(body)
-    parent = _get(result, path[:-1])
-    del parent[path[-1]]  # type: ignore[union-attr]
+def _removed(body: object, path: JsonPath) -> object:
+    result = copy.deepcopy(body)
+    del _get(result, path[:-1])[path[-1]]
     return result
 
 
@@ -213,39 +216,43 @@ class Case:
     handler: Callable[[httpx.Request], httpx.Response]
 
 
-def _respond(adapter: Adapter, search_body: object, detail_body: object) -> Callable:
+def _respond(
+    adapter: Adapter,
+    search: Callable[[httpx.Request], httpx.Response],
+    detail: Callable[[httpx.Request], httpx.Response],
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Beantwortet Such- und Detail-Anfragen getrennt."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        body = detail_body if adapter.is_detail(request) else search_body
-        return httpx.Response(200, json=body)
+        return detail(request) if adapter.is_detail(request) else search(request)
 
     return handler
+
+
+def _json(body: object) -> Callable[[httpx.Request], httpx.Response]:
+    return lambda request: httpx.Response(200, json=body)
 
 
 def _cases() -> Iterator[object]:
     for adapter in ADAPTERS:
+        valid_search, valid_detail = _json(adapter.search_body), _json(adapter.detail_body)
         for name, handler in _WHOLE_RESPONSES.items():
             yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-{name}")
         for name, body in _mutations(adapter.search_body):
-            handler = _respond(adapter, body, adapter.detail_body)
+            handler = _respond(adapter, _json(body), valid_detail)
             yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-suche-{name}")
         if adapter.detail_body is not None:
             for name, body in _mutations(adapter.detail_body):
-                handler = _respond(adapter, adapter.search_body, body)
+                handler = _respond(adapter, valid_search, _json(body))
                 yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-detail-{name}")
-            for name, handler in _WHOLE_RESPONSES.items():
-                yield pytest.param(
-                    Case(adapter, _detail_only(adapter, handler)),
-                    id=f"{adapter.name}-detail-{name}",
-                )
+            for name, broken in _WHOLE_RESPONSES.items():
+                handler = _respond(adapter, valid_search, broken)
+                yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-detail-{name}")
 
 
-def _detail_only(adapter: Adapter, broken: Callable) -> Callable:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if adapter.is_detail(request):
-            return broken(request)
-        return httpx.Response(200, json=adapter.search_body)
-
-    return handler
+def _error_pattern(adapter: Adapter, keywords: list[str]) -> re.Pattern[str]:
+    subjects = "|".join(re.escape(subject) for subject in adapter.subjects(keywords))
+    return re.compile(rf"(?:{subjects}): (?:{_KNOWN_REASONS})")
 
 
 @pytest.mark.parametrize("case", list(_cases()))
@@ -254,7 +261,7 @@ def test_search_never_raises_and_reports_errors_uniformly(case: Case) -> None:
 
     result = source.search([_KEYWORD])
 
-    pattern = re.compile(rf"{re.escape(case.adapter.subject)}: (?:{_KNOWN_REASONS})")
+    pattern = _error_pattern(case.adapter, [_KEYWORD])
     for error in result.errors:
         assert pattern.fullmatch(error), error
 
@@ -275,3 +282,16 @@ def test_broken_response_is_reported_as_one_error(adapter: Adapter, broken: str)
 
     assert result.job_ads == []
     assert len(result.errors) == 1
+
+
+@pytest.mark.parametrize("adapter", ADAPTERS, ids=lambda adapter: adapter.name)
+@pytest.mark.parametrize("broken", _ALWAYS_ERRORS)
+def test_errors_with_two_keywords_name_keywords_or_company(adapter: Adapter, broken: str) -> None:
+    source = adapter.build(httpx.MockTransport(_WHOLE_RESPONSES[broken]))
+
+    result = source.search(_TWO_KEYWORDS)
+
+    pattern = _error_pattern(adapter, _TWO_KEYWORDS)
+    assert result.errors
+    for error in result.errors:
+        assert pattern.fullmatch(error), error
