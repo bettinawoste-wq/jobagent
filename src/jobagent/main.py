@@ -7,12 +7,13 @@ import sqlite3
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 import httpx
 
-from jobagent import demo, fetch, report, score, store
+from jobagent import demo, report, score, store
 from jobagent.config import Config, load_config
 from jobagent.job_ad import JobAd
 from jobagent.position import position_key
@@ -30,6 +31,15 @@ _PROFILE_SUGGESTION_MIN_FEEDBACK = 5
 
 Assess = Callable[[JobAd], score.Assessment | None]
 """Bewertet eine Anzeige; None heisst: diesmal nicht bewertbar, naechster Lauf versucht es neu."""
+
+
+@dataclass(frozen=True, slots=True)
+class SourceStatus:
+    """Was eine Quelle in diesem Lauf geliefert hat; steht im Quellenstatus des Reports."""
+
+    name: str
+    count: int
+    errors: list[str] = field(default_factory=list)
 
 
 def main(
@@ -142,9 +152,9 @@ def _text_differs(new: str | None, at_application: str | None) -> str:
 
 def _search_all(
     sources: Sequence[Source], keywords: list[str]
-) -> tuple[list[JobAd], list[fetch.Quellenstatus]]:
+) -> tuple[list[JobAd], list[SourceStatus]]:
     found: dict[str, JobAd] = {}
-    status: list[fetch.Quellenstatus] = []
+    status: list[SourceStatus] = []
 
     for source in sources:
         result = _safe_search(source, keywords)
@@ -152,7 +162,7 @@ def _search_all(
         for job_ad in result.job_ads:
             found.setdefault(job_ad.id, job_ad)
         errors = list(dict.fromkeys(result.errors))  # doppelte weg, Reihenfolge bleibt
-        status.append(fetch.Quellenstatus(source.name, len(ids), errors))
+        status.append(SourceStatus(source.name, len(ids), errors))
 
     return list(found.values()), status
 

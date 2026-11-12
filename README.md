@@ -98,7 +98,7 @@ Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
         │                 │                 │
         └────────┬────────┴─────────┬───────┘
                   ▼
-    fetch.py  ──►  store.py (SQLite-Dedupe: schon gesehene IDs raus)
+    sources/  ──►  store.py (SQLite-Dedupe: schon gesehene IDs raus)
         │
         ▼
     score.py  ──►  Claude Haiku bewertet jede neue Anzeige

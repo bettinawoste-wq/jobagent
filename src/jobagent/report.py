@@ -4,11 +4,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from jobagent.fetch import Quellenstatus
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
+
+if TYPE_CHECKING:  # main importiert report; nur der Typ wird gebraucht
+    from jobagent.main import SourceStatus
 
 OUTPUT_DIR = Path("output")
 DEFAULT_MIN_SCORE = 3
@@ -33,7 +36,7 @@ def write_report(
     matches: list[Match],
     day: date,
     output_dir: Path = OUTPUT_DIR,
-    sources: Sequence[Quellenstatus] = (),
+    sources: Sequence["SourceStatus"] = (),
     min_score: int = DEFAULT_MIN_SCORE,
     applications: Mapping[str, AlreadyApplied] | None = None,
     follow_ups: Sequence[FollowUpReminder] = (),
@@ -88,18 +91,18 @@ def _free_path(output_dir: Path, day: date) -> Path:
     return path
 
 
-def _sources_block(sources: Sequence[Quellenstatus]) -> str:
+def _sources_block(sources: Sequence["SourceStatus"]) -> str:
     if not sources:
         return ""
     lines = "\n".join(_source_line(source) for source in sources)
     return f"## Quellen\n{lines}\n\n"
 
 
-def _source_line(source: Quellenstatus) -> str:
-    count = "1 Anzeige" if source.anzahl == 1 else f"{source.anzahl} Anzeigen"
-    if not source.fehler:
+def _source_line(source: "SourceStatus") -> str:
+    count = "1 Anzeige" if source.count == 1 else f"{source.count} Anzeigen"
+    if not source.errors:
         return f"- {source.name}: {count}"
-    return f"- {source.name}: FEHLER, {count} ({'; '.join(source.fehler)})"
+    return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
 
 
 def _profile_hint(open_feedback: int) -> str:

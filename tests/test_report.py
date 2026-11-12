@@ -3,8 +3,8 @@
 from datetime import date, timedelta
 from pathlib import Path
 
-from jobagent.fetch import Quellenstatus
 from jobagent.job_ad import JobAd
+from jobagent.main import SourceStatus
 from jobagent.report import AlreadyApplied, write_report
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
@@ -190,7 +190,7 @@ def test_third_run_on_same_day_gets_next_run_number(tmp_path: Path) -> None:
 
 
 def test_source_status_comes_before_matches(tmp_path: Path) -> None:
-    sources = [Quellenstatus("Arbeitnow", 3, []), Quellenstatus("Bundesagentur", 1, [])]
+    sources = [SourceStatus("Arbeitnow", 3, []), SourceStatus("Bundesagentur", 1, [])]
 
     path = _write_path(
         [(_job_ad("a-1", "Stelle"), _assessment(4))],
@@ -206,7 +206,7 @@ def test_source_status_comes_before_matches(tmp_path: Path) -> None:
 
 
 def test_source_status_names_errors_even_with_partial_result(tmp_path: Path) -> None:
-    sources = [Quellenstatus("Arbeitnow", 2, ["Data Scientist: HTTP 500", "IT: HTTP 503"])]
+    sources = [SourceStatus("Arbeitnow", 2, ["Data Scientist: HTTP 500", "IT: HTTP 503"])]
 
     path = _write_path([], date(2026, 11, 5), output_dir=tmp_path, sources=sources)
 
@@ -216,7 +216,7 @@ def test_source_status_names_errors_even_with_partial_result(tmp_path: Path) -> 
 
 
 def test_without_matches_source_failure_is_still_reported(tmp_path: Path) -> None:
-    sources = [Quellenstatus("Arbeitnow", 0, ["IT: keine Verbindung"])]
+    sources = [SourceStatus("Arbeitnow", 0, ["IT: keine Verbindung"])]
 
     path = _write_path([], date(2026, 11, 5), output_dir=tmp_path, sources=sources)
 
@@ -313,7 +313,7 @@ def test_follow_up_reminder_comes_after_sources_and_before_matches(tmp_path: Pat
         [(_job_ad("a-1", "Stelle"), _assessment(4))],
         date(2026, 11, 20),
         output_dir=tmp_path,
-        sources=[Quellenstatus("Arbeitnow", 0, [])],
+        sources=[SourceStatus("Arbeitnow", 0, [])],
         follow_ups=[_follow_up()],
     )
 

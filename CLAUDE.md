@@ -9,12 +9,11 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `pytest` für Tests, `ruff` für Lint und Format
 
 ## Struktur
-- `src/jobagent/sources/`: Quellen am Seam `Source` (`name`, `search(keywords) -> SearchResult`); je Quelle ein Adapter, der alle Suchbegriffe auf einmal bekommt, intern dedupliziert und nie wirft. Fertig: `bundesagentur.py` (`BundesagenturSource`). Intern: `_http.py` (JSON-Abruf mit Fehlergrund), `_legacy.py` (Übergangsadapter für Arbeitnow und Watchlist)
-- `src/jobagent/fetch.py`: alter Quellen-Code für Arbeitnow und Firmen-Watchlist via Greenhouse/Lever, hängt übergangsweise per `_legacy.py` am Seam
+- `src/jobagent/sources/`: Quellen am Seam `Source` (`name`, `search(keywords) -> SearchResult`); je Quelle ein Adapter, der alle Suchbegriffe auf einmal bekommt, intern dedupliziert und nie wirft: `bundesagentur.py` (`BundesagenturSource`), `arbeitnow.py` (`ArbeitnowSource`), `watchlist.py` (`WatchlistSource` mit Greenhouse- und Lever-Board). Intern, nicht Teil des Interface: `_http.py` (einziger JSON-Abruf mit Fehlergrund, HTML zu Text). Tests dazu in `tests/sources/`
 - `src/jobagent/store.py`: SQLite, merkt sich gesehene Anzeigen samt Report, Treffernummer, Hash und Bewertung
 - `src/jobagent/score.py`: Bewertung einer Anzeige gegen `profile.md`, strukturierte JSON-Antwort
 - `src/jobagent/report.py`: schreibt `output/YYYY-MM-DD.md` (weitere Läufe am Tag: `-2`, `-3`, nie überschreiben), sortiert nach Score, unter `mindest_score` nur einzeilig, bereits beworbene Stellen im eigenen Block am Ende
-- `src/jobagent/main.py`: Ablauf: suchen (Liste von `Source`), dedupe, score, report; `default_sources` baut die eingebauten Quellen aus der Konfiguration
+- `src/jobagent/main.py`: Ablauf: suchen (Liste von `Source`), dedupe, score, report; hält den Quellenstatus (`SourceStatus`) des Laufs; `default_sources` baut die eingebauten Quellen aus der Konfiguration
 - `src/jobagent/config.py`: liest `config.toml` und übersetzt die deutschen Schlüssel an genau dieser Stelle
 - `src/jobagent/feedback.py`: Kommando für Bewerbungen, Bewerbungsstatus und eigenen Score
 - `src/jobagent/job_ad.py`: die Anzeige (`JobAd`)
@@ -42,7 +41,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 
 ## Quelle 2: Arbeitnow API
 - Kostenlose, öffentliche API ohne Key: `https://www.arbeitnow.com/api/job-board-api`. Aggregiert Remote-/Europa-Jobs (Tech-Schwerpunkt).
-- Keine serverseitige Stichwort- oder Ortssuche - Filterung nach `was`/`wo` passiert clientseitig in `fetch.search_arbeitnow`. Kein `umkreis` möglich (keine Geokoordinaten).
+- Keine serverseitige Stichwort- oder Ortssuche - Filterung nach `was`/`wo` passiert clientseitig in `ArbeitnowSource`; alle Suchbegriffe teilen sich dieselben abgerufenen Seiten. Kein `umkreis` möglich (keine Geokoordinaten).
 - Paging folgt `links.next`, stoppt sobald Einträge älter als `veroeffentlichtseit` Tage auftauchen (max. 10 Seiten als Sicherheitsgrenze - maßvolle Nutzung der freien API).
 - Netzwerkzugriffe in Tests immer mocken, nie live testen.
 
@@ -50,7 +49,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Statt breiter Suche: konkrete Firmen aus `config.toml` (`[[firmen]]`, Felder `name`/`ats`/`slug`) werden direkt über ihr öffentliches Jobboard durchsucht.
 - Greenhouse (`boards-api.greenhouse.io/v1/boards/{slug}/jobs`): Beschreibung kommt doppelt HTML-escaped und braucht einen Detail-Call pro Treffer (`?content=true`).
 - Lever (`api.lever.co/v0/postings/{slug}`): liefert direkt `descriptionPlain`, kein HTML-Stripping nötig. Response ist eine rohe Liste, kein Wrapper-Objekt.
-- Beide ohne serverseitige Stichwortsuche - Filterung nach `was` passiert clientseitig in `fetch.search_greenhouse`/`fetch.search_lever`. Scheitert eine Firma, werden die übrigen trotzdem durchsucht (`fetch.search_watchlist`).
+- Beide ohne serverseitige Stichwortsuche - Filterung nach `was` passiert clientseitig in `GreenhouseBoard`/`LeverBoard`. Scheitert eine Firma, werden die übrigen trotzdem durchsucht (`WatchlistSource`).
 - Netzwerkzugriffe in Tests immer mocken, nie live testen.
 - Bewusst nicht genutzt: Remotive-API - Suchparameter filtert praktisch nicht, winziger kaum Deutschland-relevanter Feed, und die API-Antwort selbst weist auf ein kostenpflichtiges Angebot für diesen Nutzungszweck hin.
 
