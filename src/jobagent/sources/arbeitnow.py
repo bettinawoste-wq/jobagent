@@ -13,6 +13,7 @@ from jobagent.sources._http import (
     entries_with_ids,
     get_json,
     html_to_text,
+    malformed_as_invalid,
     title_matches,
 )
 
@@ -51,10 +52,11 @@ class ArbeitnowSource:
             return SearchResult([])
         job_ads: dict[str, JobAd] = {}
         try:
-            for entry in self._recent_entries():
-                if self._matches(entry, keywords):
-                    job_ad = _to_job_ad(entry)
-                    job_ads.setdefault(job_ad.id, job_ad)
+            with malformed_as_invalid("Arbeitnow-Antwort", f"url={_URL!r}"):
+                for entry in self._recent_entries():
+                    if self._matches(entry, keywords):
+                        job_ad = _to_job_ad(entry)
+                        job_ads.setdefault(job_ad.id, job_ad)
         except FetchError as error:
             # Ein Abruf dient allen Suchbegriffen, daher nennt der Fehler sie alle.
             return SearchResult(list(job_ads.values()), [f"{', '.join(keywords)}: {error.reason}"])

@@ -14,6 +14,7 @@ from jobagent.sources._http import (
     entries_with_ids,
     get_json,
     html_to_text,
+    malformed_as_invalid,
     title_matches,
 )
 
@@ -53,11 +54,12 @@ class GreenhouseBoard:
             what="Greenhouse-Antwort",
             where=f"board={self._slug!r}",
         )
-        return [
-            self._to_job_ad(client, job)
-            for job in jobs
-            if title_matches(job.get("title"), keywords)
-        ]
+        with malformed_as_invalid("Greenhouse-Antwort", f"board={self._slug!r}"):
+            return [
+                self._to_job_ad(client, job)
+                for job in jobs
+                if title_matches(job.get("title"), keywords)
+            ]
 
     def _to_job_ad(self, client: httpx.Client, job: dict) -> JobAd:
         job_id = job["id"]
@@ -95,11 +97,12 @@ class LeverBoard:
         postings = entries_with_ids(
             postings, "id", what="Lever-Antwort", where=f"board={self._slug!r}"
         )
-        return [
-            self._to_job_ad(posting)
-            for posting in postings
-            if title_matches(posting.get("text"), keywords)
-        ]
+        with malformed_as_invalid("Lever-Antwort", f"board={self._slug!r}"):
+            return [
+                self._to_job_ad(posting)
+                for posting in postings
+                if title_matches(posting.get("text"), keywords)
+            ]
 
     def _to_job_ad(self, posting: dict) -> JobAd:
         return JobAd(
@@ -154,6 +157,12 @@ class WatchlistSource:
                     found = board.search(client, keywords)
                 except FetchError as error:
                     errors.append(f"{company.name}: {error.reason}")
+                    continue
+                except Exception:
+                    # Eine Firma darf die übrigen nie kosten, auch nicht durch einen Fehler,
+                    # den kein Board vorhergesehen hat.
+                    logger.exception("Unerwarteter Fehler in Watchlist (firma=%r)", company.name)
+                    errors.append(f"{company.name}: unerwarteter Fehler")
                     continue
                 for job_ad in found:
                     job_ads.setdefault(job_ad.id, job_ad)

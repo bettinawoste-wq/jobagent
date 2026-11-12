@@ -1,12 +1,19 @@
 """Quelle Bundesagentur für Arbeit: Jobsuche-API (siehe CLAUDE.md, Quelle 1)."""
 
 import base64
+from dataclasses import replace
 
 import httpx
 
 from jobagent.job_ad import JobAd
 from jobagent.sources import SearchResult
-from jobagent.sources._http import TIMEOUT, FetchError, entries_with_ids, get_json
+from jobagent.sources._http import (
+    TIMEOUT,
+    FetchError,
+    entries_with_ids,
+    get_json,
+    malformed_as_invalid,
+)
 
 _SEARCH_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
 _DETAILS_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobdetails/{code}"
@@ -36,19 +43,24 @@ class BundesagenturSource:
         self._transport = transport
 
     def search(self, keywords: list[str]) -> SearchResult:
-        entries: dict[str, dict] = {}
+        found: dict[str, JobAd] = {}
         errors: list[str] = []
         with httpx.Client(timeout=TIMEOUT, transport=self._transport) as client:
             for keyword in keywords:
                 try:
-                    for entry in self._search_one(client, keyword):
-                        entries.setdefault(entry["referenznummer"], entry)
+                    for job_ad in self._search_one(client, keyword):
+                        found.setdefault(job_ad.id, job_ad)
                 except FetchError as error:
                     errors.append(f"{keyword}: {error.reason}")
-            job_ads = [_to_job_ad(entry, client) for entry in entries.values()]
+            # Die Details erst nach dem Zusammenführen holen: je Anzeige nur einmal.
+            job_ads = [
+                replace(job_ad, description=_description(client, job_ad.id))
+                for job_ad in found.values()
+            ]
         return SearchResult(job_ads, errors)
 
-    def _search_one(self, client: httpx.Client, keyword: str) -> list[dict]:
+    def _search_one(self, client: httpx.Client, keyword: str) -> list[JobAd]:
+        """Die Anzeigen zu einem Suchbegriff, noch ohne Beschreibung."""
         params: dict[str, str | int] = {"was": keyword}
         if self._location is not None:
             params["wo"] = self._location
@@ -61,15 +73,18 @@ class BundesagenturSource:
         # Hinweis: Die Live-API liefert ein anderes Schema als die Doku von
         # bundesAPI/jobsuche-api (dort z.B. "stellenangebote"/"refnr"/"arbeitsort"/
         # "externeUrl"). Feldnamen hier sind gegen echte API-Antworten verifiziert.
-        return entries_with_ids(
+        entries = entries_with_ids(
             data.get("ergebnisliste", []) if isinstance(data, dict) else None,
             "referenznummer",
+            id_type=str,
             what="Jobsuche-Antwort",
             where=f"was={keyword!r}",
         )
+        with malformed_as_invalid("Jobsuche-Antwort", f"was={keyword!r}"):
+            return [_to_job_ad(entry) for entry in entries]
 
 
-def _to_job_ad(entry: dict, client: httpx.Client) -> JobAd:
+def _to_job_ad(entry: dict) -> JobAd:
     reference = entry["referenznummer"]
     locations = entry.get("stellenlokationen") or [{}]
     address = locations[0].get("adresse") or {}
@@ -82,7 +97,6 @@ def _to_job_ad(entry: dict, client: httpx.Client) -> JobAd:
         company=entry.get("firma"),
         location=address.get("ort"),
         link=link,
-        description=_description(client, reference),
     )
 
 

@@ -175,3 +175,13 @@ def test_search_keeps_job_ads_found_before_paging_aborts(response, expected: str
 
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:data-scientist-berlin-200001"]
     assert result.errors == [expected]
+
+
+def test_search_reports_malformed_links_as_invalid_response() -> None:
+    page = {**deepcopy(PAGE_1), "links": "kaputt"}
+    handler, _ = _pages(page)
+
+    result = _source(handler).search(["Data Scientist", "Python"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:data-scientist-berlin-200001"]
+    assert result.errors == ["Data Scientist, Python: ungültige Antwort"]

@@ -199,3 +199,43 @@ def test_search_without_companies_sends_no_requests() -> None:
 
     assert result.job_ads == []
     assert result.errors == []
+
+
+def test_malformed_greenhouse_location_is_reported_as_invalid_response() -> None:
+    jobs = {"jobs": [{**job, "location": "Berlin"} for job in GREENHOUSE_JOBS_FIXTURE["jobs"]]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _GREENHOUSE_JOBS_PATH:
+            return httpx.Response(200, json=jobs)
+        return _successful_handler(request)
+
+    result = _source([GREENHOUSE_COMPANY], handler).search(["Full-Stack"])
+
+    assert result.job_ads == []
+    assert result.errors == ["Beispiel GmbH (GH): ungültige Antwort"]
+
+
+def test_unexpected_error_of_one_company_does_not_stop_the_others() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "kaputt" in request.url.path:
+            raise RuntimeError("unerwartet")
+        return _successful_handler(request)
+
+    result = _source([BROKEN_COMPANY, LEVER_COMPANY], handler).search(["Full-Stack"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == ["lever:beispiel:posting-1"]
+    assert result.errors == ["Kaputte Firma: unerwarteter Fehler"]
+
+
+def test_malformed_greenhouse_details_leave_only_description_empty() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _GREENHOUSE_DETAIL_PATH:
+            return httpx.Response(200, json={"content": ["kein", "Text"]})
+        return _successful_handler(request)
+
+    result = _source([GREENHOUSE_COMPANY], handler).search(["Full-Stack"])
+
+    assert [(job_ad.id, job_ad.description) for job_ad in result.job_ads] == [
+        ("greenhouse:beispiel:1001", None)
+    ]
+    assert result.errors == []

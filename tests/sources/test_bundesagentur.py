@@ -173,3 +173,31 @@ def test_failed_details_leave_only_description_empty() -> None:
     assert len(result.job_ads) == 2
     assert all(job_ad.description is None for job_ad in result.job_ads)
     assert result.errors == []
+
+
+def _search_with_first_entry(**changes: object):
+    """Handler, der die Beispielantwort mit geändertem ersten Eintrag liefert."""
+    first, *rest = SEARCH_FIXTURE["ergebnisliste"]
+    search = {**SEARCH_FIXTURE, "ergebnisliste": [{**first, **changes}, *rest]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _SEARCH_PATH:
+            return httpx.Response(200, json=search)
+        return _successful_handler(request)
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"stellenlokationen": ["München"]},
+        {"referenznummer": 10001},
+    ],
+    ids=["location-not-dict", "reference-is-int"],
+)
+def test_malformed_entry_is_reported_as_invalid_response_with_keyword(changes: dict) -> None:
+    result = _source(_search_with_first_entry(**changes)).search(["Data Science"])
+
+    assert result.job_ads == []
+    assert result.errors == ["Data Science: ungültige Antwort"]
