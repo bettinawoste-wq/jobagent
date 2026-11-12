@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -112,14 +113,9 @@ def test_output_only_exists_in_demo_run(empty_project: Path) -> None:
 
 
 def _demo_run_on(
-    day: date, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    day: date, capsys: pytest.CaptureFixture[str], fixed_today: Callable[[date], None]
 ) -> str:
-    class FixedDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return day
-
-    monkeypatch.setattr(main, "date", FixedDate)
+    fixed_today(day)
     return _demo_run(capsys)
 
 
@@ -128,10 +124,12 @@ def _without_dates(text: str) -> str:
 
 
 def test_demo_run_is_the_same_every_day_except_dates(
-    empty_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    empty_project: Path,
+    capsys: pytest.CaptureFixture[str],
+    fixed_today: Callable[[date], None],
 ) -> None:
-    in_winter = _demo_run_on(date(2026, 1, 5), capsys, monkeypatch)
-    in_summer = _demo_run_on(date(2027, 7, 31), capsys, monkeypatch)
+    in_winter = _demo_run_on(date(2026, 1, 5), capsys, fixed_today)
+    in_summer = _demo_run_on(date(2027, 7, 31), capsys, fixed_today)
 
     assert "2026-01-05" in in_winter
     assert "2027-07-31" in in_summer

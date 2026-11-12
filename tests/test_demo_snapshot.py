@@ -12,6 +12,7 @@ und den Diff von `tests/fixtures/demo_report.md` im Commit prüfen.
 
 import difflib
 import os
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -25,16 +26,9 @@ FIXED_DAY = date(2026, 3, 2)
 
 
 @pytest.fixture
-def demo_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+def demo_report(fixed_today: Callable[[date], None]) -> str:
     """Report eines Demo-Laufs am festen Tag `FIXED_DAY`."""
-
-    class FixedDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return FIXED_DAY
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(main, "date", FixedDate)
+    fixed_today(FIXED_DAY)
     return main.demo_run()
 
 
@@ -49,19 +43,37 @@ def _diff(expected: str, actual: str) -> str:
     )
 
 
+def _assert_matches_snapshot(report: str, snapshot: Path) -> None:
+    """Vergleicht zeichengleich; bei Abweichung schlägt der Test mit Unified Diff fehl."""
+    if not snapshot.exists():
+        pytest.fail(f"Snapshot fehlt. Anlegen mit {UPDATE_SWITCH}=1.", pytrace=False)
+    with snapshot.open(encoding="utf-8", newline="") as file:
+        expected = file.read()
+
+    if report != expected:
+        pytest.fail(
+            f"Demo-Report weicht vom Snapshot ab. Gewollt? Neu schreiben mit "
+            f"{UPDATE_SWITCH}=1.\n{_diff(expected, report)}",
+            pytrace=False,
+        )
+
+
 def test_demo_report_matches_snapshot(demo_report: str) -> None:
     if os.environ.get(UPDATE_SWITCH) == "1":
         SNAPSHOT.write_text(demo_report, encoding="utf-8", newline="")
         pytest.skip(f"Snapshot neu geschrieben: {SNAPSHOT.name}")
 
-    if not SNAPSHOT.exists():
-        pytest.fail(f"Snapshot fehlt. Anlegen mit {UPDATE_SWITCH}=1.", pytrace=False)
-    with SNAPSHOT.open(encoding="utf-8", newline="") as file:
-        expected = file.read()
+    _assert_matches_snapshot(demo_report, SNAPSHOT)
 
-    if demo_report != expected:
-        pytest.fail(
-            f"Demo-Report weicht vom Snapshot ab. Gewollt? Neu schreiben mit "
-            f"{UPDATE_SWITCH}=1.\n{_diff(expected, demo_report)}",
-            pytrace=False,
-        )
+
+def test_differing_report_line_fails_with_unified_diff(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot.md"
+    snapshot.write_text("# Report\nScore 4/5\nEnde\n", encoding="utf-8", newline="")
+
+    with pytest.raises(pytest.fail.Exception) as failure:
+        _assert_matches_snapshot("# Report\nScore 5/5\nEnde\n", snapshot)
+
+    message = str(failure.value)
+    assert f"{UPDATE_SWITCH}=1" in message
+    assert "--- Snapshot\n+++ Demo-Lauf\n" in message
+    assert "@@ -1,3 +1,3 @@\n # Report\n-Score 4/5\n+Score 5/5\n Ende\n" in message
