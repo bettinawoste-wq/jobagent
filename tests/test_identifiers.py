@@ -4,6 +4,12 @@ Geprüft werden die Namen, die der Code selbst vergibt: Module, Klassen, Funktio
 Parameter, Variablen, Felder und Testnamen. Strings bleiben außen vor, damit die
 deutschen Schlüssel an den Übersetzungsstellen (Konfiguration, Datenbank,
 Bewertungs-Schlüssel der Modelle) und fremde Feldnamen erlaubt bleiben.
+
+Bewusst nicht geprüft werden Namen, die anderswo vergeben oder nur selten sind:
+- Schlüsselwort-Argumente in Aufrufen (`f(anzeige=1)`): Der Name gehört dem
+  aufgerufenen Code und wird bei dessen Parametern geprüft.
+- Importierte Namen ohne `as`: Sie gehören dem importierten Modul.
+- Captures in `match`/`case` (`case {"x": wert}`) und Typparameter (`def f[T]()`).
 """
 
 import ast
@@ -40,8 +46,16 @@ GERMAN_STEMS = (
     "konfig",
 )
 
-# Englische Wortteile, die mit einem deutschen Stamm beginnen.
-ALLOWED_PARTS = {"profile", "profiles"}
+# Englische Wortteile, die mit einem deutschen Stamm beginnen. Als ganze Wortteile
+# gelistet statt über eine Endung erkannt, damit "profil" selbst gemeldet bleibt.
+ALLOWED_PARTS = {
+    "profile",
+    "profiles",
+    "profiled",
+    "profiler",
+    "profilers",
+    "profiling",
+}
 
 
 @dataclass(frozen=True)
@@ -155,6 +169,23 @@ def test_english_words_containing_a_german_stem_are_not_reported():
     source = "unprofiled = 1\nprofile = 2\nwatchlist_source = 3\ndef convert_date(): pass\n"
 
     assert find_german_identifiers(source, "beispiel.py") == []
+
+
+def test_english_words_of_the_profile_family_are_not_reported():
+    source = "profiler = 1\nprofiling = 2\ndef profiled_run(): pass\nclass Profilers: pass\n"
+
+    assert find_german_identifiers(source, "beispiel.py") == []
+
+
+def test_german_profile_words_are_still_reported():
+    source = "profil = 1\nprofil_vorschlag = 2\n"
+
+    findings = find_german_identifiers(source, "beispiel.py")
+
+    assert [(f.name, f.part) for f in findings] == [
+        ("profil", "profil"),
+        ("profil_vorschlag", "profil"),
+    ]
 
 
 def test_strings_with_german_keys_are_not_reported():
