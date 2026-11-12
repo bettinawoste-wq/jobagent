@@ -1,6 +1,6 @@
 """Gemeinsamer JSON-Abruf der Quellen mit Übersetzung in einen Fehlergrund,
 dazu die Prüfung der Eintragslisten, die Typprüfung der Felder einer Anzeige
-(`required_text`, `text_or_none`, `convert_entries`) und der lokale Titel-Filter.
+(`required_text`, `text_or_none`, `text_at`, `convert_entries`) und der lokale Titel-Filter.
 
 Intern im Quellen-Paket, gehört nicht zum Interface `Source`.
 """
@@ -116,6 +116,27 @@ def required_text(value: object) -> str:
 def text_or_none(value: object) -> str | None:
     """Optionales Feld (Firma, Ort, Beschreibung): Text bleibt, jeder andere Typ wird None."""
     return value if isinstance(value, str) else None
+
+
+def text_at(value: object, *keys: str | int) -> str | None:
+    """Optionales Textfeld unter einem Pfad aus Schlüsseln und Listenindizes.
+
+    Hat ein Schritt unterwegs die falsche Form (kein dict für einen Schlüssel, keine Liste
+    oder zu kurz für einen Index), gibt es keinen Text: None.
+    """
+    for key in keys:
+        if isinstance(key, str) and isinstance(value, dict):
+            value = value.get(key)
+        elif (
+            isinstance(key, int)
+            and not isinstance(key, bool)
+            and isinstance(value, list)
+            and 0 <= key < len(value)
+        ):
+            value = value[key]
+        else:
+            return None
+    return text_or_none(value)
 
 
 @dataclass(frozen=True, slots=True)

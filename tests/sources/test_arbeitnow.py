@@ -135,6 +135,37 @@ def test_search_keeps_young_job_ads_of_the_page_that_stops_paging() -> None:
     assert len(requests) == 1
 
 
+def test_published_date_as_boolean_does_not_count_as_too_old() -> None:
+    page = deepcopy(PAGE_1)
+    page["data"][0]["created_at"] = True
+    handler, _ = _pages(page, PAGE_2)
+
+    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == [f"arbeitnow:{page['data'][0]['slug']}"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("-inf"), float("inf"), 10**400],
+    ids=["nan", "minus-infinity", "infinity", "riesige-ganzzahl"],
+)
+def test_unusual_published_date_does_not_count_as_too_old(value: float) -> None:
+    # Die API liefert JSON; json.loads liest auch NaN, Infinity und beliebig lange
+    # Ganzzahlen, die sich nicht in eine Gleitkommazahl wandeln lassen.
+    page = deepcopy(PAGE_1)
+    page["data"][0]["created_at"] = value
+    raw = json.dumps(page)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+
+    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == [f"arbeitnow:{page['data'][0]['slug']}"]
+    assert result.errors == []
+
+
 def test_search_without_keywords_fetches_nothing() -> None:
     handler, requests = _pages(PAGE_1)
 

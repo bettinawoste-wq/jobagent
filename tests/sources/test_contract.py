@@ -4,17 +4,22 @@ Jeder Adapter in `ADAPTERS` bekommt dieselben verformten Antworten. Für jeden F
 `search` wirft nicht, und jeder Fehler hat die Form "<Suchbegriffe oder Firma>: <Grund>"
 mit einem der Gründe aus `_http.py`. Ein neuer Adapter ist abgedeckt, sobald er in
 `ADAPTERS` steht.
+
+Dazu nennt jeder Adapter seine optionalen Pfade mit dem Feld der Anzeige, das an ihnen
+hängt. Ist dort ein Feld verformt (fehlt, null, falscher Typ, auch im Unterobjekt), gibt
+es keinen Fehler, die Anzeige wird geliefert, und höchstens dieses eine Feld weicht ab.
 """
 
 import copy
 import re
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, field, fields
 from typing import Any
 
 import httpx
 import pytest
 
+from jobagent.job_ad import JobAd
 from jobagent.sources import Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
@@ -38,6 +43,9 @@ class Adapter:
     `search_body` beantwortet die Suche, `detail_body` (falls es einen Detail-Call gibt)
     die Detail-Anfragen; `is_detail` erkennt eine Detail-Anfrage an ihrer URL.
     `subjects` nennt zu den Suchbegriffen, was vor dem Doppelpunkt eines Fehlers stehen darf.
+    `optional_paths` und `optional_detail_paths` nennen die optionalen Pfade in `search_body`
+    bzw. `detail_body` als Präfixe; ein Präfix deckt alles darunter. Zu jedem Präfix steht das
+    Feld der Anzeige, das bei einer Verformung abweichen darf, oder None, wenn keines darf.
     """
 
     name: str
@@ -46,6 +54,8 @@ class Adapter:
     search_body: object
     detail_body: object | None = None
     is_detail: Callable[[httpx.Request], bool] = lambda request: False
+    optional_paths: Mapping[JsonPath, str | None] = field(default_factory=dict)
+    optional_detail_paths: Mapping[JsonPath, str | None] = field(default_factory=dict)
 
 
 _GREENHOUSE = WatchlistCompany(name="Beispiel GmbH (GH)", ats="greenhouse", slug="beispiel")
@@ -74,10 +84,24 @@ ADAPTERS = [
             "stellenbeschreibung": "Wir suchen eine Entwicklerin.",
         },
         is_detail=lambda request: "/jobdetails/" in request.url.path,
+        # Titel und Link haben einen Ersatz, daher sind auch sie optional.
+        optional_paths={
+            ("ergebnisliste", 0, "stellenangebotsTitel"): "title",
+            ("ergebnisliste", 0, "hauptberuf"): "title",
+            ("ergebnisliste", 0, "firma"): "company",
+            ("ergebnisliste", 0, "stellenlokationen"): "location",
+            ("ergebnisliste", 0, "externeURL"): "link",
+        },
+        optional_detail_paths={
+            ("stellenangebotsBeschreibung",): "description",
+            ("stellenbeschreibung",): "description",
+        },
     ),
     Adapter(
         name="Arbeitnow",
-        build=lambda transport: ArbeitnowSource("Berlin", 7, transport=transport, now=lambda: _NOW),
+        # Ohne Ort, also ohne lokalen Abgleich mit dem Ort: Dass ein Ort mit falschem Typ
+        # dabei nicht passt, prüft der Arbeitnow-Test.
+        build=lambda transport: ArbeitnowSource(None, 7, transport=transport, now=lambda: _NOW),
         # Eine Anfrage für alle Suchbegriffe, also ein Fehler mit allen Begriffen.
         subjects=lambda keywords: [", ".join(keywords)],
         search_body={
@@ -93,6 +117,13 @@ ADAPTERS = [
                 }
             ],
             "links": {"next": None},
+        },
+        optional_paths={
+            ("data", 0, "company_name"): "company",
+            ("data", 0, "location"): "location",
+            ("data", 0, "description"): "description",
+            # Das Datum steuert nur das Blättern, an der Anzeige darf sich nichts ändern.
+            ("data", 0, "created_at"): None,
         },
     ),
     Adapter(
@@ -113,6 +144,11 @@ ADAPTERS = [
         detail_body={"content": "&lt;p&gt;Wir suchen eine Entwicklerin.&lt;/p&gt;"},
         # Suche: .../boards/{slug}/jobs, Detail: .../boards/{slug}/jobs/{id}
         is_detail=lambda request: not request.url.path.endswith("/jobs"),
+        optional_paths={
+            ("jobs", 0, "company_name"): "company",
+            ("jobs", 0, "location"): "location",
+        },
+        optional_detail_paths={("content",): "description"},
     ),
     Adapter(
         name="Watchlist-Lever",
@@ -127,6 +163,7 @@ ADAPTERS = [
                 "descriptionPlain": "Wir suchen eine Entwicklerin.",
             }
         ],
+        optional_paths={(0, "categories"): "location", (0, "descriptionPlain"): "description"},
     ),
 ]
 
@@ -197,17 +234,28 @@ def _removed(body: object, path: JsonPath) -> object:
     return result
 
 
-def _mutations(body: object) -> Iterator[tuple[str, object]]:
-    """Jede Verformung der gültigen Antwort: fehlendes Feld oder Feld mit falschem Typ."""
+def _label(path: JsonPath) -> str:
+    return "/".join(str(key) for key in path)
+
+
+def _mutations(body: object) -> Iterator[tuple[JsonPath, str, object]]:
+    """Jede Verformung der gültigen Antwort: fehlendes Feld oder Feld mit falschem Typ.
+
+    Liefert je Verformung den Pfad, ihre Art und die verformte Antwort.
+    """
     for path in _paths(body):
-        label = "/".join(str(key) for key in path)
-        yield f"{label}-fehlt", _removed(body, path)
+        yield path, "fehlt", _removed(body, path)
         original = _get(body, path)
         if isinstance(original, list) and original:
-            yield f"{label}-leere-liste", _replaced(body, path, [])
+            yield path, "leere-liste", _replaced(body, path, [])
         for name, wrong in _WRONG_VALUES.items():
             if type(wrong) is not type(original):
-                yield f"{label}-{name}", _replaced(body, path, wrong)
+                yield path, name, _replaced(body, path, wrong)
+
+
+def _optional_prefix(path: JsonPath, prefixes: Mapping[JsonPath, str | None]) -> JsonPath | None:
+    """Der optionale Präfix, unter dem `path` liegt, sonst None."""
+    return next((prefix for prefix in prefixes if path[: len(prefix)] == prefix), None)
 
 
 @dataclass(frozen=True)
@@ -233,21 +281,61 @@ def _json(body: object) -> Callable[[httpx.Request], httpx.Response]:
     return lambda request: httpx.Response(200, json=body)
 
 
-def _cases() -> Iterator[object]:
+@dataclass(frozen=True)
+class Malformed:
+    """Ein verformtes Feld in der Such- oder Detail-Antwort eines Adapters."""
+
+    adapter: Adapter
+    part: str
+    path: JsonPath
+    kind: str
+    handler: Callable[[httpx.Request], httpx.Response]
+    # Die optionalen Pfade der Antwort, in der das verformte Feld liegt.
+    optional_paths: Mapping[JsonPath, str | None]
+
+    @property
+    def optional(self) -> bool:
+        return _optional_prefix(self.path, self.optional_paths) is not None
+
+    @property
+    def field_allowed_to_change(self) -> str | None:
+        prefix = _optional_prefix(self.path, self.optional_paths)
+        return None if prefix is None else self.optional_paths[prefix]
+
+    @property
+    def name(self) -> str:
+        return f"{self.adapter.name}-{self.part}-{_label(self.path)}-{self.kind}"
+
+    def param(self) -> object:
+        return pytest.param(Case(self.adapter, self.handler), id=self.name)
+
+
+def _malformed() -> Iterator[Malformed]:
+    """Jede Verformung eines Felds, je Adapter in Suche und Detail-Abruf."""
     for adapter in ADAPTERS:
         valid_search, valid_detail = _json(adapter.search_body), _json(adapter.detail_body)
+        for path, kind, body in _mutations(adapter.search_body):
+            handler = _respond(adapter, _json(body), valid_detail)
+            yield Malformed(adapter, "suche", path, kind, handler, adapter.optional_paths)
+        if adapter.detail_body is not None:
+            for path, kind, body in _mutations(adapter.detail_body):
+                handler = _respond(adapter, valid_search, _json(body))
+                yield Malformed(
+                    adapter, "detail", path, kind, handler, adapter.optional_detail_paths
+                )
+
+
+def _cases() -> Iterator[object]:
+    for adapter in ADAPTERS:
         for name, handler in _WHOLE_RESPONSES.items():
             yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-{name}")
-        for name, body in _mutations(adapter.search_body):
-            handler = _respond(adapter, _json(body), valid_detail)
-            yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-suche-{name}")
         if adapter.detail_body is not None:
-            for name, body in _mutations(adapter.detail_body):
-                handler = _respond(adapter, valid_search, _json(body))
-                yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-detail-{name}")
+            valid_search = _json(adapter.search_body)
             for name, broken in _WHOLE_RESPONSES.items():
                 handler = _respond(adapter, valid_search, broken)
                 yield pytest.param(Case(adapter, handler), id=f"{adapter.name}-detail-{name}")
+    for malformed in _malformed():
+        yield malformed.param()
 
 
 def _error_pattern(adapter: Adapter, keywords: list[str]) -> re.Pattern[str]:
@@ -309,3 +397,48 @@ def test_errors_with_two_keywords_name_keywords_or_company(adapter: Adapter, bro
     assert result.errors
     for error in result.errors:
         assert pattern.fullmatch(error), error
+
+
+def _search_valid(adapter: Adapter) -> JobAd:
+    """Die eine Anzeige aus der gültigen Antwort."""
+    handler = _respond(adapter, _json(adapter.search_body), _json(adapter.detail_body))
+    [job_ad] = adapter.build(httpx.MockTransport(handler)).search([_KEYWORD]).job_ads
+    return job_ad
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        pytest.param(malformed, id=malformed.name)
+        for malformed in _malformed()
+        if malformed.optional
+    ],
+)
+def test_malformed_optional_field_costs_neither_job_ad_nor_error(malformed: Malformed) -> None:
+    valid = _search_valid(malformed.adapter)
+    source = malformed.adapter.build(httpx.MockTransport(malformed.handler))
+
+    result = source.search([_KEYWORD])
+
+    assert result.errors == []
+    [job_ad] = result.job_ads
+    # Abweichen darf nur das Feld, das am verformten Pfad hängt.
+    changed = {
+        job_ad_field.name
+        for job_ad_field in fields(JobAd)
+        if getattr(job_ad, job_ad_field.name) != getattr(valid, job_ad_field.name)
+    }
+    allowed = {malformed.field_allowed_to_change} - {None}
+    assert changed <= allowed, changed
+
+
+@pytest.mark.parametrize("adapter", ADAPTERS, ids=lambda adapter: adapter.name)
+def test_optional_paths_exist_in_valid_response(adapter: Adapter) -> None:
+    """Ein vertippter Präfix deckte nichts ab und ließe den Test oben still leer laufen."""
+    for prefixes, body in [
+        (adapter.optional_paths, adapter.search_body),
+        (adapter.optional_detail_paths, adapter.detail_body),
+    ]:
+        paths = set(_paths(body))
+        for prefix in prefixes:
+            assert prefix in paths, prefix

@@ -188,19 +188,26 @@ def _search_with_first_entry(**changes: object):
     return handler
 
 
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"stellenlokationen": ["München"]},
-        {"referenznummer": 10001},
-    ],
-    ids=["location-not-dict", "reference-is-int"],
-)
-def test_malformed_entry_is_reported_as_invalid_response_with_keyword(changes: dict) -> None:
-    result = _source(_search_with_first_entry(**changes)).search(["Data Science"])
+def test_malformed_reference_is_reported_as_invalid_response_with_keyword() -> None:
+    result = _source(_search_with_first_entry(referenznummer=10001)).search(["Data Science"])
 
     assert result.job_ads == []
     assert result.errors == ["Data Science: ungültige Antwort"]
+
+
+@pytest.mark.parametrize(
+    "locations",
+    [["München"], {"adresse": {"ort": "München"}}, [{"adresse": "München"}]],
+    ids=["location-not-dict", "locations-not-list", "address-not-dict"],
+)
+def test_location_container_of_wrong_type_leaves_only_location_empty(locations: object) -> None:
+    result = _source(_search_with_first_entry(stellenlokationen=locations)).search(["Data Science"])
+
+    assert [(job_ad.id, job_ad.location) for job_ad in result.job_ads] == [
+        ("10001-1003353506-S", None),
+        ("10001-1003353507-S", "Garching"),
+    ]
+    assert result.errors == []
 
 
 def test_entry_with_title_of_wrong_type_is_dropped_and_reported_once() -> None:

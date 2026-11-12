@@ -18,6 +18,7 @@ from jobagent.sources._http import (
     html_to_text,
     malformed_as_invalid,
     required_text,
+    text_at,
     text_or_none,
     title_matches,
 )
@@ -77,7 +78,7 @@ class GreenhouseBoard:
             id=f"greenhouse:{self._slug}:{job_id}",
             title=title,
             company=text_or_none(job.get("company_name")),
-            location=_text_in(job.get("location"), "name"),
+            location=text_at(job, "location", "name"),
             link=link,
             description=description,
         )
@@ -121,15 +122,10 @@ class LeverBoard:
             id=f"lever:{self._slug}:{posting['id']}",
             title=required_text(posting.get("text")),
             company=self._company_name,
-            location=_text_in(posting.get("categories"), "location"),
+            location=text_at(posting, "categories", "location"),
             link=required_text(posting.get("hostedUrl")),
             description=text_or_none(posting.get("descriptionPlain")),
         )
-
-
-def _text_in(container: object, key: str) -> str | None:
-    """Optionales Textfeld in einem Unterobjekt; ist das Unterobjekt keins, gibt es keinen Text."""
-    return text_or_none(container.get(key)) if isinstance(container, dict) else None
 
 
 def _board(company: WatchlistCompany) -> _Board | None:

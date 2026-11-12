@@ -17,6 +17,7 @@ from jobagent.sources._http import (
     get_json,
     malformed_as_invalid,
     required_text,
+    text_at,
     text_or_none,
 )
 
@@ -96,8 +97,6 @@ class BundesagenturSource:
 
 def _to_job_ad(entry: dict) -> JobAd:
     reference = entry["referenznummer"]
-    locations = entry.get("stellenlokationen") or [{}]
-    address = locations[0].get("adresse") or {}
     # Ein Link mit falschem Typ zählt wie ein fehlender, dann greift der Ersatz.
     link = (
         text_or_none(entry.get("externeURL"))
@@ -107,7 +106,7 @@ def _to_job_ad(entry: dict) -> JobAd:
         id=reference,
         title=_title(entry),
         company=text_or_none(entry.get("firma")),
-        location=text_or_none(address.get("ort")),
+        location=text_at(entry, "stellenlokationen", 0, "adresse", "ort"),
         link=link,
     )
 

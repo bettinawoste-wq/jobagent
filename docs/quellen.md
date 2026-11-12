@@ -8,10 +8,12 @@ Jede Quelle ist ein Adapter am Seam `Source` und erfüllt `name` und `search(key
 - Sie wirft nie. Fehler meldet sie im `SearchResult` in der Form „<Suchbegriff oder Firma>: <Grund>“.
 - Sie liefert in `JobAd` nur Text oder `None`:
   - Hat ein Pflichtfeld (Titel, Link) den falschen Typ, fällt nur dieser Eintrag weg. Gemeldet wird einmal „ungültige Antwort“, die übrigen Anzeigen bleiben. Fehlt das Feld, bleibt es "". Hat die Quelle einen Ersatz (Bundesagentur: Titel aus `hauptberuf`, Link aus der Referenznummer), greift dieser bei fehlendem Feld und bei falschem Typ. Bleibt nach einem falschen Typ kein Titel übrig, fällt der Eintrag weg. Quellen, die lokal auf den Titel filtern (Arbeitnow, Watchlist), verwerfen einen Titel mit falschem Typ ohne Meldung: Er kann kein Treffer sein.
-  - Hat ein optionales Feld (Firma, Ort, Beschreibung) den falschen Typ, wird es `None`.
+  - Hat ein optionales Feld (Firma, Ort, Beschreibung) oder sein Unterobjekt den falschen Typ, wird nur dieses Feld `None`, auch wenn es in einem Container wie dem Ort-Unterobjekt steckt. Die Anzeige bleibt, gemeldet wird nichts. Welche Pfade das je Quelle sind, nennt der Vertragstest.
   - Ein Eintrag ohne gültige ID macht dagegen die ganze Antwort ungültig.
 
-Der JSON-Abruf mit Fehlergrund und die HTML-zu-Text-Umwandlung liegen einmal in `_http.py`. Die IDs der Anzeigen bleiben stabil, weil die Datenbank an ihnen hängt.
+Der Vertragstest `tests/sources/test_contract.py` prüft das für jeden Adapter: Jeder nennt dort seine optionalen Pfade als Präfixe (`("ergebnisliste", 0, "stellenlokationen")` deckt alles darunter), auch Felder mit Ersatz und aus Detail-Abrufen. Eine neue Quelle trägt ihre optionalen Pfade dort ein.
+
+Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für Textfelder unter einem Pfad durch Unterobjekte und Listen) und die HTML-zu-Text-Umwandlung liegen einmal in `_http.py`. Die IDs der Anzeigen bleiben stabil, weil die Datenbank an ihnen hängt.
 
 ## Bundesagentur für Arbeit (`BundesagenturSource`)
 - Doku und Beispiele stehen im GitHub-Projekt `bundesAPI/jobsuche-api`. Endpunkt, Header und Parameter immer dort gegenprüfen.
@@ -28,6 +30,7 @@ Der JSON-Abruf mit Fehlergrund und die HTML-zu-Text-Umwandlung liegen einmal in 
 - Freie, öffentliche API ohne Key: `https://www.arbeitnow.com/api/job-board-api`. Sie sammelt Remote- und Europa-Jobs mit Tech-Schwerpunkt.
 - Es gibt keine serverseitige Suche nach Stichwort oder Ort. Gefiltert wird lokal, und alle Suchbegriffe teilen sich dieselben abgerufenen Seiten. Ein `umkreis` ist nicht möglich, weil die API keine Geokoordinaten liefert.
 - Das Paging folgt `links.next` und stoppt, sobald Einträge älter als `veroeffentlichtseit` Tage auftauchen. Höchstens 10 Seiten pro Lauf, als Sicherheitsgrenze und zur maßvollen Nutzung der freien API.
+- Das Veröffentlichungsdatum `created_at` zählt nur als Zahl. Fehlt es oder hat es einen anderen Typ, auch einen Wahrheitswert, oder ist es keine endliche Zahl (NaN, Infinity), gilt die Anzeige nicht als zu alt.
 - Die Uhr kommt über den Konstruktor (`now`).
 - Die ID hat die Form `arbeitnow:<slug>`.
 

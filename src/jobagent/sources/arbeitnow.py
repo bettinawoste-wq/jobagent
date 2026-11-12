@@ -1,5 +1,6 @@
 """Quelle Arbeitnow: kostenlose Job-Board-API ohne Key (siehe CLAUDE.md, Quelle 2)."""
 
+import math
 import time
 from collections.abc import Callable, Iterator
 
@@ -16,6 +17,7 @@ from jobagent.sources._http import (
     html_to_text,
     malformed_as_invalid,
     required_text,
+    text_at,
     text_or_none,
     title_matches,
 )
@@ -100,8 +102,8 @@ class ArbeitnowSource:
 
                 too_old_reached = False
                 for entry in entries:
-                    created_at = entry.get("created_at")
-                    if cutoff is not None and isinstance(created_at, int | float):
+                    created_at = _timestamp(entry.get("created_at"))
+                    if cutoff is not None and created_at is not None:
                         if created_at < cutoff:
                             too_old_reached = True
                             continue
@@ -114,8 +116,22 @@ class ArbeitnowSource:
         if not title_matches(entry.get("title"), keywords):
             return False
         if self._location:
-            return self._location.lower() in (text_or_none(entry.get("location")) or "").lower()
+            return self._location.lower() in (text_at(entry, "location") or "").lower()
         return True
+
+
+def _timestamp(value: object) -> float | None:
+    """Veröffentlichungsdatum als Zeitstempel.
+
+    Ein Wahrheitswert ist keiner (bool ist ein int), eine nicht endliche Zahl wie NaN
+    oder Infinity auch nicht (json.loads liest beide).
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    # Nur Gleitkommazahlen prüfen: math.isfinite wirft bei sehr langen Ganzzahlen.
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
 
 
 def _to_job_ad(entry: dict) -> JobAd:
@@ -123,7 +139,7 @@ def _to_job_ad(entry: dict) -> JobAd:
         id=f"arbeitnow:{entry['slug']}",
         title=required_text(entry.get("title")),
         company=text_or_none(entry.get("company_name")),
-        location=text_or_none(entry.get("location")),
+        location=text_at(entry, "location"),
         link=required_text(entry.get("url")),
         description=html_to_text(entry.get("description")),
     )
