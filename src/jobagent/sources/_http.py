@@ -1,4 +1,5 @@
-"""Gemeinsamer JSON-Abruf der Quellen mit Übersetzung in einen Fehlergrund.
+"""Gemeinsamer JSON-Abruf der Quellen mit Übersetzung in einen Fehlergrund,
+dazu die Prüfung der Eintragslisten und der lokale Titel-Filter.
 
 Intern im Quellen-Paket, gehört nicht zum Interface `Source`.
 """
@@ -51,6 +52,30 @@ def get_json(
     except ValueError as error:
         logger.exception("Antwort ist kein gültiges JSON (url=%r)", url)
         raise FetchError(INVALID_RESPONSE) from error
+
+
+def entries_with_ids(entries: object, id_field: str, *, what: str, where: str) -> list[dict]:
+    """Gibt `entries` zurück, wenn es eine Liste von dicts mit gesetztem ID-Feld ist.
+
+    Sonst wird "<what> hat unerwartetes Format (<where>)" geloggt und FetchError mit
+    "ungültige Antwort" geworfen: Schon ein Eintrag ohne ID macht die Antwort ungültig.
+    """
+    if not isinstance(entries, list) or not all(
+        isinstance(entry, dict) and _is_id(entry.get(id_field)) for entry in entries
+    ):
+        logger.error("%s hat unerwartetes Format (%s)", what, where)
+        raise FetchError(INVALID_RESPONSE)
+    return entries
+
+
+def _is_id(value: object) -> bool:
+    return isinstance(value, str | int) and not isinstance(value, bool) and value != ""
+
+
+def title_matches(title: object, keywords: list[str]) -> bool:
+    """Lokaler Filter für Quellen ohne Stichwortsuche: ein Suchbegriff im Titel genügt."""
+    text = title.lower() if isinstance(title, str) else ""
+    return any(keyword.lower() in text for keyword in keywords)
 
 
 def html_to_text(markup: str | None) -> str | None:

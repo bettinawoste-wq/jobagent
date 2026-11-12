@@ -1,6 +1,5 @@
 """Quelle Arbeitnow: kostenlose Job-Board-API ohne Key (siehe CLAUDE.md, Quelle 2)."""
 
-import logging
 import time
 from collections.abc import Callable, Iterator
 
@@ -8,9 +7,14 @@ import httpx
 
 from jobagent.job_ad import JobAd
 from jobagent.sources import SearchResult
-from jobagent.sources._http import INVALID_RESPONSE, TIMEOUT, FetchError, get_json, html_to_text
-
-logger = logging.getLogger(__name__)
+from jobagent.sources._http import (
+    TIMEOUT,
+    FetchError,
+    entries_with_ids,
+    get_json,
+    html_to_text,
+    title_matches,
+)
 
 _URL = "https://www.arbeitnow.com/api/job-board-api"
 # Arbeitnow bittet um maßvolle Nutzung der freien API (ADR 0002).
@@ -69,12 +73,12 @@ class ArbeitnowSource:
                 if not url:
                     return
                 data = get_json(client, url)
-                entries = data.get("data") if isinstance(data, dict) else None
-                if not isinstance(entries, list) or not all(
-                    isinstance(entry, dict) and entry.get("slug") for entry in entries
-                ):
-                    logger.error("Arbeitnow-Antwort hat unerwartetes Format (url=%r)", url)
-                    raise FetchError(INVALID_RESPONSE)
+                entries = entries_with_ids(
+                    data.get("data") if isinstance(data, dict) else None,
+                    "slug",
+                    what="Arbeitnow-Antwort",
+                    where=f"url={url!r}",
+                )
                 if not entries:
                     return
 
@@ -91,8 +95,7 @@ class ArbeitnowSource:
                 url = (data.get("links") or {}).get("next")
 
     def _matches(self, entry: dict, keywords: list[str]) -> bool:
-        title = (entry.get("title") or "").lower()
-        if not any(keyword.lower() in title for keyword in keywords):
+        if not title_matches(entry.get("title"), keywords):
             return False
         if self._location:
             return self._location.lower() in (entry.get("location") or "").lower()

@@ -8,7 +8,14 @@ import httpx
 
 from jobagent.job_ad import JobAd
 from jobagent.sources import SearchResult
-from jobagent.sources._http import INVALID_RESPONSE, TIMEOUT, FetchError, get_json, html_to_text
+from jobagent.sources._http import (
+    TIMEOUT,
+    FetchError,
+    entries_with_ids,
+    get_json,
+    html_to_text,
+    title_matches,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +39,6 @@ class _Board(Protocol):
         ...
 
 
-def _matches(title: str, keywords: list[str]) -> bool:
-    # Keine serverseitige Stichwortsuche: Filterung nach Titel passiert lokal.
-    title = title.lower()
-    return any(keyword.lower() in title for keyword in keywords)
-
-
 class GreenhouseBoard:
     """Greenhouse-Board einer Firma; der Detail-Call kommt nur für Treffer."""
 
@@ -46,16 +47,16 @@ class GreenhouseBoard:
 
     def search(self, client: httpx.Client, keywords: list[str]) -> list[JobAd]:
         data = get_json(client, _GREENHOUSE_URL.format(slug=self._slug))
-        jobs = data.get("jobs") if isinstance(data, dict) else None
-        if not isinstance(jobs, list) or not all(
-            isinstance(job, dict) and job.get("id") is not None for job in jobs
-        ):
-            logger.error("Greenhouse-Antwort hat unerwartetes Format (board=%r)", self._slug)
-            raise FetchError(INVALID_RESPONSE)
+        jobs = entries_with_ids(
+            data.get("jobs") if isinstance(data, dict) else None,
+            "id",
+            what="Greenhouse-Antwort",
+            where=f"board={self._slug!r}",
+        )
         return [
             self._to_job_ad(client, job)
             for job in jobs
-            if _matches(job.get("title") or "", keywords)
+            if title_matches(job.get("title"), keywords)
         ]
 
     def _to_job_ad(self, client: httpx.Client, job: dict) -> JobAd:
@@ -91,15 +92,13 @@ class LeverBoard:
     def search(self, client: httpx.Client, keywords: list[str]) -> list[JobAd]:
         postings = get_json(client, _LEVER_URL.format(slug=self._slug), params={"mode": "json"})
         # Lever antwortet mit einer rohen Liste, nicht mit einem Wrapper-Objekt.
-        if not isinstance(postings, list) or not all(
-            isinstance(posting, dict) and posting.get("id") for posting in postings
-        ):
-            logger.error("Lever-Antwort hat unerwartetes Format (firma=%r)", self._slug)
-            raise FetchError(INVALID_RESPONSE)
+        postings = entries_with_ids(
+            postings, "id", what="Lever-Antwort", where=f"board={self._slug!r}"
+        )
         return [
             self._to_job_ad(posting)
             for posting in postings
-            if _matches(posting.get("text") or "", keywords)
+            if title_matches(posting.get("text"), keywords)
         ]
 
     def _to_job_ad(self, posting: dict) -> JobAd:
