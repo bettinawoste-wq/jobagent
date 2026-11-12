@@ -185,3 +185,58 @@ def test_search_reports_malformed_links_as_invalid_response() -> None:
 
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:data-scientist-berlin-200001"]
     assert result.errors == ["Data Scientist, Python: ungültige Antwort"]
+
+
+def _with_first_entry(**changes: object) -> dict:
+    page = deepcopy(FIXTURE)
+    page["data"][0].update(changes)
+    return page
+
+
+def test_entry_with_link_of_wrong_type_is_dropped_and_reported_once() -> None:
+    page = _with_first_entry(url=42)
+    page["data"][2]["url"] = ["Liste"]
+    handler, _ = _pages(page)
+
+    result = _source(handler).search(["(m/w/d)", "alt"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == [
+        "arbeitnow:online-marketing-manager-muenchen-100002"
+    ]
+    assert result.errors == ["(m/w/d), alt: ungültige Antwort"]
+
+
+def test_optional_fields_of_wrong_type_become_none() -> None:
+    handler, _ = _pages(_with_first_entry(company_name=["Liste"], location=42, description=7))
+
+    result = _source(handler).search(["Full-Stack-Entwickler (m/w/d)"])
+
+    first = result.job_ads[0]
+    assert (first.company, first.location, first.description) == (None, None, None)
+    assert result.errors == []
+
+
+def test_location_of_wrong_type_does_not_match_location_filter() -> None:
+    handler, _ = _pages(_with_first_entry(location=42))
+
+    result = _source(handler, location="Berlin").search(["Full-Stack"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == [
+        "arbeitnow:full-stack-entwickler-alt-berlin-100003"
+    ]
+    assert result.errors == []
+
+
+def test_dropped_entry_stays_reported_when_a_later_page_fails() -> None:
+    page = deepcopy(PAGE_1)
+    page["data"][0]["url"] = 42
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "page=2" in str(request.url):
+            return httpx.Response(503)
+        return httpx.Response(200, json=page)
+
+    result = _source(handler).search(["Data Scientist"])
+
+    assert result.job_ads == []
+    assert result.errors == ["Data Scientist: ungültige Antwort", "Data Scientist: HTTP 503"]

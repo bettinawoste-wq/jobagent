@@ -1,5 +1,6 @@
 """Gemeinsamer JSON-Abruf der Quellen mit Übersetzung in einen Fehlergrund,
-dazu die Prüfung der Eintragslisten und der lokale Titel-Filter.
+dazu die Prüfung der Eintragslisten, die Typprüfung der Felder einer Anzeige
+(`required_text`, `text_or_none`, `convert_entries`) und der lokale Titel-Filter.
 
 Intern im Quellen-Paket, gehört nicht zum Interface `Source`.
 """
@@ -7,10 +8,13 @@ Intern im Quellen-Paket, gehört nicht zum Interface `Source`.
 import html
 import logging
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 import httpx
+
+from jobagent.job_ad import JobAd
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,58 @@ def entries_with_ids(
         logger.error("%s hat unerwartetes Format (%s)", what, where)
         raise FetchError(INVALID_RESPONSE)
     return entries
+
+
+class InvalidEntry(Exception):
+    """Ein Pflichtfeld eines Eintrags hat den falschen Typ; nur dieser Eintrag fällt weg."""
+
+
+def required_text(value: object) -> str:
+    """Pflichtfeld (Titel, Link) als Text.
+
+    Fehlt es (None), bleibt es "" wie bisher; jeder andere Typ als Text macht den
+    Eintrag ungültig (InvalidEntry).
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise InvalidEntry
+    return value
+
+
+def text_or_none(value: object) -> str | None:
+    """Optionales Feld (Firma, Ort, Beschreibung): Text bleibt, jeder andere Typ wird None."""
+    return value if isinstance(value, str) else None
+
+
+@dataclass(frozen=True, slots=True)
+class ConvertedEntries:
+    """Die Anzeigen aus den Einträgen einer Abfrage.
+
+    `dropped` sagt, ob ein Eintrag wegen eines Pflichtfelds mit falschem Typ wegfiel.
+    """
+
+    job_ads: list[JobAd]
+    dropped: bool
+
+    def errors(self, subject: str) -> list[str]:
+        """Fehler für den Quellenstatus: einmal "ungültige Antwort", falls ein Eintrag wegfiel."""
+        return [f"{subject}: {INVALID_RESPONSE}"] if self.dropped else []
+
+
+def convert_entries(
+    entries: Iterable[dict], convert: Callable[[dict], JobAd], *, what: str, where: str
+) -> ConvertedEntries:
+    """Wandelt Einträge in Anzeigen um und lässt die mit falschem Typ im Pflichtfeld weg."""
+    job_ads: list[JobAd] = []
+    dropped = False
+    for entry in entries:
+        try:
+            job_ads.append(convert(entry))
+        except InvalidEntry:
+            logger.error("%s: Eintrag mit falschem Typ im Pflichtfeld verworfen (%s)", what, where)
+            dropped = True
+    return ConvertedEntries(job_ads, dropped)
 
 
 def _is_id(value: object, id_type: type | tuple[type, ...]) -> bool:

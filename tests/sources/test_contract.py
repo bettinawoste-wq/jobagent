@@ -266,6 +266,20 @@ def test_search_never_raises_and_reports_errors_uniformly(case: Case) -> None:
         assert pattern.fullmatch(error), error
 
 
+@pytest.mark.parametrize("case", list(_cases()))
+def test_job_ads_carry_only_text_or_none(case: Case) -> None:
+    source = case.adapter.build(httpx.MockTransport(case.handler))
+
+    result = source.search([_KEYWORD])
+
+    for job_ad in result.job_ads:
+        assert isinstance(job_ad.title, str), job_ad
+        assert isinstance(job_ad.link, str), job_ad
+        assert isinstance(job_ad.company, str | None), job_ad
+        assert isinstance(job_ad.location, str | None), job_ad
+        assert isinstance(job_ad.description, str | None), job_ad
+
+
 # Antworten, die für jeden Adapter ein Fehler sind; ein Objekt oder eine leere Liste oben
 # kann je nach Adapter eine gültige Antwort ohne Treffer sein.
 _ALWAYS_ERRORS = [

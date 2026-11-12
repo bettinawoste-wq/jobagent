@@ -10,10 +10,13 @@ from jobagent.sources import SearchResult
 from jobagent.sources._http import (
     TIMEOUT,
     FetchError,
+    convert_entries,
     entries_with_ids,
     get_json,
     html_to_text,
     malformed_as_invalid,
+    required_text,
+    text_or_none,
     title_matches,
 )
 
@@ -50,17 +53,28 @@ class ArbeitnowSource:
     def search(self, keywords: list[str]) -> SearchResult:
         if not keywords:
             return SearchResult([])
-        job_ads: dict[str, JobAd] = {}
+        matching: list[dict] = []
+        fetch_reason: str | None = None
         try:
             with malformed_as_invalid("Arbeitnow-Antwort", f"url={_URL!r}"):
                 for entry in self._recent_entries():
                     if self._matches(entry, keywords):
-                        job_ad = _to_job_ad(entry)
-                        job_ads.setdefault(job_ad.id, job_ad)
+                        matching.append(entry)
         except FetchError as error:
-            # Ein Abruf dient allen Suchbegriffen, daher nennt der Fehler sie alle.
-            return SearchResult(list(job_ads.values()), [f"{', '.join(keywords)}: {error.reason}"])
-        return SearchResult(list(job_ads.values()))
+            # Die Einträge der Seiten davor bleiben erhalten.
+            fetch_reason = error.reason
+        converted = convert_entries(
+            matching, _to_job_ad, what="Arbeitnow-Antwort", where=f"url={_URL!r}"
+        )
+        job_ads: dict[str, JobAd] = {}
+        for job_ad in converted.job_ads:
+            job_ads.setdefault(job_ad.id, job_ad)
+        # Ein Abruf dient allen Suchbegriffen, daher nennt jeder Fehler sie alle.
+        subject = ", ".join(keywords)
+        errors = converted.errors(subject)
+        if fetch_reason is not None and f"{subject}: {fetch_reason}" not in errors:
+            errors.append(f"{subject}: {fetch_reason}")
+        return SearchResult(list(job_ads.values()), errors)
 
     def _recent_entries(self) -> Iterator[dict]:
         """Liefert die Einträge Seite für Seite, solange sie jung genug sind."""
@@ -100,16 +114,16 @@ class ArbeitnowSource:
         if not title_matches(entry.get("title"), keywords):
             return False
         if self._location:
-            return self._location.lower() in (entry.get("location") or "").lower()
+            return self._location.lower() in (text_or_none(entry.get("location")) or "").lower()
         return True
 
 
 def _to_job_ad(entry: dict) -> JobAd:
     return JobAd(
         id=f"arbeitnow:{entry['slug']}",
-        title=entry.get("title", ""),
-        company=entry.get("company_name"),
-        location=entry.get("location"),
-        link=entry.get("url", ""),
+        title=required_text(entry.get("title")),
+        company=text_or_none(entry.get("company_name")),
+        location=text_or_none(entry.get("location")),
+        link=required_text(entry.get("url")),
         description=html_to_text(entry.get("description")),
     )

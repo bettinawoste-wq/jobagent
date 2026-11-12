@@ -9,10 +9,15 @@ from jobagent.job_ad import JobAd
 from jobagent.sources import SearchResult
 from jobagent.sources._http import (
     TIMEOUT,
+    ConvertedEntries,
     FetchError,
+    InvalidEntry,
+    convert_entries,
     entries_with_ids,
     get_json,
     malformed_as_invalid,
+    required_text,
+    text_or_none,
 )
 
 _SEARCH_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
@@ -48,10 +53,13 @@ class BundesagenturSource:
         with httpx.Client(timeout=TIMEOUT, transport=self._transport) as client:
             for keyword in keywords:
                 try:
-                    for job_ad in self._search_one(client, keyword):
-                        found.setdefault(job_ad.id, job_ad)
+                    converted = self._search_one(client, keyword)
                 except FetchError as error:
                     errors.append(f"{keyword}: {error.reason}")
+                    continue
+                for job_ad in converted.job_ads:
+                    found.setdefault(job_ad.id, job_ad)
+                errors.extend(converted.errors(keyword))
             # Die Details erst nach dem Zusammenführen holen: je Anzeige nur einmal.
             job_ads = [
                 replace(job_ad, description=_description(client, job_ad.id))
@@ -59,7 +67,7 @@ class BundesagenturSource:
             ]
         return SearchResult(job_ads, errors)
 
-    def _search_one(self, client: httpx.Client, keyword: str) -> list[JobAd]:
+    def _search_one(self, client: httpx.Client, keyword: str) -> ConvertedEntries:
         """Die Anzeigen zu einem Suchbegriff, noch ohne Beschreibung."""
         params: dict[str, str | int] = {"was": keyword}
         if self._location is not None:
@@ -81,23 +89,40 @@ class BundesagenturSource:
             where=f"was={keyword!r}",
         )
         with malformed_as_invalid("Jobsuche-Antwort", f"was={keyword!r}"):
-            return [_to_job_ad(entry) for entry in entries]
+            return convert_entries(
+                entries, _to_job_ad, what="Jobsuche-Antwort", where=f"was={keyword!r}"
+            )
 
 
 def _to_job_ad(entry: dict) -> JobAd:
     reference = entry["referenznummer"]
     locations = entry.get("stellenlokationen") or [{}]
     address = locations[0].get("adresse") or {}
+    # Ein Link mit falschem Typ zählt wie ein fehlender, dann greift der Ersatz.
     link = (
-        entry.get("externeURL") or f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{reference}"
+        text_or_none(entry.get("externeURL"))
+        or f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{reference}"
     )
     return JobAd(
         id=reference,
-        title=entry.get("stellenangebotsTitel") or entry.get("hauptberuf", ""),
-        company=entry.get("firma"),
-        location=address.get("ort"),
+        title=_title(entry),
+        company=text_or_none(entry.get("firma")),
+        location=text_or_none(address.get("ort")),
         link=link,
     )
+
+
+def _title(entry: dict) -> str:
+    """Titel aus `stellenangebotsTitel`, sonst aus dem Ersatz `hauptberuf`.
+
+    Ein Titel mit falschem Typ zählt wie ein fehlender. Bleibt danach kein Titel übrig,
+    ist der Eintrag ungültig, statt still ohne Titel im Report zu landen.
+    """
+    raw = entry.get("stellenangebotsTitel")
+    title = text_or_none(raw) or required_text(entry.get("hauptberuf"))
+    if not title and raw is not None and not isinstance(raw, str):
+        raise InvalidEntry
+    return title
 
 
 def _description(client: httpx.Client, reference: str) -> str | None:
@@ -108,4 +133,6 @@ def _description(client: httpx.Client, reference: str) -> str | None:
         return None
     if not isinstance(details, dict):
         return None
-    return details.get("stellenangebotsBeschreibung") or details.get("stellenbeschreibung")
+    return text_or_none(details.get("stellenangebotsBeschreibung")) or text_or_none(
+        details.get("stellenbeschreibung")
+    )

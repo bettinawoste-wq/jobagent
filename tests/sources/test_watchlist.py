@@ -1,6 +1,7 @@
 """Tests fuer WatchlistSource, am Interface `Source` gegen gespeicherte Beispielantworten."""
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import httpx
@@ -201,18 +202,63 @@ def test_search_without_companies_sends_no_requests() -> None:
     assert result.errors == []
 
 
-def test_malformed_greenhouse_location_is_reported_as_invalid_response() -> None:
-    jobs = {"jobs": [{**job, "location": "Berlin"} for job in GREENHOUSE_JOBS_FIXTURE["jobs"]]}
+def _with_first_entry(fixture: object, **changes: object) -> object:
+    """Kopie der Beispielantwort, deren erster Eintrag geändert ist."""
+    copied = deepcopy(fixture)
+    entries = copied["jobs"] if isinstance(copied, dict) else copied
+    entries[0].update(changes)
+    return copied
 
+
+def _board_answering(path: str, body: object):
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == _GREENHOUSE_JOBS_PATH:
-            return httpx.Response(200, json=jobs)
+        if request.url.path == path:
+            return httpx.Response(200, json=body)
         return _successful_handler(request)
+
+    return handler
+
+
+def test_greenhouse_job_with_link_of_wrong_type_is_dropped_and_reported_once() -> None:
+    jobs = _with_first_entry(GREENHOUSE_JOBS_FIXTURE, absolute_url=42)
+    handler = _board_answering(_GREENHOUSE_JOBS_PATH, jobs)
+
+    result = _source([GREENHOUSE_COMPANY], handler).search(["Full-Stack", "Sales"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == ["greenhouse:beispiel:1002"]
+    assert result.errors == ["Beispiel GmbH (GH): ungültige Antwort"]
+
+
+def test_greenhouse_optional_fields_of_wrong_type_become_none() -> None:
+    jobs = _with_first_entry(GREENHOUSE_JOBS_FIXTURE, company_name=["Liste"], location="Berlin")
+    handler = _board_answering(_GREENHOUSE_JOBS_PATH, jobs)
 
     result = _source([GREENHOUSE_COMPANY], handler).search(["Full-Stack"])
 
-    assert result.job_ads == []
-    assert result.errors == ["Beispiel GmbH (GH): ungültige Antwort"]
+    assert [(job_ad.company, job_ad.location) for job_ad in result.job_ads] == [(None, None)]
+    assert result.errors == []
+
+
+def test_lever_posting_with_link_of_wrong_type_is_dropped_and_reported_once() -> None:
+    postings = _with_first_entry(LEVER_POSTINGS_FIXTURE, hostedUrl={"url": "kaputt"})
+    handler = _board_answering(_LEVER_PATH, postings)
+
+    result = _source([LEVER_COMPANY], handler).search(["Full-Stack", "Sales"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == ["lever:beispiel:posting-2"]
+    assert result.errors == ["Beispiel GmbH: ungültige Antwort"]
+
+
+def test_lever_optional_fields_of_wrong_type_become_none() -> None:
+    postings = _with_first_entry(
+        LEVER_POSTINGS_FIXTURE, categories={"location": 42}, descriptionPlain=7
+    )
+    handler = _board_answering(_LEVER_PATH, postings)
+
+    result = _source([LEVER_COMPANY], handler).search(["Full-Stack"])
+
+    assert [(job_ad.location, job_ad.description) for job_ad in result.job_ads] == [(None, None)]
+    assert result.errors == []
 
 
 def test_unexpected_error_of_one_company_does_not_stop_the_others() -> None:
@@ -239,3 +285,28 @@ def test_malformed_greenhouse_details_leave_only_description_empty() -> None:
         ("greenhouse:beispiel:1001", None)
     ]
     assert result.errors == []
+
+
+def test_lever_categories_of_wrong_type_leave_only_location_empty() -> None:
+    postings = _with_first_entry(LEVER_POSTINGS_FIXTURE, categories="Berlin")
+    handler = _board_answering(_LEVER_PATH, postings)
+
+    result = _source([LEVER_COMPANY], handler).search(["Full-Stack"])
+
+    assert [(job_ad.id, job_ad.location) for job_ad in result.job_ads] == [
+        ("lever:beispiel:posting-1", None)
+    ]
+    assert result.errors == []
+
+
+def test_greenhouse_job_with_link_of_wrong_type_fetches_no_details() -> None:
+    jobs = _with_first_entry(GREENHOUSE_JOBS_FIXTURE, absolute_url=42)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return _board_answering(_GREENHOUSE_JOBS_PATH, jobs)(request)
+
+    _source([GREENHOUSE_COMPANY], handler).search(["Full-Stack"])
+
+    assert [request.url.path for request in requests] == [_GREENHOUSE_JOBS_PATH]

@@ -201,3 +201,60 @@ def test_malformed_entry_is_reported_as_invalid_response_with_keyword(changes: d
 
     assert result.job_ads == []
     assert result.errors == ["Data Science: ungültige Antwort"]
+
+
+def test_entry_with_title_of_wrong_type_is_dropped_and_reported_once() -> None:
+    handler = _search_with_first_entry(stellenangebotsTitel=42, hauptberuf=["Liste"])
+
+    result = _source(handler).search(["Data Science"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == ["10001-1003353507-S"]
+    assert result.errors == ["Data Science: ungültige Antwort"]
+
+
+def test_optional_fields_of_wrong_type_become_none_and_link_falls_back() -> None:
+    handler = _search_with_first_entry(
+        stellenangebotsTitel=True,
+        firma=["Beispiel GmbH"],
+        stellenlokationen=[{"adresse": {"ort": 80331}}],
+        externeURL={"url": "https://example.com"},
+    )
+
+    result = _source(handler).search(["Data Science"])
+
+    first = result.job_ads[0]
+    assert (first.title, first.company, first.location, first.link) == (
+        "Softwareentwickler/in",
+        None,
+        None,
+        "https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003353506-S",
+    )
+    assert result.errors == []
+
+
+def test_description_of_wrong_type_becomes_none() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith(_DETAILS_PREFIX):
+            return httpx.Response(200, json={"stellenangebotsBeschreibung": 42})
+        return _successful_handler(request)
+
+    result = _source(handler).search(["Data Science"])
+
+    assert [job_ad.description for job_ad in result.job_ads] == [None, None]
+    assert result.errors == []
+
+
+def test_title_of_wrong_type_without_fallback_drops_the_entry() -> None:
+    first = {**SEARCH_FIXTURE["ergebnisliste"][0], "stellenangebotsTitel": 42}
+    del first["hauptberuf"]
+    search = {**SEARCH_FIXTURE, "ergebnisliste": [first, *SEARCH_FIXTURE["ergebnisliste"][1:]]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _SEARCH_PATH:
+            return httpx.Response(200, json=search)
+        return _successful_handler(request)
+
+    result = _source(handler).search(["Data Science"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == ["10001-1003353507-S"]
+    assert result.errors == ["Data Science: ungültige Antwort"]

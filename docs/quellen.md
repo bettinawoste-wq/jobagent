@@ -6,6 +6,10 @@ Jede Quelle ist ein Adapter am Seam `Source` und erfüllt `name` und `search(key
 - Sie bekommt alle Suchbegriffe auf einmal.
 - Sie dedupliziert intern.
 - Sie wirft nie. Fehler meldet sie im `SearchResult` in der Form „<Suchbegriff oder Firma>: <Grund>“.
+- Sie liefert in `JobAd` nur Text oder `None`:
+  - Hat ein Pflichtfeld (Titel, Link) den falschen Typ, fällt nur dieser Eintrag weg. Gemeldet wird einmal „ungültige Antwort“, die übrigen Anzeigen bleiben. Fehlt das Feld, bleibt es "". Hat die Quelle einen Ersatz (Bundesagentur: Titel aus `hauptberuf`, Link aus der Referenznummer), greift dieser bei fehlendem Feld und bei falschem Typ. Bleibt nach einem falschen Typ kein Titel übrig, fällt der Eintrag weg. Quellen, die lokal auf den Titel filtern (Arbeitnow, Watchlist), verwerfen einen Titel mit falschem Typ ohne Meldung: Er kann kein Treffer sein.
+  - Hat ein optionales Feld (Firma, Ort, Beschreibung) den falschen Typ, wird es `None`.
+  - Ein Eintrag ohne gültige ID macht dagegen die ganze Antwort ungültig.
 
 Der JSON-Abruf mit Fehlergrund und die HTML-zu-Text-Umwandlung liegen einmal in `_http.py`. Die IDs der Anzeigen bleiben stabil, weil die Datenbank an ihnen hängt.
 

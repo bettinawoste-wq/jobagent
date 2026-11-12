@@ -10,11 +10,15 @@ from jobagent.job_ad import JobAd
 from jobagent.sources import SearchResult
 from jobagent.sources._http import (
     TIMEOUT,
+    ConvertedEntries,
     FetchError,
+    convert_entries,
     entries_with_ids,
     get_json,
     html_to_text,
     malformed_as_invalid,
+    required_text,
+    text_or_none,
     title_matches,
 )
 
@@ -35,7 +39,7 @@ class WatchlistCompany:
 
 
 class _Board(Protocol):
-    def search(self, client: httpx.Client, keywords: list[str]) -> list[JobAd]:
+    def search(self, client: httpx.Client, keywords: list[str]) -> ConvertedEntries:
         """Fragt das Board einmal ab und liefert die passenden Anzeigen; wirft FetchError."""
         ...
 
@@ -46,7 +50,7 @@ class GreenhouseBoard:
     def __init__(self, slug: str) -> None:
         self._slug = slug
 
-    def search(self, client: httpx.Client, keywords: list[str]) -> list[JobAd]:
+    def search(self, client: httpx.Client, keywords: list[str]) -> ConvertedEntries:
         data = get_json(client, _GREENHOUSE_URL.format(slug=self._slug))
         jobs = entries_with_ids(
             data.get("jobs") if isinstance(data, dict) else None,
@@ -54,22 +58,28 @@ class GreenhouseBoard:
             what="Greenhouse-Antwort",
             where=f"board={self._slug!r}",
         )
-        with malformed_as_invalid("Greenhouse-Antwort", f"board={self._slug!r}"):
-            return [
-                self._to_job_ad(client, job)
-                for job in jobs
-                if title_matches(job.get("title"), keywords)
-            ]
+        where = f"board={self._slug!r}"
+        with malformed_as_invalid("Greenhouse-Antwort", where):
+            return convert_entries(
+                (job for job in jobs if title_matches(job.get("title"), keywords)),
+                lambda job: self._to_job_ad(client, job),
+                what="Greenhouse-Antwort",
+                where=where,
+            )
 
     def _to_job_ad(self, client: httpx.Client, job: dict) -> JobAd:
         job_id = job["id"]
+        title = required_text(job.get("title"))
+        link = required_text(job.get("absolute_url"))
+        # Erst nach den Pflichtfeldern: Ein ungültiger Eintrag kostet keinen Detail-Call.
+        description = self._description(client, job_id)
         return JobAd(
             id=f"greenhouse:{self._slug}:{job_id}",
-            title=job.get("title", ""),
-            company=job.get("company_name"),
-            location=(job.get("location") or {}).get("name"),
-            link=job.get("absolute_url", ""),
-            description=self._description(client, job_id),
+            title=title,
+            company=text_or_none(job.get("company_name")),
+            location=_text_in(job.get("location"), "name"),
+            link=link,
+            description=description,
         )
 
     def _description(self, client: httpx.Client, job_id: object) -> str | None:
@@ -91,28 +101,35 @@ class LeverBoard:
         self._slug = slug
         self._company_name = company_name
 
-    def search(self, client: httpx.Client, keywords: list[str]) -> list[JobAd]:
+    def search(self, client: httpx.Client, keywords: list[str]) -> ConvertedEntries:
         postings = get_json(client, _LEVER_URL.format(slug=self._slug), params={"mode": "json"})
         # Lever antwortet mit einer rohen Liste, nicht mit einem Wrapper-Objekt.
         postings = entries_with_ids(
             postings, "id", what="Lever-Antwort", where=f"board={self._slug!r}"
         )
-        with malformed_as_invalid("Lever-Antwort", f"board={self._slug!r}"):
-            return [
-                self._to_job_ad(posting)
-                for posting in postings
-                if title_matches(posting.get("text"), keywords)
-            ]
+        where = f"board={self._slug!r}"
+        with malformed_as_invalid("Lever-Antwort", where):
+            return convert_entries(
+                (posting for posting in postings if title_matches(posting.get("text"), keywords)),
+                self._to_job_ad,
+                what="Lever-Antwort",
+                where=where,
+            )
 
     def _to_job_ad(self, posting: dict) -> JobAd:
         return JobAd(
             id=f"lever:{self._slug}:{posting['id']}",
-            title=posting.get("text", ""),
+            title=required_text(posting.get("text")),
             company=self._company_name,
-            location=(posting.get("categories") or {}).get("location"),
-            link=posting.get("hostedUrl", ""),
-            description=posting.get("descriptionPlain"),
+            location=_text_in(posting.get("categories"), "location"),
+            link=required_text(posting.get("hostedUrl")),
+            description=text_or_none(posting.get("descriptionPlain")),
         )
+
+
+def _text_in(container: object, key: str) -> str | None:
+    """Optionales Textfeld in einem Unterobjekt; ist das Unterobjekt keins, gibt es keinen Text."""
+    return text_or_none(container.get(key)) if isinstance(container, dict) else None
 
 
 def _board(company: WatchlistCompany) -> _Board | None:
@@ -154,7 +171,7 @@ class WatchlistSource:
                     errors.append(f"{company.name}: unbekannter ats-Typ")
                     continue
                 try:
-                    found = board.search(client, keywords)
+                    converted = board.search(client, keywords)
                 except FetchError as error:
                     errors.append(f"{company.name}: {error.reason}")
                     continue
@@ -164,6 +181,7 @@ class WatchlistSource:
                     logger.exception("Unerwarteter Fehler in Watchlist (firma=%r)", company.name)
                     errors.append(f"{company.name}: unerwarteter Fehler")
                     continue
-                for job_ad in found:
+                for job_ad in converted.job_ads:
                     job_ads.setdefault(job_ad.id, job_ad)
+                errors.extend(converted.errors(company.name))
         return SearchResult(list(job_ads.values()), errors)
