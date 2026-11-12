@@ -54,6 +54,10 @@ GitHub Issues in `bettinawoste-wq/jobagent` via `gh`, blocking as native issue d
 
 Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
+### Implementer worktrees
+
+Agents working on a ticket in their own worktree for an integration branch: see `docs/agents/worktrees.md`.
+
 ### Domain docs
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the root. See `docs/agents/domain.md`.
