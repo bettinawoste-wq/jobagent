@@ -314,24 +314,11 @@ def description_hash(description: str | None) -> str | None:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+# Die Spalte bewertung nutzt dieselben deutschen Schluessel wie die Modelle
+# (ADR 0005), daher dieselbe Uebersetzung aus score.ASSESSMENT_KEYS.
 def _assessment_as_json(assessment: Assessment) -> str:
-    return json.dumps(
-        {
-            "passt": assessment.fits,
-            "passt_nicht": assessment.misfits,
-            "luecken": assessment.gaps,
-            "kurzfazit": assessment.summary,
-        },
-        ensure_ascii=False,
-    )
+    return json.dumps(assessment.as_model_data(), ensure_ascii=False)
 
 
 def _assessment_from_json(score: int, raw: str) -> Assessment:
-    data = json.loads(raw)
-    return Assessment(
-        score=score,
-        fits=data["passt"],
-        misfits=data["passt_nicht"],
-        gaps=data["luecken"],
-        summary=data["kurzfazit"],
-    )
+    return Assessment.from_model_data(score, json.loads(raw))

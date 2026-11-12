@@ -9,7 +9,7 @@ import pytest
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
 from jobagent.job_ad import JobAd
-from jobagent.score import score_job_ad
+from jobagent.score import Assessment, score_job_ad
 
 SCORE_FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "score_response.json").read_text(encoding="utf-8")
@@ -164,3 +164,12 @@ def test_score_job_ad_accepts_string_instead_of_list() -> None:
 
     assert assessment is not None
     assert assessment.fits == ["München-Standort, Hybrid möglich"]
+
+
+def test_assessment_model_data_uses_german_keys_and_round_trips() -> None:
+    assessment = Assessment(score=4, fits=["a"], misfits=["b"], gaps=["c"], summary="d")
+
+    data = assessment.as_model_data()
+
+    assert list(data) == ["passt", "passt_nicht", "luecken", "kurzfazit"]
+    assert Assessment.from_model_data(4, data) == assessment

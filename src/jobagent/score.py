@@ -47,6 +47,16 @@ _SYSTEM_PROMPT = (
 )
 
 
+# Deutsche Schluessel einer Bewertung je Feld von Assessment: So sehen sie
+# die Modelle (Haiku-Antwort, Sonnet-Payload) und die DB-Spalte bewertung.
+ASSESSMENT_KEYS = {
+    "fits": "passt",
+    "misfits": "passt_nicht",
+    "gaps": "luecken",
+    "summary": "kurzfazit",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class Assessment:
     score: int
@@ -54,6 +64,15 @@ class Assessment:
     misfits: list[str]
     gaps: list[str]
     summary: str
+
+    def as_model_data(self) -> dict[str, object]:
+        """Die Bewertung ohne Score unter den deutschen Schluesseln."""
+        return {key: getattr(self, field) for field, key in ASSESSMENT_KEYS.items()}
+
+    @classmethod
+    def from_model_data(cls, score: int, data: dict) -> "Assessment":
+        """Gegenstueck zu as_model_data; fehlende Schluessel werfen KeyError."""
+        return cls(score=score, **{field: data[key] for field, key in ASSESSMENT_KEYS.items()})
 
 
 def score_job_ad(
@@ -117,12 +136,13 @@ def _validate(data: dict) -> Assessment:
     if not 1 <= score <= 5:
         raise ValueError(f"score ausserhalb 1-5: {score}")
 
+    assessment = Assessment.from_model_data(score, data)
     return Assessment(
         score=score,
-        fits=_as_string_list(data["passt"]),
-        misfits=_as_string_list(data["passt_nicht"]),
-        gaps=_as_string_list(data["luecken"]),
-        summary=str(data["kurzfazit"]),
+        fits=_as_string_list(assessment.fits),
+        misfits=_as_string_list(assessment.misfits),
+        gaps=_as_string_list(assessment.gaps),
+        summary=str(assessment.summary),
     )
 
 

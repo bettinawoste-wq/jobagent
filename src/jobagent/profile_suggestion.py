@@ -24,7 +24,8 @@ _MAX_TOKENS = 16000
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 # Schema und Prompt gehen an das Modell und bleiben deutsch; die Uebersetzung
-# in die englischen Namen passiert nur in _to_suggestion und _as_model_data.
+# in die englischen Namen passiert nur in _to_suggestion und _as_model_data
+# (die Bewertung selbst uebersetzt Assessment.as_model_data).
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -117,16 +118,7 @@ def create_suggestion(
 def _as_model_data(feedback: store.Feedback) -> dict:
     # Die Schluessel sind Teil des Prompts und bleiben deutsch, siehe _SYSTEM_PROMPT.
     assessment = feedback.assessment
-    assessment_data = (
-        {
-            "passt": assessment.fits,
-            "passt_nicht": assessment.misfits,
-            "luecken": assessment.gaps,
-            "kurzfazit": assessment.summary,
-        }
-        if assessment is not None
-        else {}
-    )
+    assessment_data = assessment.as_model_data() if assessment is not None else {}
     return {
         "anzeige_id": feedback.job_ad_id,
         "titel": feedback.title,
