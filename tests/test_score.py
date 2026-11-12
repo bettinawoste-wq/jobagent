@@ -15,7 +15,7 @@ SCORE_FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "score_response.json").read_text(encoding="utf-8")
 )
 
-_PROFIL = "# Suchprofil\nPython, SQL, München, Hybrid bevorzugt."
+_PROFILE = "# Suchprofil\nPython, SQL, München, Hybrid bevorzugt."
 
 
 def _job_ad() -> JobAd:
@@ -29,8 +29,8 @@ def _job_ad() -> JobAd:
     )
 
 
-def _nachricht_mit_tool_input(daten: dict) -> Message:
-    block = ToolUseBlock(id="toolu_1", input=daten, name="bewertung_abgeben", type="tool_use")
+def _message_with_tool_input(data: dict) -> Message:
+    block = ToolUseBlock(id="toolu_1", input=data, name="bewertung_abgeben", type="tool_use")
     return Message(
         id="msg_1",
         content=[block],
@@ -44,26 +44,26 @@ def _nachricht_mit_tool_input(daten: dict) -> Message:
 
 
 class _FakeMessages:
-    def __init__(self, ergebnis):
-        self._ergebnis = ergebnis
-        self.letzte_kwargs: dict | None = None
+    def __init__(self, result):
+        self._result = result
+        self.last_kwargs: dict | None = None
 
     def create(self, **kwargs):
-        self.letzte_kwargs = kwargs
-        if isinstance(self._ergebnis, Exception):
-            raise self._ergebnis
-        return self._ergebnis
+        self.last_kwargs = kwargs
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
 
 
 class _FakeClient:
-    def __init__(self, ergebnis):
-        self.messages = _FakeMessages(ergebnis)
+    def __init__(self, result):
+        self.messages = _FakeMessages(result)
 
 
 def test_score_job_ad_returns_assessment() -> None:
-    client = _FakeClient(_nachricht_mit_tool_input(SCORE_FIXTURE))
+    client = _FakeClient(_message_with_tool_input(SCORE_FIXTURE))
 
-    assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
+    assessment = score_job_ad(_job_ad(), _PROFILE, client=client)
 
     assert assessment is not None
     assert assessment.score == 4
@@ -74,27 +74,27 @@ def test_score_job_ad_returns_assessment() -> None:
 
 
 def test_score_job_ad_sends_profile_job_ad_and_tool_schema() -> None:
-    client = _FakeClient(_nachricht_mit_tool_input(SCORE_FIXTURE))
+    client = _FakeClient(_message_with_tool_input(SCORE_FIXTURE))
 
-    score_job_ad(_job_ad(), _PROFIL, client=client)
+    score_job_ad(_job_ad(), _PROFILE, client=client)
 
-    kwargs = client.messages.letzte_kwargs
+    kwargs = client.messages.last_kwargs
     assert kwargs["tool_choice"] == {"type": "tool", "name": "bewertung_abgeben"}
     assert kwargs["tools"][0]["name"] == "bewertung_abgeben"
-    inhalt = kwargs["messages"][0]["content"]
-    assert _PROFIL in inhalt
-    assert "Softwareentwickler/in (m/w/d)" in inhalt
-    assert "Kubernetes" in inhalt
+    content = kwargs["messages"][0]["content"]
+    assert _PROFILE in content
+    assert "Softwareentwickler/in (m/w/d)" in content
+    assert "Kubernetes" in content
 
 
 def test_score_job_ad_returns_none_on_api_error(caplog: pytest.LogCaptureFixture) -> None:
-    fehler = anthropic.APIConnectionError(
+    error = anthropic.APIConnectionError(
         request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     )
-    client = _FakeClient(fehler)
+    client = _FakeClient(error)
 
     with caplog.at_level("ERROR"):
-        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFILE, client=client)
 
     assert assessment is None
     assert "fehlgeschlagen" in caplog.text
@@ -106,14 +106,14 @@ def test_score_job_ad_returns_none_without_api_key(caplog: pytest.LogCaptureFixt
     client = _FakeClient(TypeError("Could not resolve authentication method."))
 
     with caplog.at_level("ERROR"):
-        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFILE, client=client)
 
     assert assessment is None
     assert "fehlgeschlagen" in caplog.text
 
 
 def test_score_job_ad_returns_none_without_tool_use(caplog: pytest.LogCaptureFixture) -> None:
-    nachricht = Message(
+    message = Message(
         id="msg_2",
         content=[TextBlock(text="Freitext statt Tool-Aufruf", type="text")],
         model="claude-haiku-4-5-20251001",
@@ -123,17 +123,17 @@ def test_score_job_ad_returns_none_without_tool_use(caplog: pytest.LogCaptureFix
         type="message",
         usage=Usage(input_tokens=10, output_tokens=5),
     )
-    client = _FakeClient(nachricht)
+    client = _FakeClient(message)
 
     with caplog.at_level("ERROR"):
-        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFILE, client=client)
 
     assert assessment is None
     assert "Keine Tool-Antwort" in caplog.text
 
 
 @pytest.mark.parametrize(
-    "ungueltige_daten",
+    "invalid_data",
     [
         {**SCORE_FIXTURE, "score": 7},
         {**SCORE_FIXTURE, "passt": 123},
@@ -141,12 +141,12 @@ def test_score_job_ad_returns_none_without_tool_use(caplog: pytest.LogCaptureFix
     ],
 )
 def test_score_job_ad_returns_none_on_invalid_response(
-    ungueltige_daten: dict, caplog: pytest.LogCaptureFixture
+    invalid_data: dict, caplog: pytest.LogCaptureFixture
 ) -> None:
-    client = _FakeClient(_nachricht_mit_tool_input(ungueltige_daten))
+    client = _FakeClient(_message_with_tool_input(invalid_data))
 
     with caplog.at_level("ERROR"):
-        assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
+        assessment = score_job_ad(_job_ad(), _PROFILE, client=client)
 
     assert assessment is None
     assert "Ungueltige Bewertungsantwort" in caplog.text
@@ -157,10 +157,10 @@ def test_score_job_ad_accepts_string_instead_of_list() -> None:
     # statt als JSON-Array, obwohl das Tool-Schema ein Array vorgibt. Das
     # darf die Anzeige nicht verwerfen, sondern wird als Ein-Elemente-Liste
     # uebernommen.
-    daten = {**SCORE_FIXTURE, "passt": "München-Standort, Hybrid möglich"}
-    client = _FakeClient(_nachricht_mit_tool_input(daten))
+    data = {**SCORE_FIXTURE, "passt": "München-Standort, Hybrid möglich"}
+    client = _FakeClient(_message_with_tool_input(data))
 
-    assessment = score_job_ad(_job_ad(), _PROFIL, client=client)
+    assessment = score_job_ad(_job_ad(), _PROFILE, client=client)
 
     assert assessment is not None
     assert assessment.fits == ["München-Standort, Hybrid möglich"]
