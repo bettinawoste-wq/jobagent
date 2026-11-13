@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
+from typing import Self
 
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
@@ -107,6 +108,56 @@ class FollowUpReminder:
     company: str | None
     title: str
     applied_on: date
+
+
+class Store:
+    """Der Speicher als Context-Manager: haelt seine Verbindung selbst und schliesst sie.
+
+    Die Methoden heissen nach den fachlichen Fragen des Laufs, nicht nach SQL.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self._conn = connect(path)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._conn.close()
+
+    def is_new(self, job_ad_id: str) -> bool:
+        """True, wenn die Anzeige noch nie gemerkt wurde."""
+        return is_new(self._conn, job_ad_id)
+
+    def remember_job_ad(self, job_ad: JobAd, assessment: Assessment, seen_on: date) -> None:
+        """Merkt eine Anzeige samt Bewertung; ihr Volltext wird nicht gespeichert."""
+        mark_seen(self._conn, job_ad, assessment, seen_on)
+
+    def current_application(self, position_key: str) -> KnownApplication | None:
+        """Die letzte nicht zurueckgezogene Bewerbung auf diese Stelle (fuer den Report)."""
+        return latest_application(self._conn, position_key)
+
+    def latest_application(self, position_key: str) -> int | None:
+        """ID der letzten Bewerbung auf diese Stelle, auch einer zurueckgezogenen.
+
+        Fuer die Rueckmeldung: Eine erneute Bewerbung nach dem Zurueckziehen
+        ueberschreibt die alte.
+        """
+        return application_for_position(self._conn, position_key)
+
+    def follow_up_reminders(
+        self, today: date, *, min_days: int, max_days: int
+    ) -> list[FollowUpReminder]:
+        """Bewerbungen ohne Antwort, deren Datum min_days bis max_days Tage zurueckliegt."""
+        return follow_up_reminders(self._conn, today, min_days=min_days, max_days=max_days)
+
+    def count_open_feedback(self) -> int:
+        """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
+        return count_open_feedback(self._conn)
+
+    def save_match_numbers(self, report_name: str, match_numbers: dict[str, int]) -> None:
+        """Haelt fest, unter welcher Treffernummer eine Anzeige in welchem Report steht."""
+        save_match_numbers(self._conn, report_name, match_numbers)
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
