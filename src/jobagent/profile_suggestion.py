@@ -1,4 +1,9 @@
-"""Leitet aus Feedback Aenderungen am Suchprofil ab, die erst nach Bestaetigung gelten."""
+"""Leitet aus Feedback Aenderungen am Suchprofil ab, die erst nach Bestaetigung gelten.
+
+`main` ist Kommandozeile und Zusammenbau: Nur dort werden das Suchprofil gelesen, der Store
+geöffnet, das Sprachmodell gebaut und die Uhrzeit bestimmt. Die Logik dahinter
+(`suggest_and_decide`) bekommt all das übergeben.
+"""
 
 import difflib
 import json
@@ -9,17 +14,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import anthropic
+
 from jobagent import store
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
 from jobagent.store import Store
 
 logger = logging.getLogger(__name__)
-
-_DB_PATH = Path("jobagent.db")
-_PROFILE_PATH = Path("profile.md")
-# Zusammenbau: Sonnet mit Nachdenken und großem Antwortbudget (ADR 0004)
-_SUGGESTION_MODEL = "claude-sonnet-5-5"
-_SUGGESTION_MAX_TOKENS = 16000
 
 # Schema und Prompt gehen an das Modell und bleiben deutsch; die Uebersetzung
 # in die englischen Namen passiert nur in _to_suggestion und _as_model_data
@@ -162,50 +163,33 @@ def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list
     return text, skipped
 
 
-def main(
+def suggest_and_decide(
     *,
-    db_path: Path = _DB_PATH,
-    profile_path: Path = _PROFILE_PATH,
-    language_model: LanguageModel | None = None,
-    ask: Callable[[str], str] = input,
-    now: datetime | None = None,
-) -> int:
-    """Erstellt einen Vorschlag, zeigt ihn an und fragt nach der Entscheidung.
-
-    Ohne `language_model` fragt der Profil-Vorschlag Sonnet von Anthropic.
-    """
-    if not profile_path.exists():
-        print(f"Fehler: {profile_path} nicht gefunden.", file=sys.stderr)
-        return 1
-    if language_model is None:
-        language_model = AnthropicLanguageModel(
-            _SUGGESTION_MODEL, max_tokens=_SUGGESTION_MAX_TOKENS, json_answer=True
-        )
-
-    with Store(db_path) as db:
-        return _suggest_and_decide(db, profile_path, language_model, ask, now or datetime.now())
-
-
-def _suggest_and_decide(
     db: Store,
+    search_profile: str,
     profile_path: Path,
     language_model: LanguageModel,
     ask: Callable[[str], str],
     now: datetime,
 ) -> int:
+    """Erstellt einen Vorschlag zum offenen Feedback, zeigt ihn an und fragt nach der Entscheidung.
+
+    Gibt den Exit-Code zurück. `search_profile` ist der Inhalt von `profile_path`. Nur wenn
+    die Nutzerin zustimmt, kommt das geänderte Suchprofil nach `profile_path` und die
+    bisherige Fassung daneben in eine Sicherung, benannt nach `now`.
+    """
     feedback = db.open_feedback()
     if not feedback:
         print("Es gibt kein unverarbeitetes Feedback.")
         return 0
 
-    profile = profile_path.read_text(encoding="utf-8")
-    suggestion = create_suggestion(profile, feedback, language_model)
+    suggestion = create_suggestion(search_profile, feedback, language_model)
     if suggestion is None:
         print("Fehler: Kein brauchbarer Vorschlag, es wurde nichts geändert.", file=sys.stderr)
         return 1
 
     ids = [entry.job_ad_id for entry in feedback]
-    new_profile, skipped = apply_changes(profile, suggestion.changes)
+    new_profile, skipped = apply_changes(search_profile, suggestion.changes)
     _show_model_errors(suggestion.model_errors)
     for change in skipped:
         print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
@@ -215,12 +199,12 @@ def _suggest_and_decide(
         print("Keine Änderung am Suchprofil nötig.")
         return 0
 
-    if new_profile == profile:
+    if new_profile == search_profile:
         print("Fehler: Keine Änderung ließ sich anwenden, Feedback bleibt offen.", file=sys.stderr)
         return 1
 
-    _show_changes(profile, new_profile, suggestion.changes, skipped, profile_path.name)
-    return _decide(db, profile_path, profile, new_profile, ids, ask, now)
+    _show_changes(search_profile, new_profile, suggestion.changes, skipped, profile_path.name)
+    return _decide(db, profile_path, search_profile, new_profile, ids, ask, now)
 
 
 def _decide(
@@ -287,6 +271,55 @@ def _show_changes(
     )
     print("\n".join(diff))
     print()
+
+
+# Kommandozeile und Zusammenbau
+
+_DB_PATH = Path("jobagent.db")
+_PROFILE_PATH = Path("profile.md")
+# Sonnet mit Nachdenken und großem Antwortbudget (ADR 0004)
+_SUGGESTION_MODEL = "claude-sonnet-5-5"
+_SUGGESTION_MAX_TOKENS = 16000
+
+
+def main(
+    *,
+    db_path: Path = _DB_PATH,
+    profile_path: Path = _PROFILE_PATH,
+    language_model: LanguageModel | None = None,
+    ask: Callable[[str], str] = input,
+    now: datetime | None = None,
+) -> int:
+    """Baut den Profil-Vorschlag zusammen, führt ihn aus und gibt den Exit-Code zurück.
+
+    Ohne `language_model` fragt der Profil-Vorschlag Sonnet von Anthropic.
+    """
+    if not profile_path.exists():
+        print(f"Fehler: {profile_path} nicht gefunden.", file=sys.stderr)
+        return 1
+    search_profile = profile_path.read_text(encoding="utf-8")
+    if language_model is None:
+        language_model = suggestion_language_model()
+
+    with Store(db_path) as db:
+        return suggest_and_decide(
+            db=db,
+            search_profile=search_profile,
+            profile_path=profile_path,
+            language_model=language_model,
+            ask=ask,
+            now=now or datetime.now(),
+        )
+
+
+def suggestion_language_model(*, client: anthropic.Anthropic | None = None) -> LanguageModel:
+    """Das Sprachmodell für den Profil-Vorschlag: Sonnet, das vor der JSON-Antwort nachdenkt."""
+    return AnthropicLanguageModel(
+        _SUGGESTION_MODEL,
+        max_tokens=_SUGGESTION_MAX_TOKENS,
+        json_answer=True,
+        client=client,
+    )
 
 
 if __name__ == "__main__":
