@@ -20,13 +20,13 @@ _REPORT = "2026-11-06"
 def db(tmp_path: Path) -> Path:
     path = tmp_path / "jobagent.db"
     assessment = Assessment(score=3, fits=[], misfits=[], gaps=[], summary="Geht.")
-    with Store(path) as db:
+    with Store(path) as opened:
         for job_ad_id, title in [("a-1", "Data Engineer (m/w/d)"), ("a-2", "Consultant")]:
             job_ad = JobAd(
                 id=job_ad_id, title=title, company="Beispiel GmbH", location="M", link="l"
             )
-            db.remember_job_ad(job_ad, assessment, date(2026, 11, 6))
-        db.save_match_numbers(_REPORT, {"a-1": 1, "a-2": 2})
+            opened.remember_job_ad(job_ad, assessment, date(2026, 11, 6))
+        opened.save_match_numbers(_REPORT, {"a-1": 1, "a-2": 2})
     return path
 
 

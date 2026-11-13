@@ -114,7 +114,8 @@ class Store:
     """Die Datenbank als Context-Manager: haelt ihre Verbindung selbst und schliesst sie.
 
     Die Methoden heissen nach den fachlichen Fragen von Lauf, Rueckmeldung und
-    Profil-Vorschlag, nicht nach SQL. Ausserhalb dieser Klasse kennt niemand SQL.
+    Profil-Vorschlag, nicht nach SQL. Im Anwendungscode kennt ausserhalb dieser Klasse
+    niemand SQL oder die Verbindung; nur Tests lesen die Datenbank zur Kontrolle direkt.
     """
 
     def __init__(self, path: str | Path) -> None:
