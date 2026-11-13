@@ -91,9 +91,15 @@ class AnthropicLanguageModel:
 
 
 def _tool_input_from(response: Message) -> dict:
+    if response.stop_reason != "tool_use":
+        # z.B. max_tokens: Der Werkzeug-Input ist dann womöglich abgeschnitten, auch wenn
+        # alle Pflichtschlüssel schon drinstehen.
+        raise LanguageModelError(
+            f"Keine vollständige Werkzeug-Antwort (stop_reason={response.stop_reason!r})"
+        )
     data = next((block.input for block in response.content if block.type == "tool_use"), None)
     if data is None:
-        raise LanguageModelError(f"Keine Werkzeug-Antwort (stop_reason={response.stop_reason!r})")
+        raise LanguageModelError("Antwort enthält keinen Werkzeug-Aufruf")
     return data
 
 
@@ -106,7 +112,7 @@ def _json_object_from(response: BetaMessage) -> dict:
         raise LanguageModelError("Antwort enthält keinen Text")
     try:
         data = json.loads(text)
-    except ValueError as error:
+    except (ValueError, RecursionError) as error:  # RecursionError: sehr tief verschachtelt
         raise LanguageModelError(f"Antwort ist kein JSON: {text!r}") from error
     if not isinstance(data, dict):
         raise LanguageModelError(f"Antwort ist kein JSON-Objekt: {text!r}")
@@ -132,6 +138,8 @@ def with_required_keys(schema: dict, data: dict) -> dict:
     prüft, wer fragt, weil nur er weiß, was er davon nachsichtig behandelt (die
     Bewertung nimmt z.B. einen String statt einer Liste).
     """
+    if not isinstance(data, dict):
+        raise LanguageModelError(f"Antwort ist kein Objekt: {data!r}")
     missing = [key for key in schema.get("required", []) if key not in data]
     if missing:
         raise LanguageModelError(f"Antwort ohne Pflichtschlüssel {missing}: {data!r}")
