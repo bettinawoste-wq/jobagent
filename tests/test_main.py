@@ -88,7 +88,7 @@ def _assessment() -> Assessment:
 
 def _answer(score: int = 4) -> dict:
     """Antwort des Sprachmodells auf eine Bewertung, unter den deutschen Schlüsseln."""
-    return {"score": score, **_assessment().as_model_data()}
+    return replace(_assessment(), score=score).as_model_answer()
 
 
 def _asked_about(model: FakeLanguageModel) -> list[str]:
@@ -539,7 +539,7 @@ def test_main_processed_feedback_does_not_count(project: dict[str, Path]) -> Non
     assert "Profil-Vorschlag" not in _run_without_matches(project)
 
 
-def test_run_with_own_sources_assessment_and_config(
+def test_run_with_own_sources_language_model_and_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def no_network(*args, **kwargs):
@@ -550,16 +550,13 @@ def test_run_with_own_sources_assessment_and_config(
 
     monkeypatch.setattr(httpx.Client, "send", no_network)
     monkeypatch.setattr(AnthropicLanguageModel, "ask", no_model)
-    scores = {"a-1": 3, "a-2": 5, "b-1": 4}
-    assessed: list[str] = []
-
-    def assess(job_ad: JobAd) -> Assessment:
-        assessed.append(job_ad.id)
-        return replace(_assessment(), score=scores[job_ad.id])
+    profile_path = tmp_path / "profile.md"
+    profile_path.write_text(_PROFILE, encoding="utf-8")
+    model = FakeLanguageModel(_answer(3), _answer(5), _answer(4))
 
     path = main.main(
         config_path=tmp_path / "fehlt.toml",
-        profile_path=tmp_path / "fehlt.md",
+        profile_path=profile_path,
         db_path=tmp_path / "jobagent.db",
         output_dir=tmp_path / "output",
         config=Config(keywords=["Python"]),
@@ -567,11 +564,11 @@ def test_run_with_own_sources_assessment_and_config(
             FakeSource([_job_ad("a-1"), _job_ad("a-2")], name="Quelle A"),
             FakeSource([_job_ad("b-1")], ["Python: HTTP 503"], name="Quelle B"),
         ],
-        assess=assess,
+        language_model=model,
     )
 
     content = path.read_text(encoding="utf-8")
-    assert sorted(assessed) == ["a-1", "a-2", "b-1"]
+    assert _asked_about(model) == ["Stelle a-1", "Stelle a-2", "Stelle b-1"]
     assert "- Quelle A: 2 Anzeigen\n" in content
     assert "- Quelle B: FEHLER, 1 Anzeige (Python: HTTP 503)\n" in content
     assert "Bundesagentur" not in content

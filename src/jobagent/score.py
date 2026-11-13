@@ -63,6 +63,10 @@ class Assessment:
         """Die Bewertung ohne Score unter den deutschen Schluesseln."""
         return {key: getattr(self, field) for field, key in ASSESSMENT_KEYS.items()}
 
+    def as_model_answer(self) -> dict[str, object]:
+        """Die Bewertung so, wie das Sprachmodell sie antwortet: Score und deutsche Schluessel."""
+        return {"score": self.score, **self.as_model_data()}
+
     @classmethod
     def from_model_data(cls, score: int, data: dict) -> "Assessment":
         """Gegenstueck zu as_model_data; fehlende Schluessel werfen KeyError."""
@@ -79,7 +83,7 @@ def score_job_ad(
     Gibt None zurueck und loggt, wenn das Sprachmodell scheitert oder eine ungueltige
     Antwort liefert, statt den Lauf abzubrechen; die Anzeige bleibt dann unbewertet.
     """
-    user_text = f"Suchprofil:\n{profile}\n\nStellenanzeige:\n{_job_ad_as_text(job_ad)}"
+    user_text = f"Suchprofil:\n{profile}\n\nStellenanzeige:\n{job_ad_as_text(job_ad)}"
     try:
         data = language_model.ask(_SYSTEM_PROMPT, user_text, _SCHEMA)
     except LanguageModelError:
@@ -93,7 +97,8 @@ def score_job_ad(
         return None
 
 
-def _job_ad_as_text(job_ad: JobAd) -> str:
+def job_ad_as_text(job_ad: JobAd) -> str:
+    """Die Anzeige so, wie das Sprachmodell sie am Ende der Anfrage liest."""
     lines = [
         f"Titel: {job_ad.title}",
         f"Firma: {job_ad.company or 'unbekannt'}",

@@ -45,7 +45,7 @@ _Avoid_: Profil, Lebenslauf
 
 **Sprachmodell**:
 Das Modell, das eine Anzeige bewertet oder einen Profil-Vorschlag ableitet; für beide Aufgaben kann es ein anderes sein.
-_Im Code_: `LanguageModel`
+_Im Code_: `LanguageModel`; im Demo-Lauf `DemoLanguageModel`
 _Avoid_: LLM, Provider, KI
 
 **Bewertung**:

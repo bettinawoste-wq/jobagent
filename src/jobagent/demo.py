@@ -2,8 +2,10 @@
 
 Alles hier ist synthetisch und oeffentlich: nur erkennbar erfundene Firmen, Links auf
 example.com. Die Bewertungen sind so geschrieben, als kaemen sie vom Modell gegen das
-Beispiel-Suchprofil `profile.example.md`. Ein Demo-Lauf holt nichts aus dem Netz, fragt
-kein Modell und liest oder speichert nichts Persoenliches.
+Demo-Suchprofil `SEARCH_PROFILE`, einen Auszug aus `profile.example.md`. Das
+Demo-Sprachmodell gibt sie als Antworten zurueck, damit sie dieselbe Pruefung durchlaufen
+wie echte Antworten. Ein Demo-Lauf holt nichts aus dem Netz, fragt kein echtes
+Sprachmodell und liest oder speichert nichts Persoenliches.
 """
 
 import sqlite3
@@ -12,8 +14,9 @@ from datetime import date, timedelta
 from jobagent import store
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
+from jobagent.language_model import LanguageModelError, with_required_keys
 from jobagent.position import position_key
-from jobagent.score import Assessment
+from jobagent.score import Assessment, job_ad_as_text
 from jobagent.sources import SearchResult, Source
 
 CONFIG = Config(
@@ -22,6 +25,19 @@ CONFIG = Config(
     follow_up_min_days=14,
     follow_up_max_days=28,
 )
+
+SEARCH_PROFILE = """# Suchprofil (Demo)
+
+## Gesuchte Rollen
+1. Full-Stack-Entwicklung (z.B. Python, JavaScript, C++)
+2. IT Consultant (technische Beratung/Implementierung, Anforderungsanalyse)
+3. Embedded C/C++/Qt oder DevOps/Linux, wenn der Rest passt
+4. Data Science / Data Analytics
+
+## Ort und Arbeitsmodell
+- Beispielstadt und Umgebung (Umkreis ca. 30 km)
+- Hybrid oder Remote bevorzugt, vollständig vor Ort nur bei sehr gutem Match
+"""
 
 _LINK = "https://example.com/stellen/"
 
@@ -208,9 +224,29 @@ def sources() -> list[Source]:
     ]
 
 
-def assess(job_ad: JobAd) -> Assessment | None:
-    """Vorgefertigte Bewertung statt Modellaufruf."""
-    return ASSESSMENTS.get(job_ad.id)
+class DemoLanguageModel:
+    """Sprachmodell am Seam `LanguageModel`, das für jede Demo-Anzeige eine vorgefertigte
+    Bewertung antwortet, statt ein echtes Sprachmodell zu fragen.
+
+    Die Anzeige erkennt es am Ende der Anfrage, wo die Bewertung sie als Text anhängt.
+    Für eine andere Anzeige hat es keine Antwort; fehlt einer Demo-Anzeige ihre
+    vorgefertigte Bewertung, scheitert schon der Aufbau.
+    """
+
+    def __init__(self) -> None:
+        self._answers = {
+            job_ad_as_text(job_ad): ASSESSMENTS[job_ad.id].as_model_answer()
+            for source in sources()
+            for job_ad in source.search(CONFIG.keywords).job_ads
+        }
+
+    def ask(self, system: str, text: str, schema: dict) -> dict:
+        answer = next(
+            (answer for job_ad, answer in self._answers.items() if text.endswith(job_ad)), None
+        )
+        if answer is None:
+            raise LanguageModelError("Keine vorgefertigte Bewertung für diese Anzeige")
+        return with_required_keys(schema, dict(answer))
 
 
 def create_applications(conn: sqlite3.Connection, today: date) -> None:
