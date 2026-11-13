@@ -8,7 +8,6 @@ wie echte Antworten. Ein Demo-Lauf holt nichts aus dem Netz, fragt kein echtes
 Sprachmodell und liest oder speichert nichts Persoenliches.
 """
 
-import sqlite3
 from datetime import date, timedelta
 
 from jobagent import store
@@ -18,6 +17,7 @@ from jobagent.language_model import LanguageModelError, with_required_keys
 from jobagent.position import position_key
 from jobagent.score import Assessment, job_ad_as_text
 from jobagent.sources import SearchResult, Source
+from jobagent.store import Store
 
 CONFIG = Config(
     keywords=["Full-Stack-Entwickler", "IT Consultant", "Embedded Entwickler", "Data Scientist"],
@@ -249,11 +249,10 @@ class DemoLanguageModel:
         return with_required_keys(schema, dict(answer))
 
 
-def create_applications(conn: sqlite3.Connection, today: date) -> None:
+def create_applications(db: Store, today: date) -> None:
     """Legt die Bewerbungen an, die es vor dem Demo-Lauf schon gibt (Datum relativ zu heute)."""
     # Ohne Antwort und im Nachfass-Fenster: erscheint als Nachfass-Hinweis.
-    store.create_application(
-        conn,
+    db.create_application(
         store.NewApplication(
             position_key("Datenwerk Muster GmbH", "Data Engineer (m/w/d)"),
             "Datenwerk Muster GmbH",
@@ -267,9 +266,8 @@ def create_applications(conn: sqlite3.Connection, today: date) -> None:
     # Bewerbung auf eine fruehere Anzeige derselben Stelle: Die neue Anzeige von Arbeitnow
     # (demo-an-1) schreibt Firma und Titel anders und hat einen anderen Text.
     applied_on = today - timedelta(days=35)
-    store.mark_seen(conn, _EARLIER_JOB_AD, ASSESSMENTS["demo-an-1"], applied_on)
-    store.create_application(
-        conn,
+    db.remember_job_ad(_EARLIER_JOB_AD, ASSESSMENTS["demo-an-1"], applied_on)
+    db.create_application(
         store.NewApplication(
             position_key(_EARLIER_JOB_AD.company, _EARLIER_JOB_AD.title),
             _EARLIER_JOB_AD.company,

@@ -3,7 +3,6 @@
 import argparse
 import copy
 import re
-import sqlite3
 import sys
 from collections.abc import Callable
 from datetime import date
@@ -11,6 +10,7 @@ from pathlib import Path
 
 from jobagent import store
 from jobagent.position import position_key
+from jobagent.store import Store
 
 _DB_PATH = Path("jobagent.db")
 
@@ -52,15 +52,13 @@ def main(
         parsed = _manual_parser().parse_args(arguments)
         execute = _manual_command
 
-    conn = store.connect(db_path)
-    try:
-        print(execute(conn, parsed, day))
-        return 0
-    except FeedbackError as error:
-        print(f"Fehler: {error}", file=sys.stderr)
-        return 1
-    finally:
-        conn.close()
+    with Store(db_path) as db:
+        try:
+            print(execute(db, parsed, day))
+            return 0
+        except FeedbackError as error:
+            print(f"Fehler: {error}", file=sys.stderr)
+            return 1
 
 
 class _HelpFormatter(argparse.HelpFormatter):
@@ -96,9 +94,9 @@ def _manual_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _match_command(conn: sqlite3.Connection, args: argparse.Namespace, today: date) -> str:
+def _match_command(db: Store, args: argparse.Namespace, today: date) -> str:
     report_name = args.report.removesuffix(".md")
-    match = store.find_match(conn, report_name, args.number)
+    match = db.find_match(report_name, args.number)
     if match is None:
         raise FeedbackError(
             f"Treffer {args.number} in Report {report_name} nicht gefunden. Reports vor "
@@ -106,7 +104,7 @@ def _match_command(conn: sqlite3.Connection, args: argparse.Namespace, today: da
         )
 
     if args.action == _SCORE:
-        return _save_score(conn, match, args.values, today)
+        return _save_score(db, match, args.values, today)
 
     if args.values:
         raise FeedbackError(f"Unerwartete Angaben nach {args.action}: {' '.join(args.values)}")
@@ -117,23 +115,23 @@ def _match_command(conn: sqlite3.Connection, args: argparse.Namespace, today: da
         title=match.title,
         job_ad_id=match.id,
     )
-    application_id = store.application_for_job_ad(conn, match.id)
-    return _change_application(conn, application_id, application, args, today)
+    application_id = db.application_for_job_ad(match.id)
+    return _change_application(db, application_id, application, args, today)
 
 
-def _manual_command(conn: sqlite3.Connection, args: argparse.Namespace, today: date) -> str:
+def _manual_command(db: Store, args: argparse.Namespace, today: date) -> str:
     application = store.NewApplication(
         position_key=position_key(args.company, args.title),
         company=args.company,
         title=args.title,
         job_ad_id=None,
     )
-    application_id = store.application_for_position(conn, application.position_key)
-    return _change_application(conn, application_id, application, args, today)
+    application_id = db.latest_application(application.position_key)
+    return _change_application(db, application_id, application, args, today)
 
 
 def _change_application(
-    conn: sqlite3.Connection,
+    db: Store,
     application_id: int | None,
     application: store.NewApplication,
     args: argparse.Namespace,
@@ -151,26 +149,26 @@ def _change_application(
                 f"Zu {label} gibt es noch keine Bewerbung. Erfasse sie zuerst mit beworben."
             )
         applied = applied_on or today
-        store.create_application(conn, application, args.action, applied)
+        db.create_application(application, args.action, applied)
         return f"Bewerbung gespeichert: {label}, beworben am {applied.isoformat()}"
 
     if args.action == _WITHDRAW_ENTRY:
-        store.delete_application(conn, application_id)
+        db.delete_application(application_id)
         return f"Bewerbung zurückgenommen: {label}"
 
-    store.update_application(conn, application_id, args.action, applied_on)
+    db.update_application(application_id, args.action, applied_on)
     return f"Status geändert: {label} ist jetzt {args.action}"
 
 
 def _save_score(
-    conn: sqlite3.Connection,
+    db: Store,
     match: store.StoredMatch,
     values: list[str],
     today: date,
 ) -> str:
     score = _parse_score(values)
     reason = " ".join(values[1:]) or None
-    store.save_feedback(conn, match.id, score, reason, today)
+    db.save_feedback(match.id, score, reason, today)
     return f"Feedback gespeichert: {match.title} bekommt von dir Score {score}"
 
 

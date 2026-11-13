@@ -228,11 +228,8 @@ def demo_run(output_dir: Path | None = None) -> str:
         db_path = Path(temp) / "demo.db"
         profile_path = Path(temp) / "profile.md"
         profile_path.write_text(demo.SEARCH_PROFILE, encoding="utf-8")
-        conn = store.connect(db_path)
-        try:
-            demo.create_applications(conn, date.today())
-        finally:
-            conn.close()
+        with Store(db_path) as db:
+            demo.create_applications(db, date.today())
         path = main(
             profile_path=profile_path,
             db_path=db_path,

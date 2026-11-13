@@ -3,7 +3,6 @@
 import difflib
 import json
 import logging
-import sqlite3
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ from pathlib import Path
 
 from jobagent import store
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
+from jobagent.store import Store
 
 logger = logging.getLogger(__name__)
 
@@ -165,21 +165,18 @@ def main(
             _SUGGESTION_MODEL, max_tokens=_SUGGESTION_MAX_TOKENS, json_answer=True
         )
 
-    conn = store.connect(db_path)
-    try:
-        return _suggest_and_decide(conn, profile_path, language_model, ask, now or datetime.now())
-    finally:
-        conn.close()
+    with Store(db_path) as db:
+        return _suggest_and_decide(db, profile_path, language_model, ask, now or datetime.now())
 
 
 def _suggest_and_decide(
-    conn: sqlite3.Connection,
+    db: Store,
     profile_path: Path,
     language_model: LanguageModel,
     ask: Callable[[str], str],
     now: datetime,
 ) -> int:
-    feedback = store.open_feedback(conn)
+    feedback = db.open_feedback()
     if not feedback:
         print("Es gibt kein unverarbeitetes Feedback.")
         return 0
@@ -197,7 +194,7 @@ def _suggest_and_decide(
         print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
 
     if not suggestion.changes:
-        store.mark_feedback_processed(conn, ids)
+        db.mark_feedback_processed(ids)
         print("Keine Änderung am Suchprofil nötig.")
         return 0
 
@@ -206,11 +203,11 @@ def _suggest_and_decide(
         return 1
 
     _show_changes(profile, new_profile, suggestion.changes, skipped, profile_path.name)
-    return _decide(conn, profile_path, profile, new_profile, ids, ask, now)
+    return _decide(db, profile_path, profile, new_profile, ids, ask, now)
 
 
 def _decide(
-    conn: sqlite3.Connection,
+    db: Store,
     profile_path: Path,
     profile: str,
     new_profile: str,
@@ -226,10 +223,10 @@ def _decide(
     if answer in ("j", "ja"):
         backup = _back_up(profile_path, profile, now)
         profile_path.write_text(new_profile, encoding="utf-8")
-        store.mark_feedback_processed(conn, ids)
+        db.mark_feedback_processed(ids)
         print(f"Suchprofil geändert, Sicherung: {backup.name}")
     elif answer in ("n", "nein"):
-        store.mark_feedback_processed(conn, ids)
+        db.mark_feedback_processed(ids)
         print("Vorschlag abgelehnt, Suchprofil unverändert.")
     else:
         print("Abgebrochen, nichts geändert. Das Feedback bleibt offen.")

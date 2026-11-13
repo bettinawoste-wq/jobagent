@@ -1,14 +1,16 @@
 """Tests fuer das Kommando feedback, gegen eine temporaere Datenbank."""
 
+import sqlite3
 from datetime import date
 from pathlib import Path
 
 import pytest
 
-from jobagent import feedback, store
+from jobagent import feedback
 from jobagent.job_ad import JobAd
 from jobagent.position import position_key
 from jobagent.score import Assessment
+from jobagent.store import Store
 
 _TODAY = date(2026, 11, 8)
 _REPORT = "2026-11-06"
@@ -18,12 +20,13 @@ _REPORT = "2026-11-06"
 def db(tmp_path: Path) -> Path:
     path = tmp_path / "jobagent.db"
     assessment = Assessment(score=3, fits=[], misfits=[], gaps=[], summary="Geht.")
-    conn = store.connect(path)
-    for job_ad_id, title in [("a-1", "Data Engineer (m/w/d)"), ("a-2", "Consultant")]:
-        job_ad = JobAd(id=job_ad_id, title=title, company="Beispiel GmbH", location="M", link="l")
-        store.mark_seen(conn, job_ad, assessment, date(2026, 11, 6))
-    store.save_match_numbers(conn, _REPORT, {"a-1": 1, "a-2": 2})
-    conn.close()
+    with Store(path) as db:
+        for job_ad_id, title in [("a-1", "Data Engineer (m/w/d)"), ("a-2", "Consultant")]:
+            job_ad = JobAd(
+                id=job_ad_id, title=title, company="Beispiel GmbH", location="M", link="l"
+            )
+            db.remember_job_ad(job_ad, assessment, date(2026, 11, 6))
+        db.save_match_numbers(_REPORT, {"a-1": 1, "a-2": 2})
     return path
 
 
@@ -32,7 +35,7 @@ def _run(db: Path, *arguments: str) -> int:
 
 
 def _query(db: Path, sql: str) -> list[tuple]:
-    conn = store.connect(db)
+    conn = sqlite3.connect(db)
     try:
         return conn.execute(sql).fetchall()
     finally:
@@ -145,10 +148,8 @@ def test_score_without_reason(db: Path) -> None:
 
 def test_new_score_replaces_old_and_counts_as_unprocessed_again(db: Path) -> None:
     _run(db, _REPORT, "2", "score", "1")
-    conn = store.connect(db)
-    conn.execute("UPDATE feedback SET verarbeitet = 1")
-    conn.commit()
-    conn.close()
+    with Store(db) as opened:
+        opened.mark_feedback_processed(["a-2"])
 
     _run(db, _REPORT, "2", "score", "5", "Doch gut")
 

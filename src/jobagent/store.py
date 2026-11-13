@@ -113,11 +113,22 @@ class FollowUpReminder:
 class Store:
     """Die Datenbank als Context-Manager: haelt ihre Verbindung selbst und schliesst sie.
 
-    Die Methoden heissen nach den fachlichen Fragen des Laufs, nicht nach SQL.
+    Die Methoden heissen nach den fachlichen Fragen von Lauf, Rueckmeldung und
+    Profil-Vorschlag, nicht nach SQL. Ausserhalb dieser Klasse kennt niemand SQL.
     """
 
     def __init__(self, path: str | Path) -> None:
-        self._conn = connect(path)
+        """Oeffnet (und initialisiert oder migriert bei Bedarf) die Datenbank unter path."""
+        self._conn = sqlite3.connect(path)
+        try:
+            self._conn.execute(_SCHEMA_SEEN)
+            self._conn.execute(_SCHEMA_APPLICATIONS)
+            self._conn.execute(_SCHEMA_FEEDBACK)
+            self._add_missing_columns()
+            self._conn.commit()
+        except BaseException:
+            self._conn.close()
+            raise
 
     def __enter__(self) -> Self:
         return self
@@ -125,17 +136,73 @@ class Store:
     def __exit__(self, *_: object) -> None:
         self._conn.close()
 
+    def _add_missing_columns(self) -> None:
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(gesehene_anzeigen)")}
+        for name, column_type in _ADDED_COLUMNS.items():
+            if name not in existing:
+                self._conn.execute(f"ALTER TABLE gesehene_anzeigen ADD COLUMN {name} {column_type}")
+
+    # Gesehene Anzeigen
+
     def is_new(self, job_ad_id: str) -> bool:
         """True, wenn die Anzeige noch nie gemerkt wurde."""
-        return is_new(self._conn, job_ad_id)
+        row = self._conn.execute(
+            "SELECT 1 FROM gesehene_anzeigen WHERE id = ?", (job_ad_id,)
+        ).fetchone()
+        return row is None
 
     def remember_job_ad(self, job_ad: JobAd, assessment: Assessment, seen_on: date) -> None:
-        """Merkt eine Anzeige samt Bewertung; ihr Volltext wird nicht gespeichert."""
-        mark_seen(self._conn, job_ad, assessment, seen_on)
+        """Merkt eine Anzeige samt Bewertung und Hash der Beschreibung.
+
+        Der Volltext der Anzeige wird nicht gespeichert.
+        """
+        self._conn.execute(
+            "INSERT INTO gesehene_anzeigen "
+            "(id, titel, firma, link, score, datum, beschreibung_hash, bewertung) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                job_ad.id,
+                job_ad.title,
+                job_ad.company,
+                job_ad.link,
+                assessment.score,
+                seen_on.isoformat(),
+                description_hash(job_ad.description),
+                _assessment_as_json(assessment),
+            ),
+        )
+        self._conn.commit()
+
+    def save_match_numbers(self, report_name: str, match_numbers: dict[str, int]) -> None:
+        """Haelt fest, unter welcher Treffernummer eine Anzeige in welchem Report steht."""
+        self._conn.executemany(
+            "UPDATE gesehene_anzeigen SET report = ?, nummer = ? WHERE id = ?",
+            [(report_name, number, job_ad_id) for job_ad_id, number in match_numbers.items()],
+        )
+        self._conn.commit()
+
+    def find_match(self, report_name: str, match_number: int) -> StoredMatch | None:
+        """Sucht die Anzeige, die in einem Report unter einer Treffernummer steht."""
+        row = self._conn.execute(
+            "SELECT id, titel, firma FROM gesehene_anzeigen WHERE report = ? AND nummer = ?",
+            (report_name, match_number),
+        ).fetchone()
+        return StoredMatch(*row) if row else None
+
+    # Bewerbungen
 
     def current_application(self, position_key: str) -> KnownApplication | None:
         """Die letzte nicht zurueckgezogene Bewerbung auf diese Stelle (fuer den Report)."""
-        return latest_application(self._conn, position_key)
+        row = self._conn.execute(
+            "SELECT b.status, b.beworben_am, g.beschreibung_hash "
+            "FROM bewerbungen b LEFT JOIN gesehene_anzeigen g ON g.id = b.anzeige_id "
+            "WHERE b.stelle = ? AND b.status != ? "
+            "ORDER BY b.beworben_am DESC, b.id DESC LIMIT 1",
+            (position_key, ApplicationStatus.WITHDRAWN),
+        ).fetchone()
+        if row is None:
+            return None
+        return KnownApplication(row[0], date.fromisoformat(row[1]), row[2])
 
     def latest_application(self, position_key: str) -> int | None:
         """ID der letzten Bewerbung auf diese Stelle, auch einer zurueckgezogenen.
@@ -143,216 +210,110 @@ class Store:
         Fuer die Rueckmeldung: Eine erneute Bewerbung nach dem Zurueckziehen
         ueberschreibt die alte.
         """
-        return application_for_position(self._conn, position_key)
+        row = self._conn.execute(
+            "SELECT id FROM bewerbungen WHERE stelle = ? "
+            "ORDER BY beworben_am DESC, id DESC LIMIT 1",
+            (position_key,),
+        ).fetchone()
+        return row[0] if row else None
+
+    def application_for_job_ad(self, job_ad_id: str) -> int | None:
+        """ID der Bewerbung auf genau diese Anzeige, falls vorhanden."""
+        row = self._conn.execute(
+            "SELECT id FROM bewerbungen WHERE anzeige_id = ?", (job_ad_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def create_application(
+        self, application: NewApplication, status: str, applied_on: date
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO bewerbungen (stelle, firma, titel, anzeige_id, status, beworben_am) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                application.position_key,
+                application.company,
+                application.title,
+                application.job_ad_id,
+                status,
+                applied_on.isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def update_application(self, application_id: int, status: str, applied_on: date | None) -> None:
+        """Setzt den Status; das Bewerbungsdatum aendert sich nur, wenn eines angegeben ist."""
+        self._conn.execute(
+            "UPDATE bewerbungen SET status = ?, beworben_am = COALESCE(?, beworben_am) "
+            "WHERE id = ?",
+            (status, applied_on.isoformat() if applied_on else None, application_id),
+        )
+        self._conn.commit()
+
+    def delete_application(self, application_id: int) -> None:
+        self._conn.execute("DELETE FROM bewerbungen WHERE id = ?", (application_id,))
+        self._conn.commit()
 
     def follow_up_reminders(
         self, today: date, *, min_days: int, max_days: int
     ) -> list[FollowUpReminder]:
         """Bewerbungen ohne Antwort, deren Datum min_days bis max_days Tage zurueckliegt."""
-        return follow_up_reminders(self._conn, today, min_days=min_days, max_days=max_days)
+        rows = self._conn.execute(
+            "SELECT firma, titel, beworben_am FROM bewerbungen "
+            "WHERE status = ? AND beworben_am BETWEEN ? AND ? ORDER BY beworben_am, id",
+            (
+                ApplicationStatus.APPLIED,
+                (today - timedelta(days=max_days)).isoformat(),
+                (today - timedelta(days=min_days)).isoformat(),
+            ),
+        ).fetchall()
+        return [
+            FollowUpReminder(company, title, date.fromisoformat(applied_on))
+            for company, title, applied_on in rows
+        ]
+
+    # Feedback
+
+    def save_feedback(self, job_ad_id: str, score: int, reason: str | None, given_on: date) -> None:
+        """Speichert den eigenen Score; neues Feedback ersetzt altes und gilt als unverarbeitet."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO feedback (anzeige_id, score, grund, datum) VALUES (?, ?, ?, ?)",
+            (job_ad_id, score, reason, given_on.isoformat()),
+        )
+        self._conn.commit()
+
+    def open_feedback(self) -> list[Feedback]:
+        """Alles Feedback, das in keinen Profil-Vorschlag eingeflossen ist, samt Bewertung."""
+        rows = self._conn.execute(
+            "SELECT f.anzeige_id, g.titel, g.firma, g.score, g.bewertung, f.score, f.grund "
+            "FROM feedback f JOIN gesehene_anzeigen g ON g.id = f.anzeige_id "
+            "WHERE f.verarbeitet = 0 ORDER BY f.datum, f.anzeige_id"
+        ).fetchall()
+        return [
+            Feedback(
+                job_ad_id=job_ad_id,
+                title=title,
+                company=company,
+                model_score=model_score,
+                assessment=_assessment_from_json(model_score, raw) if raw else None,
+                own_score=own_score,
+                reason=reason,
+            )
+            for job_ad_id, title, company, model_score, raw, own_score, reason in rows
+        ]
 
     def count_open_feedback(self) -> int:
         """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
-        return count_open_feedback(self._conn)
+        return self._conn.execute("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0").fetchone()[
+            0
+        ]
 
-    def save_match_numbers(self, report_name: str, match_numbers: dict[str, int]) -> None:
-        """Haelt fest, unter welcher Treffernummer eine Anzeige in welchem Report steht."""
-        save_match_numbers(self._conn, report_name, match_numbers)
-
-
-def connect(path: str | Path) -> sqlite3.Connection:
-    """Oeffnet (und initialisiert oder migriert bei Bedarf) die SQLite-Datenbank unter path."""
-    conn = sqlite3.connect(path)
-    conn.execute(_SCHEMA_SEEN)
-    conn.execute(_SCHEMA_APPLICATIONS)
-    conn.execute(_SCHEMA_FEEDBACK)
-    _add_missing_columns(conn)
-    conn.commit()
-    return conn
-
-
-def _add_missing_columns(conn: sqlite3.Connection) -> None:
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(gesehene_anzeigen)")}
-    for name, column_type in _ADDED_COLUMNS.items():
-        if name not in existing:
-            conn.execute(f"ALTER TABLE gesehene_anzeigen ADD COLUMN {name} {column_type}")
-
-
-def is_new(conn: sqlite3.Connection, job_ad_id: str) -> bool:
-    """True, wenn die Anzeigen-ID noch nicht gespeichert ist."""
-    row = conn.execute("SELECT 1 FROM gesehene_anzeigen WHERE id = ?", (job_ad_id,)).fetchone()
-    return row is None
-
-
-def mark_seen(
-    conn: sqlite3.Connection, job_ad: JobAd, assessment: Assessment, seen_on: date
-) -> None:
-    """Merkt eine Anzeige als gesehen, samt Bewertung und Hash der Beschreibung.
-
-    Der Volltext der Anzeige wird nicht gespeichert.
-    """
-    conn.execute(
-        "INSERT INTO gesehene_anzeigen "
-        "(id, titel, firma, link, score, datum, beschreibung_hash, bewertung) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            job_ad.id,
-            job_ad.title,
-            job_ad.company,
-            job_ad.link,
-            assessment.score,
-            seen_on.isoformat(),
-            description_hash(job_ad.description),
-            _assessment_as_json(assessment),
-        ),
-    )
-    conn.commit()
-
-
-def save_match_numbers(
-    conn: sqlite3.Connection, report_name: str, match_numbers: dict[str, int]
-) -> None:
-    """Haelt fest, unter welcher Treffernummer eine Anzeige in welchem Report steht."""
-    conn.executemany(
-        "UPDATE gesehene_anzeigen SET report = ?, nummer = ? WHERE id = ?",
-        [(report_name, number, job_ad_id) for job_ad_id, number in match_numbers.items()],
-    )
-    conn.commit()
-
-
-def find_match(conn: sqlite3.Connection, report_name: str, match_number: int) -> StoredMatch | None:
-    """Sucht die Anzeige, die in einem Report unter einer Treffernummer steht."""
-    row = conn.execute(
-        "SELECT id, titel, firma FROM gesehene_anzeigen WHERE report = ? AND nummer = ?",
-        (report_name, match_number),
-    ).fetchone()
-    return StoredMatch(*row) if row else None
-
-
-def application_for_job_ad(conn: sqlite3.Connection, job_ad_id: str) -> int | None:
-    """Liefert die ID der Bewerbung auf genau diese Anzeige, falls vorhanden."""
-    row = conn.execute("SELECT id FROM bewerbungen WHERE anzeige_id = ?", (job_ad_id,)).fetchone()
-    return row[0] if row else None
-
-
-def application_for_position(conn: sqlite3.Connection, position_key: str) -> int | None:
-    """Liefert die ID der letzten Bewerbung auf diese Stelle, falls vorhanden."""
-    row = conn.execute(
-        "SELECT id FROM bewerbungen WHERE stelle = ? ORDER BY beworben_am DESC, id DESC LIMIT 1",
-        (position_key,),
-    ).fetchone()
-    return row[0] if row else None
-
-
-def create_application(
-    conn: sqlite3.Connection, application: NewApplication, status: str, applied_on: date
-) -> None:
-    conn.execute(
-        "INSERT INTO bewerbungen (stelle, firma, titel, anzeige_id, status, beworben_am) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            application.position_key,
-            application.company,
-            application.title,
-            application.job_ad_id,
-            status,
-            applied_on.isoformat(),
-        ),
-    )
-    conn.commit()
-
-
-def update_application(
-    conn: sqlite3.Connection, application_id: int, status: str, applied_on: date | None
-) -> None:
-    """Setzt den Status; das Bewerbungsdatum aendert sich nur, wenn eines angegeben ist."""
-    conn.execute(
-        "UPDATE bewerbungen SET status = ?, beworben_am = COALESCE(?, beworben_am) WHERE id = ?",
-        (status, applied_on.isoformat() if applied_on else None, application_id),
-    )
-    conn.commit()
-
-
-def delete_application(conn: sqlite3.Connection, application_id: int) -> None:
-    conn.execute("DELETE FROM bewerbungen WHERE id = ?", (application_id,))
-    conn.commit()
-
-
-def save_feedback(
-    conn: sqlite3.Connection, job_ad_id: str, score: int, reason: str | None, given_on: date
-) -> None:
-    """Speichert den eigenen Score; neues Feedback ersetzt altes und gilt als unverarbeitet."""
-    conn.execute(
-        "INSERT OR REPLACE INTO feedback (anzeige_id, score, grund, datum) VALUES (?, ?, ?, ?)",
-        (job_ad_id, score, reason, given_on.isoformat()),
-    )
-    conn.commit()
-
-
-def latest_application(conn: sqlite3.Connection, position_key: str) -> KnownApplication | None:
-    """Liefert die letzte Bewerbung auf diese Stelle; zurueckgezogene zaehlen nicht."""
-    row = conn.execute(
-        "SELECT b.status, b.beworben_am, g.beschreibung_hash "
-        "FROM bewerbungen b LEFT JOIN gesehene_anzeigen g ON g.id = b.anzeige_id "
-        "WHERE b.stelle = ? AND b.status != ? "
-        "ORDER BY b.beworben_am DESC, b.id DESC LIMIT 1",
-        (position_key, ApplicationStatus.WITHDRAWN),
-    ).fetchone()
-    if row is None:
-        return None
-    return KnownApplication(row[0], date.fromisoformat(row[1]), row[2])
-
-
-def follow_up_reminders(
-    conn: sqlite3.Connection, today: date, *, min_days: int, max_days: int
-) -> list[FollowUpReminder]:
-    """Bewerbungen ohne Antwort, deren Datum min_days bis max_days Tage zurueckliegt."""
-    rows = conn.execute(
-        "SELECT firma, titel, beworben_am FROM bewerbungen "
-        "WHERE status = ? AND beworben_am BETWEEN ? AND ? ORDER BY beworben_am, id",
-        (
-            ApplicationStatus.APPLIED,
-            (today - timedelta(days=max_days)).isoformat(),
-            (today - timedelta(days=min_days)).isoformat(),
-        ),
-    ).fetchall()
-    return [
-        FollowUpReminder(company, title, date.fromisoformat(applied_on))
-        for company, title, applied_on in rows
-    ]
-
-
-def open_feedback(conn: sqlite3.Connection) -> list[Feedback]:
-    """Liefert alles unverarbeitete Feedback samt Bewertung des Modells."""
-    rows = conn.execute(
-        "SELECT f.anzeige_id, g.titel, g.firma, g.score, g.bewertung, f.score, f.grund "
-        "FROM feedback f JOIN gesehene_anzeigen g ON g.id = f.anzeige_id "
-        "WHERE f.verarbeitet = 0 ORDER BY f.datum, f.anzeige_id"
-    ).fetchall()
-    return [
-        Feedback(
-            job_ad_id=job_ad_id,
-            title=title,
-            company=company,
-            model_score=model_score,
-            assessment=_assessment_from_json(model_score, raw) if raw else None,
-            own_score=own_score,
-            reason=reason,
+    def mark_feedback_processed(self, job_ad_ids: list[str]) -> None:
+        self._conn.executemany(
+            "UPDATE feedback SET verarbeitet = 1 WHERE anzeige_id = ?",
+            [(job_ad_id,) for job_ad_id in job_ad_ids],
         )
-        for job_ad_id, title, company, model_score, raw, own_score, reason in rows
-    ]
-
-
-def count_open_feedback(conn: sqlite3.Connection) -> int:
-    return conn.execute("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0").fetchone()[0]
-
-
-def mark_feedback_processed(conn: sqlite3.Connection, job_ad_ids: list[str]) -> None:
-    conn.executemany(
-        "UPDATE feedback SET verarbeitet = 1 WHERE anzeige_id = ?",
-        [(job_ad_id,) for job_ad_id in job_ad_ids],
-    )
-    conn.commit()
+        self._conn.commit()
 
 
 def description_hash(description: str | None) -> str | None:

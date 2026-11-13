@@ -2,16 +2,18 @@
 
 import importlib.util
 import json
+import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 
-from jobagent import profile_suggestion, store
+from jobagent import profile_suggestion
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError
 from jobagent.profile_suggestion import ProfileChange, apply_changes, create_suggestion
 from jobagent.score import Assessment
+from jobagent.store import Feedback, Store
 from tests.fakes import FakeLanguageModel
 
 _PROFILE = "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2\n"
@@ -48,10 +50,9 @@ def _add_feedback(db: Path, job_ad_id: str) -> None:
         score=2, fits=["Python"], misfits=["Zeitarbeit"], gaps=[], summary="Eher nein."
     )
     job_ad = JobAd(id=job_ad_id, title="Consultant", company="KPMG AG", location="M", link="l")
-    conn = store.connect(db)
-    store.mark_seen(conn, job_ad, assessment, date(2026, 11, 8))
-    store.save_feedback(conn, job_ad_id, 3, "KPMG ist keine Zeitarbeit", date(2026, 11, 8))
-    conn.close()
+    with Store(db) as opened:
+        opened.remember_job_ad(job_ad, assessment, date(2026, 11, 8))
+        opened.save_feedback(job_ad_id, 3, "KPMG ist keine Zeitarbeit", date(2026, 11, 8))
 
 
 def _run(project: dict[str, Path], model: FakeLanguageModel, answer: str | Exception = "j") -> int:
@@ -64,7 +65,7 @@ def _run(project: dict[str, Path], model: FakeLanguageModel, answer: str | Excep
 
 
 def _processed(project: dict[str, Path]) -> list[int]:
-    conn = store.connect(project["db_path"])
+    conn = sqlite3.connect(project["db_path"])
     try:
         return [
             row[0] for row in conn.execute("SELECT verarbeitet FROM feedback ORDER BY anzeige_id")
@@ -81,8 +82,8 @@ def _change(old: str, new: str) -> ProfileChange:
     return ProfileChange(old=old, new=new, reason="g")
 
 
-def _feedback() -> store.Feedback:
-    return store.Feedback(
+def _feedback() -> Feedback:
+    return Feedback(
         job_ad_id="a-1",
         title="Consultant",
         company="KPMG AG",
@@ -96,7 +97,7 @@ def _feedback() -> store.Feedback:
 
 
 def test_suggestion_sends_feedback_with_german_keys() -> None:
-    without_assessment = store.Feedback(
+    without_assessment = Feedback(
         job_ad_id="a-0",
         title="Alt",
         company=None,

@@ -1,5 +1,6 @@
 """Tests fuer main.py: Ablauf suchen -> dedupe -> score -> report, mit Fake-Quellen."""
 
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
@@ -8,13 +9,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-from jobagent import feedback, main, store
+from jobagent import feedback, main
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
 from jobagent.score import Assessment
 from jobagent.sources import SearchResult
 from jobagent.sources.watchlist import WatchlistCompany
+from jobagent.store import Store
 from tests.fakes import FakeLanguageModel
 
 # Fester Tag für Tests, deren Ergebnis vom Datum abhängt.
@@ -175,14 +177,9 @@ def test_main_remembers_report_and_match_number(project: dict[str, Path]) -> Non
 
     path = _run(project, FakeSource([_job_ad("a-1"), _job_ad("a-2")]), model=model)
 
-    conn = store.connect(project["db_path"])
-    try:
-        rows = conn.execute(
-            "SELECT id, report, nummer FROM gesehene_anzeigen ORDER BY id"
-        ).fetchall()
-    finally:
-        conn.close()
-    assert rows == [("a-1", path.stem, 2), ("a-2", path.stem, 1)]
+    with Store(project["db_path"]) as db:
+        assert db.find_match(path.stem, 1).id == "a-2"
+        assert db.find_match(path.stem, 2).id == "a-1"
 
 
 def test_main_skips_already_seen_job_ads(project: dict[str, Path]) -> None:
@@ -501,7 +498,7 @@ def test_main_follow_up_reminder_does_not_change_status(
 
     _run_without_matches(project)
 
-    conn = store.connect(project["db_path"])
+    conn = sqlite3.connect(project["db_path"])
     try:
         assert conn.execute("SELECT status FROM bewerbungen").fetchall() == [("beworben",)]
     finally:
@@ -509,12 +506,11 @@ def test_main_follow_up_reminder_does_not_change_status(
 
 
 def _open_feedback(project: dict[str, Path], count: int) -> None:
-    conn = store.connect(project["db_path"])
-    for number in range(count):
-        job_ad_id = f"f-{number}"
-        store.mark_seen(conn, _job_ad(job_ad_id), _assessment(), TODAY)
-        store.save_feedback(conn, job_ad_id, 3, None, TODAY)
-    conn.close()
+    with Store(project["db_path"]) as db:
+        for number in range(count):
+            job_ad_id = f"f-{number}"
+            db.remember_job_ad(_job_ad(job_ad_id), _assessment(), TODAY)
+            db.save_feedback(job_ad_id, 3, None, TODAY)
 
 
 @pytest.mark.parametrize(("count", "expected"), [(4, False), (5, True), (7, True)])
@@ -532,9 +528,8 @@ def test_main_profile_suggestion_hint_from_five_feedbacks(
 
 def test_main_processed_feedback_does_not_count(project: dict[str, Path]) -> None:
     _open_feedback(project, 5)
-    conn = store.connect(project["db_path"])
-    store.mark_feedback_processed(conn, ["f-0"])
-    conn.close()
+    with Store(project["db_path"]) as db:
+        db.mark_feedback_processed(["f-0"])
 
     assert "Profil-Vorschlag" not in _run_without_matches(project)
 
