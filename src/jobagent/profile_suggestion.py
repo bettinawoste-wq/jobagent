@@ -116,17 +116,34 @@ def _as_model_data(feedback: store.Feedback) -> dict:
 
 
 def _to_suggestion(data: dict) -> ProfileSuggestion | None:
-    try:
-        return ProfileSuggestion(
-            changes=[
-                ProfileChange(old=entry["alt"], new=entry["neu"], reason=entry["grund"])
-                for entry in data["aenderungen"]
-            ],
-            model_errors=[str(entry) for entry in data["modellfehler"]],
-        )
-    except (KeyError, TypeError):
-        logger.exception("Ungueltiger Profil-Vorschlag: %r", data)
+    # Das Sprachmodell prüft nur die Pflichtschlüssel; die Typen prüft erst diese Stelle,
+    # damit z.B. ein `alt`, das kein Text ist, nicht erst in apply_changes scheitert.
+    changes = data["aenderungen"]
+    model_errors = data["modellfehler"]
+    if not (
+        isinstance(changes, list)
+        and all(_is_change(entry) for entry in changes)
+        and _is_text_list(model_errors)
+    ):
+        logger.error("Ungueltiger Profil-Vorschlag: %r", data)
         return None
+    return ProfileSuggestion(
+        changes=[
+            ProfileChange(old=entry["alt"], new=entry["neu"], reason=entry["grund"])
+            for entry in changes
+        ],
+        model_errors=list(model_errors),
+    )
+
+
+def _is_change(entry: object) -> bool:
+    return isinstance(entry, dict) and all(
+        isinstance(entry.get(key), str) for key in ("alt", "neu", "grund")
+    )
+
+
+def _is_text_list(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
 
 
 def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list[ProfileChange]]:

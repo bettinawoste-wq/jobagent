@@ -214,6 +214,12 @@ def test_suggestion_is_parsed() -> None:
         {"modellfehler": []},
         {"aenderungen": [{"alt": "a", "neu": "b"}], "modellfehler": []},
         {"aenderungen": ["keine Aenderung"], "modellfehler": []},
+        {"aenderungen": "keine Aenderung", "modellfehler": []},
+        {"aenderungen": [{"alt": 1, "neu": "b", "grund": "c"}], "modellfehler": []},
+        {"aenderungen": [{"alt": "a", "neu": None, "grund": "c"}], "modellfehler": []},
+        {"aenderungen": [{"alt": "a", "neu": "b", "grund": ["c"]}], "modellfehler": []},
+        {"aenderungen": [_CHANGE], "modellfehler": "KPMG falsch gelesen"},
+        {"aenderungen": [_CHANGE], "modellfehler": [1]},
     ],
 )
 def test_suggestion_returns_none_on_errors(answer: dict | LanguageModelError) -> None:
