@@ -1,4 +1,10 @@
-"""Kommando fuer Rueckmeldungen: Bewerbungen, Bewerbungsstatus und eigener Score."""
+"""Rückmeldung: Bewerbungen, Bewerbungsstatus und eigener Score.
+
+`main` ist Kommandozeile und Zusammenbau: Nur dort werden die Argumente gelesen, der Store
+geöffnet und das Datum bestimmt. Die Logik dahinter (`change_application_for_match`,
+`change_application_for_position` und `save_feedback_for_match`) bekommt Store und Datum
+übergeben.
+"""
 
 import argparse
 import copy
@@ -7,15 +13,21 @@ import sys
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
+from typing import Final, Literal
 
 from jobagent import store
 from jobagent.position import position_key
-from jobagent.store import Store
+from jobagent.store import ApplicationStatus, Store
 
 _DB_PATH = Path("jobagent.db")
 
-_STATUSES = [str(status) for status in store.ApplicationStatus]
-_WITHDRAW_ENTRY = "zurücknehmen"
+WITHDRAW_ENTRY: Final = "zurücknehmen"
+
+# Was eine Rückmeldung mit der Bewerbung tut: einen Bewerbungsstatus setzen oder sie
+# zurücknehmen, also löschen, als hätte es sie nie gegeben.
+type Action = ApplicationStatus | Literal["zurücknehmen"]
+
+_STATUSES = [str(status) for status in ApplicationStatus]
 _SCORE = "score"
 
 _REPORT_NAME = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -33,6 +45,9 @@ Beispiele:
 
 class FeedbackError(Exception):
     """Ein Aufruf, der sich nicht ausfuehren laesst; die Meldung ist fuer die Nutzerin."""
+
+
+# Kommandozeile und Zusammenbau
 
 
 def main(
@@ -79,7 +94,7 @@ def _match_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(usage=_USAGE, formatter_class=_HelpFormatter)
     parser.add_argument("report")
     parser.add_argument("number", metavar="nummer", type=int)
-    parser.add_argument("action", metavar="aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY, _SCORE])
+    parser.add_argument("action", metavar="aktion", choices=[*_STATUSES, WITHDRAW_ENTRY, _SCORE])
     parser.add_argument("values", metavar="werte", nargs="*")
     parser.add_argument("--am", dest="applied_on", metavar="AM")
     return parser
@@ -87,7 +102,7 @@ def _match_parser() -> argparse.ArgumentParser:
 
 def _manual_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(usage=_USAGE, formatter_class=_HelpFormatter)
-    parser.add_argument("action", metavar="aktion", choices=[*_STATUSES, _WITHDRAW_ENTRY])
+    parser.add_argument("action", metavar="aktion", choices=[*_STATUSES, WITHDRAW_ENTRY])
     parser.add_argument("--firma", dest="company", metavar="FIRMA", required=True)
     parser.add_argument("--titel", dest="title", metavar="TITEL", required=True)
     parser.add_argument("--am", dest="applied_on", metavar="AM")
@@ -96,80 +111,36 @@ def _manual_parser() -> argparse.ArgumentParser:
 
 def _match_command(db: Store, args: argparse.Namespace, today: date) -> str:
     report_name = args.report.removesuffix(".md")
-    match = db.find_match(report_name, args.number)
-    if match is None:
-        raise FeedbackError(
-            f"Treffer {args.number} in Report {report_name} nicht gefunden. Reports vor "
-            "Version 0.3.0 haben keine Nummern; erfasse die Bewerbung dann mit --firma und --titel."
-        )
-
     if args.action == _SCORE:
-        return _save_score(db, match, args.values, today)
+        score = _parse_score(args.values)
+        reason = " ".join(args.values[1:]) or None
+        return save_feedback_for_match(db, report_name, args.number, score, reason, today)
 
     if args.values:
         raise FeedbackError(f"Unerwartete Angaben nach {args.action}: {' '.join(args.values)}")
-
-    application = store.NewApplication(
-        position_key=position_key(match.company, match.title),
-        company=match.company,
-        title=match.title,
-        job_ad_id=match.id,
+    return change_application_for_match(
+        db,
+        report_name,
+        args.number,
+        _action(args.action),
+        applied_on=_parse_date(args.applied_on),
+        today=today,
     )
-    application_id = db.application_for_job_ad(match.id)
-    return _change_application(db, application_id, application, args, today)
 
 
 def _manual_command(db: Store, args: argparse.Namespace, today: date) -> str:
-    application = store.NewApplication(
-        position_key=position_key(args.company, args.title),
-        company=args.company,
-        title=args.title,
-        job_ad_id=None,
+    return change_application_for_position(
+        db,
+        args.company,
+        args.title,
+        _action(args.action),
+        applied_on=_parse_date(args.applied_on),
+        today=today,
     )
-    application_id = db.latest_application_id(application.position_key)
-    return _change_application(db, application_id, application, args, today)
 
 
-def _change_application(
-    db: Store,
-    application_id: int | None,
-    application: store.NewApplication,
-    args: argparse.Namespace,
-    today: date,
-) -> str:
-    applied_on = _parse_date(args.applied_on)
-    if applied_on is not None and args.action != "beworben":
-        raise FeedbackError("--am gibt es nur zusammen mit beworben.")
-
-    label = f"{application.title} ({application.company or 'unbekannt'})"
-
-    if application_id is None:
-        if args.action != "beworben":
-            raise FeedbackError(
-                f"Zu {label} gibt es noch keine Bewerbung. Erfasse sie zuerst mit beworben."
-            )
-        applied = applied_on or today
-        db.create_application(application, args.action, applied)
-        return f"Bewerbung gespeichert: {label}, beworben am {applied.isoformat()}"
-
-    if args.action == _WITHDRAW_ENTRY:
-        db.delete_application(application_id)
-        return f"Bewerbung zurückgenommen: {label}"
-
-    db.update_application(application_id, args.action, applied_on)
-    return f"Status geändert: {label} ist jetzt {args.action}"
-
-
-def _save_score(
-    db: Store,
-    match: store.StoredMatch,
-    values: list[str],
-    today: date,
-) -> str:
-    score = _parse_score(values)
-    reason = " ".join(values[1:]) or None
-    db.save_feedback(match.id, score, reason, today)
-    return f"Feedback gespeichert: {match.title} bekommt von dir Score {score}"
+def _action(text: str) -> Action:
+    return WITHDRAW_ENTRY if text == WITHDRAW_ENTRY else ApplicationStatus(text)
 
 
 def _parse_score(values: list[str]) -> int:
@@ -185,6 +156,112 @@ def _parse_date(text: str | None) -> date | None:
         return date.fromisoformat(text)
     except ValueError:
         raise FeedbackError(f"Datum im Format JJJJ-MM-TT erwartet, bekam: {text}") from None
+
+
+# Logik: bekommt Store und Datum übergeben
+
+
+def change_application_for_match(
+    db: Store,
+    report_name: str,
+    match_number: int,
+    action: Action,
+    *,
+    applied_on: date | None,
+    today: date,
+) -> str:
+    """Ändert die Bewerbung auf den Treffer `match_number` im Report `report_name`.
+
+    Gibt die Meldung für die Nutzerin zurück; wirft `FeedbackError`, wenn sich die
+    Rückmeldung nicht ausführen lässt.
+    """
+    match = _find_match(db, report_name, match_number)
+    application = store.NewApplication(
+        position_key=position_key(match.company, match.title),
+        company=match.company,
+        title=match.title,
+        job_ad_id=match.id,
+    )
+    application_id = db.application_for_job_ad(match.id)
+    return _change_application(db, application_id, application, action, applied_on, today)
+
+
+def change_application_for_position(
+    db: Store,
+    company: str,
+    title: str,
+    action: Action,
+    *,
+    applied_on: date | None,
+    today: date,
+) -> str:
+    """Ändert die Bewerbung auf die Stelle aus `company` und `title`, ohne Treffer.
+
+    Gemeint ist die letzte Bewerbung auf diese Stelle, auch bei anderer Schreibweise.
+    Gibt die Meldung für die Nutzerin zurück; wirft `FeedbackError` wie oben.
+    """
+    application = store.NewApplication(
+        position_key=position_key(company, title),
+        company=company,
+        title=title,
+        job_ad_id=None,
+    )
+    application_id = db.latest_application_id(application.position_key)
+    return _change_application(db, application_id, application, action, applied_on, today)
+
+
+def save_feedback_for_match(
+    db: Store,
+    report_name: str,
+    match_number: int,
+    score: int,
+    reason: str | None,
+    today: date,
+) -> str:
+    """Speichert den eigenen Score zu einem Treffer; das Feedback gilt wieder als offen."""
+    match = _find_match(db, report_name, match_number)
+    db.save_feedback(match.id, score, reason, today)
+    return f"Feedback gespeichert: {match.title} bekommt von dir Score {score}"
+
+
+def _find_match(db: Store, report_name: str, match_number: int) -> store.StoredMatch:
+    match = db.find_match(report_name, match_number)
+    if match is None:
+        raise FeedbackError(
+            f"Treffer {match_number} in Report {report_name} nicht gefunden. Reports vor "
+            "Version 0.3.0 haben keine Nummern; erfasse die Bewerbung dann mit --firma und --titel."
+        )
+    return match
+
+
+def _change_application(
+    db: Store,
+    application_id: int | None,
+    application: store.NewApplication,
+    action: Action,
+    applied_on: date | None,
+    today: date,
+) -> str:
+    if applied_on is not None and action != ApplicationStatus.APPLIED:
+        raise FeedbackError("--am gibt es nur zusammen mit beworben.")
+
+    label = f"{application.title} ({application.company or 'unbekannt'})"
+
+    if application_id is None:
+        if action != ApplicationStatus.APPLIED:
+            raise FeedbackError(
+                f"Zu {label} gibt es noch keine Bewerbung. Erfasse sie zuerst mit beworben."
+            )
+        applied = applied_on or today
+        db.create_application(application, action, applied)
+        return f"Bewerbung gespeichert: {label}, beworben am {applied.isoformat()}"
+
+    if action == WITHDRAW_ENTRY:
+        db.delete_application(application_id)
+        return f"Bewerbung zurückgenommen: {label}"
+
+    db.update_application(application_id, action, applied_on)
+    return f"Status geändert: {label} ist jetzt {action}"
 
 
 if __name__ == "__main__":
