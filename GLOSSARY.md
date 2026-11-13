@@ -43,10 +43,20 @@ Die eigene Beschreibung von gesuchten Rollen, Stärken, Lücken und Ausschlüsse
 _Im Code_: `SearchProfile`
 _Avoid_: Profil, Lebenslauf
 
+**Sprachmodell**:
+Das Modell, das Anzeigen bewertet und Profil-Vorschläge ableitet.
+_Im Code_: `LanguageModel`
+_Avoid_: LLM, Provider, KI
+
 **Bewertung**:
-Das Urteil des Modells zu einer Anzeige, bestehend aus Score, Passendem, Unpassendem, Lücken und Kurzfazit.
+Das Urteil des Sprachmodells zu einer Anzeige, bestehend aus Score, Passendem, Unpassendem, Lücken und Kurzfazit.
 _Im Code_: `Assessment`
-_Avoid_: Rating, Analyse
+_Avoid_: Rating, Analyse, Analyzer, Scoring
+
+**Unbewertete Anzeige**:
+Eine Anzeige, die ein Lauf gefunden, aber nicht bewertet hat; sie gilt als ungesehen und kommt im nächsten Lauf erneut.
+_Im Code_: `unassessed`
+_Avoid_: übersprungen, fehlerhaft
 
 **Score**:
 Die Passung einer Anzeige zum Suchprofil auf einer Skala von 1 bis 5; Bewerbungen und andere Umstände verändern ihn nicht.
@@ -57,7 +67,7 @@ _Avoid_: Rang, Punkte
 
 **Lauf**:
 Ein Durchgang aus Suchen, Bewerten und Report-Schreiben, der genau einen Report erzeugt.
-_Im Code_: `Run`
+_Im Code_: `run`
 _Avoid_: Durchlauf, Testlauf
 
 **Demo-Lauf**:
