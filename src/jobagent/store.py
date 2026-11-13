@@ -205,7 +205,7 @@ class Store:
             return None
         return KnownApplication(row[0], date.fromisoformat(row[1]), row[2])
 
-    def latest_application(self, position_key: str) -> int | None:
+    def latest_application_id(self, position_key: str) -> int | None:
         """ID der letzten Bewerbung auf diese Stelle, auch einer zurueckgezogenen.
 
         Fuer die Rueckmeldung: Eine erneute Bewerbung nach dem Zurueckziehen
@@ -226,7 +226,7 @@ class Store:
         return row[0] if row else None
 
     def create_application(
-        self, application: NewApplication, status: str, applied_on: date
+        self, application: NewApplication, status: ApplicationStatus, applied_on: date
     ) -> None:
         self._conn.execute(
             "INSERT INTO bewerbungen (stelle, firma, titel, anzeige_id, status, beworben_am) "
@@ -242,7 +242,9 @@ class Store:
         )
         self._conn.commit()
 
-    def update_application(self, application_id: int, status: str, applied_on: date | None) -> None:
+    def update_application(
+        self, application_id: int, status: ApplicationStatus, applied_on: date | None
+    ) -> None:
         """Setzt den Status; das Bewerbungsdatum aendert sich nur, wenn eines angegeben ist."""
         self._conn.execute(
             "UPDATE bewerbungen SET status = ?, beworben_am = COALESCE(?, beworben_am) "

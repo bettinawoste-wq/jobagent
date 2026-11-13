@@ -198,7 +198,7 @@ def test_delete_application_removes_it(store: Store) -> None:
     store.delete_application(1)
 
     assert store.application_for_job_ad("a-1") is None
-    assert store.latest_application("beispiel gmbh|dev") is None
+    assert store.latest_application_id("beispiel gmbh|dev") is None
 
 
 def test_open_feedback_returns_assessment_with_english_fields(store: Store) -> None:
@@ -383,7 +383,7 @@ def test_database_from_old_code_can_be_read_and_written(db_path: Path) -> None:
         assert store.is_new("a-1") is False
         assert store.find_match("2026-11-01", 1) == StoredMatch("a-1", "Data Engineer", "Firma X")
         assert store.application_for_job_ad("a-1") == 1
-        assert store.latest_application("firma x|data engineer") == 1
+        assert store.latest_application_id("firma x|data engineer") == 1
         assert store.current_application("firma x|data engineer") == KnownApplication(
             ApplicationStatus.APPLIED, date(2026, 11, 1), "hash-1"
         )
@@ -462,15 +462,15 @@ def test_current_application_skips_withdrawn_latest_application_does_not(store: 
     assert store.current_application("beispiel gmbh|dev") == KnownApplication(
         ApplicationStatus.INTERVIEW, date(2026, 11, 1), None
     )
-    assert store.latest_application("beispiel gmbh|dev") == 2
+    assert store.latest_application_id("beispiel gmbh|dev") == 2
 
 
 def test_no_current_application_when_only_withdrawn(store: Store) -> None:
     _applications_on(store, ("a-1", ApplicationStatus.WITHDRAWN, date(2026, 11, 1)))
 
     assert store.current_application("beispiel gmbh|dev") is None
-    assert store.latest_application("beispiel gmbh|dev") == 1
-    assert store.latest_application("andere firma|dev") is None
+    assert store.latest_application_id("beispiel gmbh|dev") == 1
+    assert store.latest_application_id("andere firma|dev") is None
 
 
 def test_only_the_store_module_knows_sqlite() -> None:

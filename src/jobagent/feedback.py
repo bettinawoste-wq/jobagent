@@ -126,7 +126,7 @@ def _manual_command(db: Store, args: argparse.Namespace, today: date) -> str:
         title=args.title,
         job_ad_id=None,
     )
-    application_id = db.latest_application(application.position_key)
+    application_id = db.latest_application_id(application.position_key)
     return _change_application(db, application_id, application, args, today)
 
 

@@ -324,7 +324,7 @@ def _manual(
 ) -> None:
     """Bewerbung ohne Treffer, wie `beworben --firma ... --titel ...`, oder Statuswechsel."""
     key = position_key(company, title)
-    application_id = db.latest_application(key)
+    application_id = db.latest_application_id(key)
     if application_id is None:
         application = NewApplication(key, company, title, None)
         db.create_application(application, ApplicationStatus.APPLIED, TODAY)
@@ -443,7 +443,7 @@ def _applied_days_ago(
     application = NewApplication(position_key("Firma X", "Dev"), "Firma X", "Dev", None)
     db.create_application(application, ApplicationStatus.APPLIED, TODAY - timedelta(days=days))
     if status != ApplicationStatus.APPLIED:
-        db.update_application(db.latest_application(application.position_key), status, None)
+        db.update_application(db.latest_application_id(application.position_key), status, None)
 
 
 @pytest.mark.parametrize(
