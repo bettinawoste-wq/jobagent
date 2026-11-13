@@ -114,7 +114,9 @@ def _match_command(db: Store, args: argparse.Namespace, today: date) -> str:
     if args.action == _SCORE:
         score = _parse_score(args.values)
         reason = " ".join(args.values[1:]) or None
-        return save_feedback_for_match(db, report_name, args.number, score, reason, today)
+        return save_feedback_for_match(
+            db, report_name, args.number, score=score, reason=reason, today=today
+        )
 
     if args.values:
         raise FeedbackError(f"Unerwartete Angaben nach {args.action}: {' '.join(args.values)}")
@@ -122,7 +124,7 @@ def _match_command(db: Store, args: argparse.Namespace, today: date) -> str:
         db,
         report_name,
         args.number,
-        _action(args.action),
+        _parse_action(args.action),
         applied_on=_parse_date(args.applied_on),
         today=today,
     )
@@ -133,13 +135,13 @@ def _manual_command(db: Store, args: argparse.Namespace, today: date) -> str:
         db,
         args.company,
         args.title,
-        _action(args.action),
+        _parse_action(args.action),
         applied_on=_parse_date(args.applied_on),
         today=today,
     )
 
 
-def _action(text: str) -> Action:
+def _parse_action(text: str) -> Action:
     return WITHDRAW_ENTRY if text == WITHDRAW_ENTRY else ApplicationStatus(text)
 
 
@@ -214,6 +216,7 @@ def save_feedback_for_match(
     db: Store,
     report_name: str,
     match_number: int,
+    *,
     score: int,
     reason: str | None,
     today: date,

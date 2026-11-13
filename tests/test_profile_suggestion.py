@@ -250,12 +250,30 @@ def test_suggestion_is_parsed() -> None:
         {"aenderungen": [{"alt": 1, "neu": "b", "grund": "c"}], "modellfehler": []},
         {"aenderungen": [{"alt": "a", "neu": None, "grund": "c"}], "modellfehler": []},
         {"aenderungen": [{"alt": "a", "neu": "b", "grund": ["c"]}], "modellfehler": []},
-        {"aenderungen": [_CHANGE], "modellfehler": "KPMG falsch gelesen"},
-        {"aenderungen": [_CHANGE], "modellfehler": [1]},
     ],
 )
 def test_suggestion_returns_none_on_errors(answer: dict | LanguageModelError) -> None:
     assert create_suggestion(_PROFILE, [_feedback()], FakeLanguageModel(answer)) is None
+
+
+@pytest.mark.parametrize(
+    ("model_errors", "expected"),
+    [
+        ("KPMG falsch gelesen", ["KPMG falsch gelesen"]),
+        ([1, "zwei"], ["1", "zwei"]),
+        ({"a-1": "falsch gelesen"}, []),
+    ],
+)
+def test_suggestion_keeps_changes_despite_sloppy_model_errors(
+    model_errors: object, expected: list[str]
+) -> None:
+    answer = {"aenderungen": [_CHANGE], "modellfehler": model_errors}
+
+    suggestion = create_suggestion(_PROFILE, [_feedback()], FakeLanguageModel(answer))
+
+    assert suggestion is not None
+    assert len(suggestion.changes) == 1
+    assert suggestion.model_errors == expected
 
 
 def test_accepting_changes_profile_backs_up_and_processes(

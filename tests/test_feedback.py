@@ -205,14 +205,16 @@ def test_match_can_be_new_application_for_known_position(db: Store, db_path: Pat
 
 
 def test_feedback_with_reason(db: Store, db_path: Path) -> None:
-    message = save_feedback_for_match(db, _REPORT, 2, 4, "Dienstleister ist okay", _TODAY)
+    message = save_feedback_for_match(
+        db, _REPORT, 2, score=4, reason="Dienstleister ist okay", today=_TODAY
+    )
 
     assert _feedback(db_path) == [("a-2", 4, "Dienstleister ist okay", "2026-11-08", 0)]
     assert message == "Feedback gespeichert: Consultant bekommt von dir Score 4"
 
 
 def test_feedback_without_reason(db: Store, db_path: Path) -> None:
-    save_feedback_for_match(db, _REPORT, 2, 1, None, _TODAY)
+    save_feedback_for_match(db, _REPORT, 2, score=1, reason=None, today=_TODAY)
 
     assert _feedback(db_path) == [("a-2", 1, None, "2026-11-08", 0)]
 
@@ -220,17 +222,17 @@ def test_feedback_without_reason(db: Store, db_path: Path) -> None:
 def test_new_feedback_replaces_old_and_counts_as_unprocessed_again(
     db: Store, db_path: Path
 ) -> None:
-    save_feedback_for_match(db, _REPORT, 2, 1, None, _TODAY)
+    save_feedback_for_match(db, _REPORT, 2, score=1, reason=None, today=_TODAY)
     db.mark_feedback_processed(["a-2"])
 
-    save_feedback_for_match(db, _REPORT, 2, 5, "Doch gut", _TODAY)
+    save_feedback_for_match(db, _REPORT, 2, score=5, reason="Doch gut", today=_TODAY)
 
     assert _feedback(db_path) == [("a-2", 5, "Doch gut", "2026-11-08", 0)]
 
 
 def test_feedback_for_unknown_match_is_error(db: Store, db_path: Path) -> None:
     with pytest.raises(FeedbackError, match="Treffer 99"):
-        save_feedback_for_match(db, _REPORT, 99, 4, None, _TODAY)
+        save_feedback_for_match(db, _REPORT, 99, score=4, reason=None, today=_TODAY)
 
     assert _feedback(db_path) == []
 

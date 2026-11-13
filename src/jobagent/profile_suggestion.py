@@ -117,23 +117,23 @@ def _as_model_data(feedback: store.Feedback) -> dict:
 
 
 def _to_suggestion(data: dict) -> ProfileSuggestion | None:
-    # Das Sprachmodell prüft nur die Pflichtschlüssel; die Typen prüft erst diese Stelle,
-    # damit z.B. ein `alt`, das kein Text ist, nicht erst in apply_changes scheitert.
+    # Das Sprachmodell prüft nur die Pflichtschlüssel; die Typen prüft erst diese Stelle.
+    # Streng bei den Änderungen, damit z.B. ein `alt`, das kein Text ist, nicht erst in
+    # apply_changes scheitert. Nachsichtig bei den Modellfehlern, die nur angezeigt werden.
     changes = data["aenderungen"]
-    model_errors = data["modellfehler"]
-    if not (
-        isinstance(changes, list)
-        and all(_is_change(entry) for entry in changes)
-        and _is_text_list(model_errors)
-    ):
+    if not (isinstance(changes, list) and all(_is_change(entry) for entry in changes)):
         logger.error("Ungueltiger Profil-Vorschlag: %r", data)
         return None
+    model_errors = _as_texts(data["modellfehler"])
+    if model_errors is None:
+        logger.warning("Modellfehler im Profil-Vorschlag unlesbar, ignoriert: %r", data)
+        model_errors = []
     return ProfileSuggestion(
         changes=[
             ProfileChange(old=entry["alt"], new=entry["neu"], reason=entry["grund"])
             for entry in changes
         ],
-        model_errors=list(model_errors),
+        model_errors=model_errors,
     )
 
 
@@ -143,8 +143,13 @@ def _is_change(entry: object) -> bool:
     )
 
 
-def _is_text_list(value: object) -> bool:
-    return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
+def _as_texts(value: object) -> list[str] | None:
+    # Ein einzelner Text gilt als ein Eintrag, statt zeichenweise ausgegeben zu werden.
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(entry) for entry in value]
+    return None
 
 
 def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list[ProfileChange]]:
