@@ -1,0 +1,145 @@
+"""Der Lauf: suchen, deduplizieren, bewerten, Report schreiben.
+
+Der Lauf bekommt alles übergeben, was er braucht, und liest selbst weder Dateien noch Uhr
+noch Umgebung. Zusammengebaut wird er in `jobagent.main`.
+"""
+
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+
+from jobagent import report
+from jobagent.config import Config
+from jobagent.job_ad import JobAd
+from jobagent.language_model import LanguageModel
+from jobagent.position import position_key
+from jobagent.score import score_job_ad
+from jobagent.sources import SearchResult, Source
+from jobagent.store import Store, description_hash
+
+logger = logging.getLogger(__name__)
+
+_PROFILE_SUGGESTION_MIN_FEEDBACK = 5
+
+
+@dataclass(frozen=True, slots=True)
+class SourceStatus:
+    """Was eine Quelle in diesem Lauf geliefert hat; steht im Quellenstatus des Reports."""
+
+    name: str
+    count: int
+    errors: list[str] = field(default_factory=list)
+
+
+def run(
+    *,
+    sources: Sequence[Source],
+    language_model: LanguageModel,
+    profile: str,
+    store: Store,
+    config: Config,
+    today: date,
+    output_dir: Path,
+) -> Path:
+    """Führt einen Lauf aus und gibt den Pfad des geschriebenen Reports zurück.
+
+    Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `profile`.
+    """
+    job_ads, source_status = _search_all(sources, config.keywords)
+    new_matches = _new_matches(store, job_ads, language_model, profile, today)
+    written = report.write_report(
+        new_matches,
+        today,
+        output_dir,
+        sources=source_status,
+        min_score=config.min_score,
+        applications=_already_applied(store, new_matches),
+        follow_ups=store.follow_up_reminders(
+            today,
+            min_days=config.follow_up_min_days,
+            max_days=config.follow_up_max_days,
+        ),
+        open_feedback=_open_feedback(store),
+    )
+    store.save_match_numbers(written.path.stem, written.match_numbers)
+    return written.path
+
+
+def _new_matches(
+    store: Store,
+    job_ads: list[JobAd],
+    language_model: LanguageModel,
+    profile: str,
+    today: date,
+) -> list[report.Match]:
+    matches: list[report.Match] = []
+
+    for job_ad in job_ads:
+        if not store.is_new(job_ad.id):
+            continue
+
+        assessment = score_job_ad(job_ad, profile, language_model)
+        if assessment is None:
+            logger.warning("Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", job_ad.id)
+            continue
+
+        store.remember_job_ad(job_ad, assessment, today)
+        matches.append((job_ad, assessment))
+
+    return matches
+
+
+def _open_feedback(store: Store) -> int:
+    count = store.count_open_feedback()
+    return count if count >= _PROFILE_SUGGESTION_MIN_FEEDBACK else 0
+
+
+def _already_applied(store: Store, matches: list[report.Match]) -> dict[str, report.AlreadyApplied]:
+    result: dict[str, report.AlreadyApplied] = {}
+    for job_ad, _ in matches:
+        if not job_ad.company:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
+            continue
+        application = store.current_application(position_key(job_ad.company, job_ad.title))
+        if application is not None:
+            result[job_ad.id] = report.AlreadyApplied(
+                application.status,
+                application.applied_on,
+                _text_differs(description_hash(job_ad.description), application.description_hash),
+            )
+    return result
+
+
+def _text_differs(new: str | None, at_application: str | None) -> str:
+    if new is None or at_application is None:
+        return "Text nicht vergleichbar"
+    return "Text identisch" if new == at_application else "Text weicht von deiner Bewerbung ab"
+
+
+def _search_all(
+    sources: Sequence[Source], keywords: list[str]
+) -> tuple[list[JobAd], list[SourceStatus]]:
+    found: dict[str, JobAd] = {}
+    status: list[SourceStatus] = []
+
+    for source in sources:
+        result = _safe_search(source, keywords)
+        ids = {job_ad.id for job_ad in result.job_ads}
+        for job_ad in result.job_ads:
+            found.setdefault(job_ad.id, job_ad)
+        errors = list(dict.fromkeys(result.errors))  # doppelte weg, Reihenfolge bleibt
+        status.append(SourceStatus(source.name, len(ids), errors))
+
+    return list(found.values()), status
+
+
+def _safe_search(source: Source, keywords: list[str]) -> SearchResult:
+    # Bekannte Netzwerk- und API-Fehler behandelt die Quelle selbst. Dieses Netz faengt
+    # z.B. ein geaendertes Antwortformat ab: Eine Quelle darf den Lauf nie abbrechen.
+    try:
+        return source.search(keywords)
+    except Exception:
+        logger.exception("Unerwarteter Fehler in Quelle %r", source.name)
+        # Wie bei Arbeitnow nennt der Fehler alle Suchbegriffe, denen die Suche galt.
+        return SearchResult([], [f"{', '.join(keywords)}: unerwarteter Fehler"])

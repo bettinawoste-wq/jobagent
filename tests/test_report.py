@@ -4,8 +4,8 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from jobagent.job_ad import JobAd
-from jobagent.main import SourceStatus
 from jobagent.report import AlreadyApplied, write_report
+from jobagent.run import SourceStatus
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
 

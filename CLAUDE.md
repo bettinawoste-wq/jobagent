@@ -10,7 +10,8 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 
 ## Wegweiser
 - `src/jobagent/sources/`: Quellen als Adapter am Seam `Source`. Vor jeder Arbeit dort oder an den Fixtures: `docs/quellen.md`
-- `src/jobagent/main.py`: der Lauf (suchen, dedupe, bewerten, Report) und `default_sources`, die die eingebauten Quellen aus der Konfiguration baut
+- `src/jobagent/run.py`: der Lauf `run` (suchen, dedupe, bewerten, Report); bekommt alles übergeben
+- `src/jobagent/main.py`: Kommandozeile und Zusammenbau des Laufs und Demo-Laufs, dazu `default_sources`, die die eingebauten Quellen aus der Konfiguration baut
 - `src/jobagent/demo.py`: Demo-Lauf, im README zitiert; nur Fantasiefirmen und `example.com`
 - `GLOSSARY.md`: Fachbegriffe mit ihrem Namen im Code
 - `CODING_STANDARDS.md`: Ermessensregeln, gegen die jedes Review prüft

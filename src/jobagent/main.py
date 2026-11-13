@@ -1,47 +1,34 @@
-"""Ablauf: suchen, dedupe, score, report."""
+"""Kommandozeile und Zusammenbau des Laufs.
+
+Hier, und nur hier, werden Konfiguration und Suchprofil gelesen, Quellen, Sprachmodell und
+Store gebaut und das Datum bestimmt. Der Lauf selbst steht in `jobagent.run`.
+"""
 
 import argparse
 import io
 import logging
 import sys
 import tempfile
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
 import httpx
 
-from jobagent import demo, report, score, store
+from jobagent import demo, report
 from jobagent.config import Config, load_config
-from jobagent.job_ad import JobAd
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel
-from jobagent.position import position_key
-from jobagent.sources import SearchResult, Source
+from jobagent.run import run
+from jobagent.sources import Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
 from jobagent.sources.watchlist import WatchlistSource
 from jobagent.store import Store
 
-logger = logging.getLogger(__name__)
-
 _CONFIG_PATH = Path("config.toml")
 _PROFILE_PATH = Path("profile.md")
 _DB_PATH = Path("jobagent.db")
-_PROFILE_SUGGESTION_MIN_FEEDBACK = 5
 _ASSESSMENT_MODEL = "claude-haiku-4-5-20251001"  # Haiku für die Bewertung (ADR 0004)
-
-Assess = Callable[[JobAd], score.Assessment | None]
-"""Bewertet eine Anzeige; None heisst: diesmal nicht bewertbar, naechster Lauf versucht es neu."""
-
-
-@dataclass(frozen=True, slots=True)
-class SourceStatus:
-    """Was eine Quelle in diesem Lauf geliefert hat; steht im Quellenstatus des Reports."""
-
-    name: str
-    count: int
-    errors: list[str] = field(default_factory=list)
 
 
 def main(
@@ -50,119 +37,32 @@ def main(
     profile_path: Path = _PROFILE_PATH,
     db_path: Path = _DB_PATH,
     output_dir: Path = report.OUTPUT_DIR,
-    config: Config | None = None,
     sources: Sequence[Source] | None = None,
     language_model: LanguageModel | None = None,
 ) -> Path:
-    """Fuehrt einen Lauf aus: suchen, deduplizieren, bewerten, Report schreiben.
+    """Baut einen echten Lauf zusammen, führt ihn aus und gibt den Pfad des Reports zurück.
 
-    Ohne `config`, `sources` und `language_model` gilt `config.toml`, die eingebauten
-    Quellen und Haiku von Anthropic. Wer sie angibt, ersetzt sie: Dann wird die jeweilige
-    Datei nicht gelesen und das jeweilige Netz bzw. Modell nicht gefragt. Bewertet wird
-    immer gegen das Suchprofil in `profile_path`.
+    Ohne `sources` und `language_model` gelten die eingebauten Quellen aus `config_path`
+    und Haiku von Anthropic; wer sie angibt, ersetzt sie, dann fragt der Lauf weder das
+    Netz noch das echte Sprachmodell.
     """
-    logging.basicConfig(level=logging.INFO)
-
-    if config is None:
-        config = load_config(config_path)
+    config = load_config(config_path)
     if sources is None:
         sources = default_sources(config)
     if language_model is None:
         language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
-    assess = _assessment_by(language_model, profile_path.read_text(encoding="utf-8"))
-    today = date.today()
+    profile = profile_path.read_text(encoding="utf-8")
 
-    with Store(db_path) as db:
-        job_ads, source_status = _search_all(sources, config.keywords)
-        new_matches = _new_matches(db, job_ads, assess, today)
-        written = report.write_report(
-            new_matches,
-            today,
-            output_dir,
-            sources=source_status,
-            min_score=config.min_score,
-            applications=_already_applied(db, new_matches),
-            follow_ups=db.follow_up_reminders(
-                today,
-                min_days=config.follow_up_min_days,
-                max_days=config.follow_up_max_days,
-            ),
-            open_feedback=_open_feedback(db),
+    with Store(db_path) as store:
+        return run(
+            sources=sources,
+            language_model=language_model,
+            profile=profile,
+            store=store,
+            config=config,
+            today=date.today(),
+            output_dir=output_dir,
         )
-        db.save_match_numbers(written.path.stem, written.match_numbers)
-        return written.path
-
-
-def _assessment_by(language_model: LanguageModel, profile: str) -> Assess:
-    return lambda job_ad: score.score_job_ad(job_ad, profile, language_model)
-
-
-def _new_matches(
-    db: Store,
-    job_ads: list[JobAd],
-    assess: Assess,
-    today: date,
-) -> list[report.Match]:
-    matches: list[report.Match] = []
-
-    for job_ad in job_ads:
-        if not db.is_new(job_ad.id):
-            continue
-
-        assessment = assess(job_ad)
-        if assessment is None:
-            logger.warning("Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", job_ad.id)
-            continue
-
-        db.remember_job_ad(job_ad, assessment, today)
-        matches.append((job_ad, assessment))
-
-    return matches
-
-
-def _open_feedback(db: Store) -> int:
-    count = db.count_open_feedback()
-    return count if count >= _PROFILE_SUGGESTION_MIN_FEEDBACK else 0
-
-
-def _already_applied(db: Store, matches: list[report.Match]) -> dict[str, report.AlreadyApplied]:
-    result: dict[str, report.AlreadyApplied] = {}
-    for job_ad, _ in matches:
-        if not job_ad.company:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
-            continue
-        application = db.current_application(position_key(job_ad.company, job_ad.title))
-        if application is not None:
-            result[job_ad.id] = report.AlreadyApplied(
-                application.status,
-                application.applied_on,
-                _text_differs(
-                    store.description_hash(job_ad.description), application.description_hash
-                ),
-            )
-    return result
-
-
-def _text_differs(new: str | None, at_application: str | None) -> str:
-    if new is None or at_application is None:
-        return "Text nicht vergleichbar"
-    return "Text identisch" if new == at_application else "Text weicht von deiner Bewerbung ab"
-
-
-def _search_all(
-    sources: Sequence[Source], keywords: list[str]
-) -> tuple[list[JobAd], list[SourceStatus]]:
-    found: dict[str, JobAd] = {}
-    status: list[SourceStatus] = []
-
-    for source in sources:
-        result = _safe_search(source, keywords)
-        ids = {job_ad.id for job_ad in result.job_ads}
-        for job_ad in result.job_ads:
-            found.setdefault(job_ad.id, job_ad)
-        errors = list(dict.fromkeys(result.errors))  # doppelte weg, Reihenfolge bleibt
-        status.append(SourceStatus(source.name, len(ids), errors))
-
-    return list(found.values()), status
 
 
 def default_sources(
@@ -181,15 +81,26 @@ def default_sources(
     return sources
 
 
-def _safe_search(source: Source, keywords: list[str]) -> SearchResult:
-    # Bekannte Netzwerk- und API-Fehler behandelt die Quelle selbst. Dieses Netz faengt
-    # z.B. ein geaendertes Antwortformat ab: Eine Quelle darf den Lauf nie abbrechen.
-    try:
-        return source.search(keywords)
-    except Exception:
-        logger.exception("Unerwarteter Fehler in Quelle %r", source.name)
-        # Wie bei Arbeitnow nennt der Fehler alle Suchbegriffe, denen die Suche galt.
-        return SearchResult([], [f"{', '.join(keywords)}: unerwarteter Fehler"])
+def demo_run(output_dir: Path | None = None) -> str:
+    """Baut einen Demo-Lauf aus den Demo-Teilen zusammen und liefert den Report-Text.
+
+    Datenbank und Report liegen in einem temporaeren Ordner, der danach verschwindet;
+    nur mit `output_dir` bleibt der Report zusaetzlich dort als Datei liegen.
+    """
+    today = date.today()
+    with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:
+        with Store(Path(temp) / "demo.db") as store:
+            demo.create_applications(store, today)
+            path = run(
+                sources=demo.sources(),
+                language_model=demo.DemoLanguageModel(),
+                profile=demo.SEARCH_PROFILE,
+                store=store,
+                config=demo.CONFIG,
+                today=today,
+                output_dir=output_dir or Path(temp),
+            )
+        return path.read_text(encoding="utf-8")
 
 
 def cli(argv: list[str] | None = None) -> None:
@@ -212,33 +123,11 @@ def cli(argv: list[str] | None = None) -> None:
     if args.output is not None and not args.demo:
         parser.error("--ausgabe gibt es nur zusammen mit --demo")
 
+    logging.basicConfig(level=logging.INFO)
     if args.demo:
         _write_utf8(demo_run(args.output))
     else:
         main()
-
-
-def demo_run(output_dir: Path | None = None) -> str:
-    """Fuehrt einen Demo-Lauf aus und liefert den Report-Text.
-
-    Datenbank und Report liegen in einem temporaeren Ordner, der danach verschwindet;
-    nur mit `output_dir` bleibt der Report zusaetzlich dort als Datei liegen.
-    """
-    with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:
-        db_path = Path(temp) / "demo.db"
-        profile_path = Path(temp) / "profile.md"
-        profile_path.write_text(demo.SEARCH_PROFILE, encoding="utf-8")
-        with Store(db_path) as db:
-            demo.create_applications(db, date.today())
-        path = main(
-            profile_path=profile_path,
-            db_path=db_path,
-            output_dir=output_dir or Path(temp),
-            config=demo.CONFIG,
-            sources=demo.sources(),
-            language_model=demo.DemoLanguageModel(),
-        )
-        return path.read_text(encoding="utf-8")
 
 
 def _write_utf8(text: str) -> None:

@@ -1,32 +1,36 @@
-"""Tests fuer main.py: Ablauf suchen -> dedupe -> score -> report, mit Fake-Quellen."""
+"""Tests für main.py: Zusammenbau des Laufs und die eingebauten Quellen.
 
-import sqlite3
+Das Verhalten des Laufs selbst prüft `tests/test_run.py`. Hier geht ein ganzer Lauf über den
+Zusammenbau: Konfiguration und Suchprofil aus Dateien, Fake-Quellen und `FakeLanguageModel`,
+aber echtes SQLite und eine echte Report-Datei.
+"""
+
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
-from datetime import date, timedelta
+from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 import httpx
 import pytest
 
-from jobagent import feedback, main
+from jobagent import main
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
+from jobagent.language_model import AnthropicLanguageModel
 from jobagent.score import Assessment
 from jobagent.sources import SearchResult
 from jobagent.sources.watchlist import WatchlistCompany
 from jobagent.store import Store
 from tests.fakes import FakeLanguageModel
 
-# Fester Tag für Tests, deren Ergebnis vom Datum abhängt.
 TODAY = date(2026, 3, 2)
 
 _CONFIG = """
 wo = "München"
 umkreis = 30
 veroeffentlichtseit = 1
-was = ["Softwareentwickler"]
+was = ["Softwareentwickler", "Data"]
+mindest_score = 5
 """
 
 _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
@@ -34,23 +38,29 @@ _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
 
 @dataclass
 class FakeSource:
-    """Quelle am Interface `Source`, die feste Anzeigen und Fehler liefert."""
+    """Quelle am Interface `Source`, die feste Anzeigen liefert und Suchbegriffe festhält."""
 
     job_ads: list[JobAd] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    name: str = "Bundesagentur für Arbeit"
+    name: str = "Quelle A"
     received: list[list[str]] = field(default_factory=list)
 
     def search(self, keywords: list[str]) -> SearchResult:
         self.received.append(keywords)
-        return SearchResult(list(self.job_ads), list(self.errors))
+        return SearchResult(list(self.job_ads), [])
 
 
-class BrokenSource:
-    name = "Bundesagentur für Arbeit"
+def _job_ad(id_: str) -> JobAd:
+    return JobAd(
+        id=id_,
+        title=f"Stelle {id_}",
+        company="Beispiel GmbH",
+        location="München",
+        link=f"https://example.com/{id_}",
+    )
 
-    def search(self, keywords: list[str]) -> SearchResult:
-        raise KeyError("referenznummer")
+
+def _answer(score: int) -> dict:
+    return Assessment(score, ["Python"], [], [], "Passt.").as_model_answer()
 
 
 @pytest.fixture
@@ -67,203 +77,54 @@ def project(tmp_path: Path) -> dict[str, Path]:
     }
 
 
-def _run(project: dict[str, Path], *sources, model: FakeLanguageModel | None = None) -> Path:
-    """Lauf mit Fake-Quellen; ohne `model` bewertet ein Sprachmodell jede Anzeige mit 4."""
-    return main.main(
-        **project, sources=list(sources), language_model=model or FakeLanguageModel(_answer())
-    )
+@pytest.fixture
+def no_builtins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Weder eingebaute Quellen noch das eingebaute Sprachmodell dürfen gefragt werden."""
+
+    def no_network(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Eingebaute Quelle darf nicht aufgerufen werden")
+
+    def no_model(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Eingebautes Sprachmodell darf nicht gefragt werden")
+
+    monkeypatch.setattr(httpx.Client, "send", no_network)
+    monkeypatch.setattr(AnthropicLanguageModel, "ask", no_model)
 
 
-def _job_ad(id_: str) -> JobAd:
-    return JobAd(
-        id=id_,
-        title=f"Stelle {id_}",
-        company="Beispiel GmbH",
-        location="München",
-        link=f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{id_}",
-    )
+def test_main_runs_whole_run_from_files_into_sqlite_and_report(
+    project: dict[str, Path], fixed_today: Callable[[date], None], no_builtins: None
+) -> None:
+    fixed_today(TODAY)
+    source = FakeSource([_job_ad("a-1"), _job_ad("a-2")])
+    model = FakeLanguageModel(_answer(4), _answer(5))
 
+    path = main.main(**project, sources=[source], language_model=model)
 
-def _assessment() -> Assessment:
-    return Assessment(score=4, fits=["Python"], misfits=[], gaps=[], summary="Passt.")
-
-
-def _answer(score: int = 4) -> dict:
-    """Antwort des Sprachmodells auf eine Bewertung, unter den deutschen Schlüsseln."""
-    return replace(_assessment(), score=score).as_model_answer()
-
-
-def _asked_about(model: FakeLanguageModel) -> list[str]:
-    """Die Titel der Anzeigen, nach denen der Lauf das Sprachmodell gefragt hat."""
-    return [
-        line.removeprefix("Titel: ")
-        for request in model.requests
-        for line in request.text.splitlines()
-        if line.startswith("Titel: ")
-    ]
-
-
-def test_main_writes_report_for_new_matches(project: dict[str, Path]) -> None:
-    path = _run(project, FakeSource([_job_ad("a-1")]))
-
+    assert path == project["output_dir"] / "2026-03-02.md"
     content = path.read_text(encoding="utf-8")
-    assert "Stelle a-1" in content
-    assert "4/5" in content
+    assert "- Quelle A: 2 Anzeigen\n" in content
+    assert content.index("## 1. Stelle a-2") < content.index("## Weitere Treffer (Score unter 5)")
+    assert "- **2.** Stelle a-1" in content
+    assert source.received == [["Softwareentwickler", "Data"]]
+    assert all(_PROFILE in request.text for request in model.requests)
+    with Store(project["db_path"]) as db:
+        assert db.find_match("2026-03-02", 1).id == "a-2"
+        assert not db.is_new("a-1")
 
 
-def test_main_passes_all_keywords_to_each_source_at_once(project: dict[str, Path]) -> None:
-    project["config_path"].write_text('was = ["A", "B"]\n', encoding="utf-8")
-    first, second = FakeSource(), FakeSource(name="Arbeitnow")
-
-    _run(project, first, second)
-
-    assert first.received == [["A", "B"]]
-    assert second.received == [["A", "B"]]
-
-
-def test_main_writes_source_status_into_report(project: dict[str, Path]) -> None:
-    content = _run(
-        project,
-        FakeSource([_job_ad("a-1")]),
-        FakeSource([], ["x: HTTP 500"], name="Arbeitnow"),
-    ).read_text(encoding="utf-8")
-
-    assert "- Bundesagentur für Arbeit: 1 Anzeige\n" in content
-    assert "- Arbeitnow: FEHLER, 0 Anzeigen (x: HTTP 500)" in content
-    assert "Firmen-Watchlist" not in content
-
-
-def test_main_counts_job_ads_once_and_merges_same_errors(project: dict[str, Path]) -> None:
-    source = FakeSource([_job_ad("a-1"), _job_ad("a-1")], ["kaputt", "kaputt"])
-
-    content = _run(project, source).read_text(encoding="utf-8")
-
-    assert "- Bundesagentur für Arbeit: FEHLER, 1 Anzeige (kaputt)\n" in content
-
-
-def test_main_survives_unexpected_source_error(project: dict[str, Path]) -> None:
-    project["config_path"].write_text('was = ["Python", "Data"]\n', encoding="utf-8")
-
-    content = _run(
-        project, BrokenSource(), FakeSource([_job_ad("a-1")], name="Arbeitnow")
-    ).read_text(encoding="utf-8")
-
-    assert (
-        "- Bundesagentur für Arbeit: FEHLER, 0 Anzeigen (Python, Data: unerwarteter Fehler)"
-        in content
-    )
-    assert "Stelle a-1" in content
-
-
-def test_main_takes_min_score_from_config(project: dict[str, Path]) -> None:
-    project["config_path"].write_text('was = ["A"]\nmindest_score = 5\n', encoding="utf-8")
-
-    content = _run(project, FakeSource([_job_ad("a-1")])).read_text(encoding="utf-8")
-
-    assert "## Weitere Treffer (Score unter 5)" in content
-    assert "- **1.** Stelle a-1" in content
-
-
-def test_main_uses_default_min_score_without_config(project: dict[str, Path]) -> None:
-    model = FakeLanguageModel(_answer(score=2))
-
-    content = _run(project, FakeSource([_job_ad("a-1")]), model=model).read_text(encoding="utf-8")
-
-    assert "## Weitere Treffer (Score unter 3)" in content
-
-
-def test_main_remembers_report_and_match_number(project: dict[str, Path]) -> None:
-    model = FakeLanguageModel(_answer(score=2), _answer(score=5))
-
-    path = _run(project, FakeSource([_job_ad("a-1"), _job_ad("a-2")]), model=model)
-
-    conn = sqlite3.connect(project["db_path"])
-    try:
-        rows = conn.execute(
-            "SELECT id, report, nummer FROM gesehene_anzeigen ORDER BY id"
-        ).fetchall()
-    finally:
-        conn.close()
-    assert rows == [("a-1", path.stem, 2), ("a-2", path.stem, 1)]
-
-
-def test_main_skips_already_seen_job_ads(project: dict[str, Path]) -> None:
-    model = FakeLanguageModel(_answer())
+def test_main_keeps_seen_job_ads_in_database_between_runs(
+    project: dict[str, Path], fixed_today: Callable[[date], None], no_builtins: None
+) -> None:
+    fixed_today(TODAY)
     source = FakeSource([_job_ad("a-1")])
+    model = FakeLanguageModel(_answer(4))
 
-    _run(project, source, model=model)
-    second_run_path = _run(project, source, model=model)
+    main.main(**project, sources=[source], language_model=model)
+    second_run = main.main(**project, sources=[source], language_model=model)
 
-    assert _asked_about(model) == ["Stelle a-1"]
-    assert "Keine neuen Treffer" in second_run_path.read_text(encoding="utf-8")
-
-
-def test_main_without_search_results_writes_note(project: dict[str, Path]) -> None:
-    path = _run(project, FakeSource())
-
-    assert "Keine neuen Treffer" in path.read_text(encoding="utf-8")
-
-
-def test_main_does_not_mark_seen_when_assessment_fails(project: dict[str, Path]) -> None:
-    source = FakeSource([_job_ad("a-1")])
-
-    first_run = _run(project, source, model=FakeLanguageModel(LanguageModelError("Netz weg")))
-    assert "Keine neuen Treffer" in first_run.read_text(encoding="utf-8")
-
-    model = FakeLanguageModel(_answer())
-    second_run = _run(project, source, model=model)
-
-    assert _asked_about(model) == ["Stelle a-1"]
-    assert "Stelle a-1" in second_run.read_text(encoding="utf-8")
-
-
-def test_main_does_not_mark_seen_when_answer_is_invalid(project: dict[str, Path]) -> None:
-    source = FakeSource([_job_ad("a-1")])
-
-    first_run = _run(project, source, model=FakeLanguageModel(_answer(score=7)))
-    assert "Keine neuen Treffer" in first_run.read_text(encoding="utf-8")
-
-    second_run = _run(project, source)
-
-    assert "Stelle a-1" in second_run.read_text(encoding="utf-8")
-
-
-def test_main_deduplicates_matches_across_sources(project: dict[str, Path]) -> None:
-    model = FakeLanguageModel(_answer())
-
-    content = _run(
-        project,
-        FakeSource([_job_ad("a-1")]),
-        FakeSource([_job_ad("a-1")], name="Arbeitnow"),
-        model=model,
-    ).read_text(encoding="utf-8")
-
-    assert _asked_about(model) == ["Stelle a-1"]
-    assert "- Bundesagentur für Arbeit: 1 Anzeige\n" in content
-    assert "- Arbeitnow: 1 Anzeige\n" in content
-
-
-def test_main_combines_matches_from_both_sources(project: dict[str, Path]) -> None:
-    arbeitnow_job_ad = JobAd(
-        id="arbeitnow:full-stack-entwickler-100",
-        title="Full-Stack-Entwickler (m/w/d)",
-        company="Arbeitnow-Firma",
-        location="Berlin",
-        link="https://www.arbeitnow.com/jobs/companies/arbeitnow-firma/full-stack-entwickler-100",
-    )
-    model = FakeLanguageModel(_answer())
-
-    path = _run(
-        project,
-        FakeSource([_job_ad("a-1")]),
-        FakeSource([arbeitnow_job_ad], name="Arbeitnow"),
-        model=model,
-    )
-
-    content = path.read_text(encoding="utf-8")
-    assert "Stelle a-1" in content
-    assert "Full-Stack-Entwickler (m/w/d)" in content
-    assert sorted(_asked_about(model)) == ["Full-Stack-Entwickler (m/w/d)", "Stelle a-1"]
+    assert len(model.requests) == 1
+    assert second_run.name == "2026-03-02-2.md"
+    assert "Keine neuen Treffer" in second_run.read_text(encoding="utf-8")
 
 
 def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:
@@ -310,270 +171,3 @@ def test_default_sources_search_with_location_radius_and_age_from_config() -> No
         "umkreis": "30",
         "veroeffentlichtseit": "7",
     }
-
-
-def _position_job_ad(
-    id_: str, description: str | None = "Text", title: str = "Data Engineer"
-) -> JobAd:
-    return JobAd(
-        id=id_,
-        title=title,
-        company="Beispiel GmbH",
-        location="München",
-        link=f"https://x.example/{id_}",
-        description=description,
-    )
-
-
-def _run_finds(project: dict[str, Path], job_ad: JobAd) -> tuple[Path, str]:
-    path = _run(project, FakeSource([job_ad]))
-    return path, path.read_text(encoding="utf-8")
-
-
-def _manual(project: dict[str, Path], action: str = "beworben", title: str = "Data Engineer"):
-    argv = [action, "--firma", "Beispiel", "--titel", title]
-    assert feedback.main(argv, db_path=project["db_path"]) == 0
-
-
-def _application_to_first_job_ad(project: dict[str, Path], description: str | None) -> None:
-    path, _ = _run_finds(project, _position_job_ad("alt", description))
-    assert feedback.main([path.stem, "1", "beworben"], db_path=project["db_path"]) == 0
-
-
-def test_main_moves_applied_position_to_own_block(project: dict[str, Path]) -> None:
-    _manual(project)
-
-    _, content = _run_finds(project, _position_job_ad("neu"))
-
-    assert "## Bereits beworben" in content
-    assert "Data Engineer (Beispiel GmbH, München) – Score 4/5 – beworben, beworben am" in content
-    assert "## 1. Data Engineer" not in content
-
-
-def test_main_detects_position_despite_company_name_in_title(project: dict[str, Path]) -> None:
-    _manual(project)
-    job_ad = _position_job_ad("neu", title="Beispiel GmbH: Data Engineer (w/m/x)")
-
-    _, content = _run_finds(project, job_ad)
-
-    assert "## Bereits beworben" in content
-
-
-def test_main_shows_application_status(project: dict[str, Path]) -> None:
-    _manual(project)
-    _manual(project, "absage")
-
-    _, content = _run_finds(project, _position_job_ad("neu"))
-
-    assert "– absage, beworben am" in content
-
-
-def test_main_withdrawn_application_does_not_count(project: dict[str, Path]) -> None:
-    _manual(project)
-    _manual(project, "zurückgezogen")
-
-    _, content = _run_finds(project, _position_job_ad("neu"))
-
-    assert "Bereits beworben" not in content
-    assert "## 1. Data Engineer" in content
-
-
-def test_main_other_position_stays_unmarked(project: dict[str, Path]) -> None:
-    _manual(project, title="Consultant")
-
-    _, content = _run_finds(project, _position_job_ad("neu"))
-
-    assert "Bereits beworben" not in content
-
-
-def test_main_job_ad_without_company_is_not_matched(project: dict[str, Path]) -> None:
-    argv = ["beworben", "--firma", "", "--titel", "Data Engineer"]
-    feedback.main(argv, db_path=project["db_path"])
-    without_company = replace(_position_job_ad("neu"), company=None)
-
-    _, content = _run_finds(project, without_company)
-
-    assert "Bereits beworben" not in content
-
-
-def test_main_reports_identical_text(project: dict[str, Path]) -> None:
-    _application_to_first_job_ad(project, "Gleicher Text")
-
-    _, content = _run_finds(project, _position_job_ad("neu", "Gleicher   Text"))
-
-    assert "– Text identisch –" in content
-
-
-def test_main_reports_text_differs(project: dict[str, Path]) -> None:
-    _application_to_first_job_ad(project, "Alter Text")
-
-    _, content = _run_finds(project, _position_job_ad("neu", "Neuer Text"))
-
-    assert "– Text weicht von deiner Bewerbung ab –" in content
-
-
-def test_main_manual_application_is_not_comparable(project: dict[str, Path]) -> None:
-    _manual(project)
-
-    _, content = _run_finds(project, _position_job_ad("neu"))
-
-    assert "– Text nicht vergleichbar –" in content
-
-
-def test_main_missing_new_description_is_not_comparable(project: dict[str, Path]) -> None:
-    _application_to_first_job_ad(project, "Alter Text")
-
-    _, content = _run_finds(project, _position_job_ad("neu", None))
-
-    assert "– Text nicht vergleichbar –" in content
-
-
-def test_main_compares_with_latest_application(project: dict[str, Path]) -> None:
-    _application_to_first_job_ad(project, "Erster Text")
-    path, _ = _run_finds(project, _position_job_ad("zwei", "Zweiter Text"))
-    assert feedback.main([path.stem, "1", "beworben"], db_path=project["db_path"]) == 0
-
-    _, content = _run_finds(project, _position_job_ad("drei", "Zweiter Text"))
-
-    assert "– Text identisch –" in content
-
-
-def _applied_days_ago(
-    project: dict[str, Path],
-    fixed_today: Callable[[date], None],
-    days: int,
-    status: str = "beworben",
-) -> None:
-    fixed_today(TODAY)
-    applied_on = (TODAY - timedelta(days=days)).isoformat()
-    base = ["--firma", "Firma X", "--titel", "Dev"]
-    assert feedback.main(["beworben", *base, "--am", applied_on], db_path=project["db_path"]) == 0
-    if status != "beworben":
-        assert feedback.main([status, *base], db_path=project["db_path"]) == 0
-
-
-def _run_without_matches(project: dict[str, Path]) -> str:
-    return _run(project, FakeSource()).read_text(encoding="utf-8")
-
-
-@pytest.mark.parametrize(
-    ("days", "expected"), [(13, False), (14, True), (20, True), (28, True), (29, False)]
-)
-def test_main_follow_up_window(
-    project: dict[str, Path],
-    days: int,
-    expected: bool,
-    fixed_today: Callable[[date], None],
-) -> None:
-    _applied_days_ago(project, fixed_today, days)
-
-    content = _run_without_matches(project)
-
-    assert ("## Nachfassen" in content) is expected
-    if expected:
-        assert f"seit {days} Tagen keine Antwort" in content
-
-
-@pytest.mark.parametrize("status", ["gespräch", "absage", "zusage", "zurückgezogen"])
-def test_main_follow_up_only_for_status_applied(
-    project: dict[str, Path],
-    status: str,
-    fixed_today: Callable[[date], None],
-) -> None:
-    _applied_days_ago(project, fixed_today, 20, status)
-
-    assert "Nachfassen" not in _run_without_matches(project)
-
-
-def test_main_follow_up_days_from_config(
-    project: dict[str, Path], fixed_today: Callable[[date], None]
-) -> None:
-    project["config_path"].write_text(
-        'was = ["A"]\nnachfassen_ab_tag = 3\nnachfassen_bis_tag = 5\n', encoding="utf-8"
-    )
-    _applied_days_ago(project, fixed_today, 4)
-
-    assert "seit 4 Tagen keine Antwort" in _run_without_matches(project)
-
-
-def test_main_follow_up_reminder_does_not_change_status(
-    project: dict[str, Path], fixed_today: Callable[[date], None]
-) -> None:
-    _applied_days_ago(project, fixed_today, 60)
-
-    _run_without_matches(project)
-
-    conn = sqlite3.connect(project["db_path"])
-    try:
-        assert conn.execute("SELECT status FROM bewerbungen").fetchall() == [("beworben",)]
-    finally:
-        conn.close()
-
-
-def _open_feedback(project: dict[str, Path], count: int) -> None:
-    with Store(project["db_path"]) as db:
-        for number in range(count):
-            job_ad_id = f"f-{number}"
-            db.remember_job_ad(_job_ad(job_ad_id), _assessment(), TODAY)
-            db.save_feedback(job_ad_id, 3, None, TODAY)
-
-
-@pytest.mark.parametrize(("count", "expected"), [(4, False), (5, True), (7, True)])
-def test_main_profile_suggestion_hint_from_five_feedbacks(
-    project: dict[str, Path], count: int, expected: bool
-) -> None:
-    _open_feedback(project, count)
-
-    content = _run_without_matches(project)
-
-    assert ("## Profil-Vorschlag" in content) is expected
-    if expected:
-        assert f"- {count} Rückmeldungen warten" in content
-
-
-def test_main_processed_feedback_does_not_count(project: dict[str, Path]) -> None:
-    _open_feedback(project, 5)
-    with Store(project["db_path"]) as db:
-        db.mark_feedback_processed(["f-0"])
-
-    assert "Profil-Vorschlag" not in _run_without_matches(project)
-
-
-def test_run_with_own_sources_language_model_and_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def no_network(*args, **kwargs):
-        raise AssertionError("Eingebaute Quelle darf nicht aufgerufen werden")
-
-    def no_model(*args, **kwargs):
-        raise AssertionError("Eingebautes Sprachmodell darf nicht gefragt werden")
-
-    monkeypatch.setattr(httpx.Client, "send", no_network)
-    monkeypatch.setattr(AnthropicLanguageModel, "ask", no_model)
-    profile_path = tmp_path / "profile.md"
-    profile_path.write_text(_PROFILE, encoding="utf-8")
-    model = FakeLanguageModel(_answer(3), _answer(5), _answer(4))
-
-    path = main.main(
-        config_path=tmp_path / "fehlt.toml",
-        profile_path=profile_path,
-        db_path=tmp_path / "jobagent.db",
-        output_dir=tmp_path / "output",
-        config=Config(keywords=["Python"]),
-        sources=[
-            FakeSource([_job_ad("a-1"), _job_ad("a-2")], name="Quelle A"),
-            FakeSource([_job_ad("b-1")], ["Python: HTTP 503"], name="Quelle B"),
-        ],
-        language_model=model,
-    )
-
-    content = path.read_text(encoding="utf-8")
-    assert _asked_about(model) == ["Stelle a-1", "Stelle a-2", "Stelle b-1"]
-    assert "- Quelle A: 2 Anzeigen\n" in content
-    assert "- Quelle B: FEHLER, 1 Anzeige (Python: HTTP 503)\n" in content
-    assert "Bundesagentur" not in content
-    assert (
-        content.index("## 1. Stelle a-2")
-        < content.index("## 2. Stelle b-1")
-        < content.index("## 3. Stelle a-1")
-    )

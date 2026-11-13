@@ -10,8 +10,8 @@ from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
 
-if TYPE_CHECKING:  # main importiert report; nur der Typ wird gebraucht
-    from jobagent.main import SourceStatus
+if TYPE_CHECKING:  # run importiert report; nur der Typ wird gebraucht
+    from jobagent.run import SourceStatus
 
 OUTPUT_DIR = Path("output")
 DEFAULT_MIN_SCORE = 3
