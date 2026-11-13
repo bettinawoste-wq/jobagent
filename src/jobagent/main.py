@@ -3,7 +3,6 @@
 import argparse
 import io
 import logging
-import sqlite3
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
@@ -22,6 +21,7 @@ from jobagent.sources import SearchResult, Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
 from jobagent.sources.watchlist import WatchlistSource
+from jobagent.store import Store
 
 logger = logging.getLogger(__name__)
 
@@ -72,29 +72,25 @@ def main(
     assess = _assessment_by(language_model, profile_path.read_text(encoding="utf-8"))
     today = date.today()
 
-    conn = store.connect(db_path)
-    try:
+    with Store(db_path) as db:
         job_ads, source_status = _search_all(sources, config.keywords)
-        new_matches = _new_matches(conn, job_ads, assess, today)
+        new_matches = _new_matches(db, job_ads, assess, today)
         written = report.write_report(
             new_matches,
             today,
             output_dir,
             sources=source_status,
             min_score=config.min_score,
-            applications=_already_applied(conn, new_matches),
-            follow_ups=store.follow_up_reminders(
-                conn,
+            applications=_already_applied(db, new_matches),
+            follow_ups=db.follow_up_reminders(
                 today,
                 min_days=config.follow_up_min_days,
                 max_days=config.follow_up_max_days,
             ),
-            open_feedback=_open_feedback(conn),
+            open_feedback=_open_feedback(db),
         )
-        store.save_match_numbers(conn, written.path.stem, written.match_numbers)
+        db.save_match_numbers(written.path.stem, written.match_numbers)
         return written.path
-    finally:
-        conn.close()
 
 
 def _assessment_by(language_model: LanguageModel, profile: str) -> Assess:
@@ -102,7 +98,7 @@ def _assessment_by(language_model: LanguageModel, profile: str) -> Assess:
 
 
 def _new_matches(
-    conn: sqlite3.Connection,
+    db: Store,
     job_ads: list[JobAd],
     assess: Assess,
     today: date,
@@ -110,7 +106,7 @@ def _new_matches(
     matches: list[report.Match] = []
 
     for job_ad in job_ads:
-        if not store.is_new(conn, job_ad.id):
+        if not db.is_new(job_ad.id):
             continue
 
         assessment = assess(job_ad)
@@ -118,25 +114,23 @@ def _new_matches(
             logger.warning("Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", job_ad.id)
             continue
 
-        store.mark_seen(conn, job_ad, assessment, today)
+        db.remember_job_ad(job_ad, assessment, today)
         matches.append((job_ad, assessment))
 
     return matches
 
 
-def _open_feedback(conn: sqlite3.Connection) -> int:
-    count = store.count_open_feedback(conn)
+def _open_feedback(db: Store) -> int:
+    count = db.count_open_feedback()
     return count if count >= _PROFILE_SUGGESTION_MIN_FEEDBACK else 0
 
 
-def _already_applied(
-    conn: sqlite3.Connection, matches: list[report.Match]
-) -> dict[str, report.AlreadyApplied]:
+def _already_applied(db: Store, matches: list[report.Match]) -> dict[str, report.AlreadyApplied]:
     result: dict[str, report.AlreadyApplied] = {}
     for job_ad, _ in matches:
         if not job_ad.company:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
             continue
-        application = store.latest_application(conn, position_key(job_ad.company, job_ad.title))
+        application = db.current_application(position_key(job_ad.company, job_ad.title))
         if application is not None:
             result[job_ad.id] = report.AlreadyApplied(
                 application.status,

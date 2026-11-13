@@ -16,6 +16,7 @@ from jobagent.store import (
     FollowUpReminder,
     KnownApplication,
     NewApplication,
+    Store,
     StoredMatch,
     application_for_job_ad,
     application_for_position,
@@ -371,3 +372,92 @@ def test_application_status_values_stay_german() -> None:
         "zusage",
         "zurückgezogen",
     ]
+
+
+def test_store_remembers_job_ad_across_openings(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobagent.db"
+
+    with Store(db_path) as first:
+        assert first.is_new("a-1") is True
+        first.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+
+    with Store(db_path) as second:
+        assert second.is_new("a-1") is False
+        assert second.is_new("a-2") is True
+
+
+def test_store_closes_its_connection_on_exit(tmp_path: Path) -> None:
+    with Store(tmp_path / "jobagent.db") as opened:
+        pass
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened.is_new("a-1")
+
+
+def _applications_on(db_path: Path, *applications: tuple[str, str, date]) -> None:
+    """Legt Bewerbungen auf die Stelle "beispiel gmbh|dev" an: (Anzeigen-ID, Status, Datum)."""
+    connection = connect(db_path)
+    try:
+        for job_ad_id, status, applied_on in applications:
+            create_application(
+                connection,
+                NewApplication("beispiel gmbh|dev", "Beispiel GmbH", "Dev", job_ad_id),
+                status,
+                applied_on,
+            )
+    finally:
+        connection.close()
+
+
+def test_current_application_skips_withdrawn_latest_application_does_not(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "jobagent.db"
+    _applications_on(
+        db_path,
+        ("a-1", ApplicationStatus.INTERVIEW, date(2026, 11, 1)),
+        ("a-2", ApplicationStatus.WITHDRAWN, date(2026, 11, 3)),
+    )
+
+    with Store(db_path) as store:
+        assert store.current_application("beispiel gmbh|dev") == KnownApplication(
+            ApplicationStatus.INTERVIEW, date(2026, 11, 1), None
+        )
+        assert store.latest_application("beispiel gmbh|dev") == 2
+
+
+def test_no_current_application_when_only_withdrawn(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobagent.db"
+    _applications_on(db_path, ("a-1", ApplicationStatus.WITHDRAWN, date(2026, 11, 1)))
+
+    with Store(db_path) as store:
+        assert store.current_application("beispiel gmbh|dev") is None
+        assert store.latest_application("beispiel gmbh|dev") == 1
+        assert store.latest_application("andere firma|dev") is None
+
+
+def test_store_answers_the_run_on_database_from_old_code(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobagent.db"
+    _db_from_version_0_4_0(db_path)
+
+    with Store(db_path) as store:
+        assert store.is_new("a-1") is False
+        assert store.current_application("firma x|data engineer") == KnownApplication(
+            ApplicationStatus.APPLIED, date(2026, 11, 1), "hash-1"
+        )
+        assert store.latest_application("firma x|data engineer") == 1
+        assert store.follow_up_reminders(date(2026, 11, 15), min_days=14, max_days=28) == [
+            FollowUpReminder("Firma X", "Data Engineer", date(2026, 11, 1))
+        ]
+        assert store.count_open_feedback() == 1
+
+        store.remember_job_ad(_example_job_ad("a-2"), _assessment(), date(2026, 11, 3))
+        store.save_match_numbers("2026-11-03", {"a-2": 1})
+
+    connection = connect(db_path)
+    try:
+        assert find_match(connection, "2026-11-03", 1) == StoredMatch(
+            "a-2", "Softwareentwickler/in (m/w/d)", "Beispiel GmbH"
+        )
+    finally:
+        connection.close()
