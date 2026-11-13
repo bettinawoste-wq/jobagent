@@ -73,6 +73,23 @@ def test_ask_sends_model_system_text_and_schema_as_forced_tool() -> None:
     assert kwargs["tool_choice"] == {"type": "tool", "name": kwargs["tools"][0]["name"]}
 
 
+def test_schema_title_and_description_name_and_describe_the_tool() -> None:
+    client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
+    schema = {"title": "bewertung_abgeben", "description": "Gibt die Bewertung zurück.", **_SCHEMA}
+
+    AnthropicLanguageModel("modell-x", client=client).ask("System", "Text", schema)
+
+    kwargs = client.messages.last_kwargs
+    assert kwargs["tools"] == [
+        {
+            "name": "bewertung_abgeben",
+            "description": "Gibt die Bewertung zurück.",
+            "input_schema": _SCHEMA,
+        }
+    ]
+    assert kwargs["tool_choice"] == {"type": "tool", "name": "bewertung_abgeben"}
+
+
 def test_api_error_becomes_language_model_error() -> None:
     error = anthropic.APIConnectionError(
         request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")

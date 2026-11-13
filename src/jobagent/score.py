@@ -9,6 +9,8 @@ from jobagent.language_model import LanguageModel, LanguageModelError
 logger = logging.getLogger(__name__)
 
 _SCHEMA = {
+    "title": "bewertung_abgeben",
+    "description": "Gibt die Bewertung einer Stellenanzeige gegen das Suchprofil zurueck.",
     "type": "object",
     "properties": {
         "score": {"type": "integer", "minimum": 1, "maximum": 5},
@@ -25,6 +27,7 @@ _SCHEMA = {
 
 _SYSTEM_PROMPT = (
     "Du bewertest Stellenanzeigen gegen das Suchprofil einer Bewerberin. "
+    f"Antworte ausschliesslich ueber das Werkzeug {_SCHEMA['title']}. "
     "Score-Skala: 5 = sehr gute Passung, sofort bewerben; 4 = gute Passung, "
     "kleine Luecken; 3 = machbar, aber deutliche Luecken oder Abstriche; "
     "2 = eher nein; 1 = passt nicht. "

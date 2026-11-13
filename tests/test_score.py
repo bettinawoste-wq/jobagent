@@ -49,6 +49,9 @@ def test_score_job_ad_asks_with_profile_job_ad_and_german_schema() -> None:
     assert "Softwareentwickler/in (m/w/d)" in request.text
     assert "Kubernetes" in request.text
     assert "Score-Skala" in request.system
+    # So nannte die Bewertung das erzwungene Werkzeug schon immer (unveränderte Anfrage).
+    assert request.schema["title"] == "bewertung_abgeben"
+    assert "Werkzeug bewertung_abgeben" in request.system
     assert request.schema["required"] == ["score", "passt", "passt_nicht", "luecken", "kurzfazit"]
 
 
