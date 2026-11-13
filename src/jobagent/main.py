@@ -60,7 +60,8 @@ def main(
     Ohne `config`, `sources` und `assess` gilt `config.toml`, die eingebauten Quellen
     und die Bewertung gegen `profile.md`. Wer sie angibt, ersetzt sie: Dann wird
     die jeweilige Datei nicht gelesen und das jeweilige Netz bzw. Modell nicht gefragt.
-    Die Bewertung fragt `language_model`, ohne Angabe Haiku von Anthropic.
+    Ohne `assess` fragt die Bewertung `language_model`, ohne Angabe Haiku von Anthropic;
+    mit `assess` bleibt `language_model` ungenutzt.
     """
     logging.basicConfig(level=logging.INFO)
 
@@ -69,8 +70,10 @@ def main(
     if sources is None:
         sources = default_sources(config)
     if assess is None:
+        if language_model is None:
+            language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
         assess = _assessment_by(
-            language_model or AnthropicLanguageModel(_ASSESSMENT_MODEL),
+            language_model,
             profile_path.read_text(encoding="utf-8"),
         )
     today = date.today()

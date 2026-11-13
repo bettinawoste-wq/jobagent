@@ -108,7 +108,7 @@ def create_suggestion(
         )
     except (anthropic.AnthropicError, TypeError):
         # TypeError: die SDK wirft dies statt eines AnthropicError, wenn z.B.
-        # kein ANTHROPIC_API_KEY gesetzt ist (siehe score.py).
+        # kein ANTHROPIC_API_KEY gesetzt ist (siehe language_model.py).
         logger.exception("Anthropic-API-Anfrage fuer den Profil-Vorschlag fehlgeschlagen")
         return None
 
