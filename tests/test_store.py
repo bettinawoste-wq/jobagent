@@ -282,13 +282,26 @@ def test_store_creates_database_file(db_path: Path) -> None:
     assert db_path.exists()
 
 
-def test_store_closes_connection_when_schema_cannot_be_created(db_path: Path) -> None:
+def test_store_closes_connection_when_schema_cannot_be_created(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     db_path.write_bytes(b"keine SQLite-Datenbank, nur Text " * 100)
+    original_connect = sqlite3.connect
+    opened: list[sqlite3.Connection] = []
+
+    def recording_connect(*args, **kwargs) -> sqlite3.Connection:
+        opened.append(original_connect(*args, **kwargs))
+        return opened[-1]
+
+    monkeypatch.setattr(sqlite3, "connect", recording_connect)
 
     with pytest.raises(sqlite3.DatabaseError):
         Store(db_path)
 
-    # Unter Windows liesse sich die Datei bei offener Verbindung nicht loeschen.
+    [connection] = opened
+    with pytest.raises(sqlite3.ProgrammingError):
+        connection.execute("SELECT 1")
+    # Unter Windows sperrt eine offene Verbindung die Datei; sie muss sich loeschen lassen.
     db_path.unlink()
 
 

@@ -305,9 +305,10 @@ class Store:
 
     def count_open_feedback(self) -> int:
         """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
-        return self._conn.execute("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0").fetchone()[
-            0
-        ]
+        (count,) = self._conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0"
+        ).fetchone()
+        return count
 
     def mark_feedback_processed(self, job_ad_ids: list[str]) -> None:
         self._conn.executemany(

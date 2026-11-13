@@ -177,9 +177,14 @@ def test_main_remembers_report_and_match_number(project: dict[str, Path]) -> Non
 
     path = _run(project, FakeSource([_job_ad("a-1"), _job_ad("a-2")]), model=model)
 
-    with Store(project["db_path"]) as db:
-        assert db.find_match(path.stem, 1).id == "a-2"
-        assert db.find_match(path.stem, 2).id == "a-1"
+    conn = sqlite3.connect(project["db_path"])
+    try:
+        rows = conn.execute(
+            "SELECT id, report, nummer FROM gesehene_anzeigen ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert rows == [("a-1", path.stem, 2), ("a-2", path.stem, 1)]
 
 
 def test_main_skips_already_seen_job_ads(project: dict[str, Path]) -> None:
