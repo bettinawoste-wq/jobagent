@@ -16,6 +16,7 @@ import httpx
 from jobagent import demo, report, score, store
 from jobagent.config import Config, load_config
 from jobagent.job_ad import JobAd
+from jobagent.language_model import AnthropicLanguageModel, LanguageModel
 from jobagent.position import position_key
 from jobagent.sources import SearchResult, Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
@@ -28,6 +29,7 @@ _CONFIG_PATH = Path("config.toml")
 _PROFILE_PATH = Path("profile.md")
 _DB_PATH = Path("jobagent.db")
 _PROFILE_SUGGESTION_MIN_FEEDBACK = 5
+_ASSESSMENT_MODEL = "claude-haiku-4-5-20251001"  # Haiku für die Bewertung (ADR 0004)
 
 Assess = Callable[[JobAd], score.Assessment | None]
 """Bewertet eine Anzeige; None heisst: diesmal nicht bewertbar, naechster Lauf versucht es neu."""
@@ -51,12 +53,14 @@ def main(
     config: Config | None = None,
     sources: Sequence[Source] | None = None,
     assess: Assess | None = None,
+    language_model: LanguageModel | None = None,
 ) -> Path:
     """Fuehrt einen Lauf aus: suchen, deduplizieren, bewerten, Report schreiben.
 
     Ohne `config`, `sources` und `assess` gilt `config.toml`, die eingebauten Quellen
-    und die Haiku-Bewertung gegen `profile.md`. Wer sie angibt, ersetzt sie: Dann wird
+    und die Bewertung gegen `profile.md`. Wer sie angibt, ersetzt sie: Dann wird
     die jeweilige Datei nicht gelesen und das jeweilige Netz bzw. Modell nicht gefragt.
+    Die Bewertung fragt `language_model`, ohne Angabe Haiku von Anthropic.
     """
     logging.basicConfig(level=logging.INFO)
 
@@ -65,7 +69,10 @@ def main(
     if sources is None:
         sources = default_sources(config)
     if assess is None:
-        assess = _haiku_assessment(profile_path.read_text(encoding="utf-8"))
+        assess = _assessment_by(
+            language_model or AnthropicLanguageModel(_ASSESSMENT_MODEL),
+            profile_path.read_text(encoding="utf-8"),
+        )
     today = date.today()
 
     conn = store.connect(db_path)
@@ -93,8 +100,8 @@ def main(
         conn.close()
 
 
-def _haiku_assessment(profile: str) -> Assess:
-    return lambda job_ad: score.score_job_ad(job_ad, profile)
+def _assessment_by(language_model: LanguageModel, profile: str) -> Assess:
+    return lambda job_ad: score.score_job_ad(job_ad, profile, language_model)
 
 
 def _new_matches(

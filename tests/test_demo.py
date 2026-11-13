@@ -11,7 +11,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from jobagent import main, score
+from jobagent import main
+from jobagent.language_model import AnthropicLanguageModel
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ def empty_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         raise AssertionError("Demo-Lauf darf kein Modell fragen")
 
     monkeypatch.setattr(httpx.Client, "send", no_network)
-    monkeypatch.setattr(score, "score_job_ad", no_model)
+    monkeypatch.setattr(AnthropicLanguageModel, "ask", no_model)
     return tmp_path
 
 
