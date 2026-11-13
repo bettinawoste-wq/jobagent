@@ -38,7 +38,7 @@ def run(
     sources: Sequence[Source],
     language_model: LanguageModel,
     search_profile: str,
-    store: Store,
+    db: Store,
     config: Config,
     today: date,
     output_dir: Path,
@@ -46,29 +46,30 @@ def run(
     """Führt einen Lauf aus und gibt den Pfad des geschriebenen Reports zurück.
 
     Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `search_profile`.
+    In `db` merkt sich der Lauf die bewerteten Anzeigen und die Treffernummern des Reports.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
-    new_matches = _new_matches(store, job_ads, language_model, search_profile, today)
+    new_matches = _new_matches(db, job_ads, language_model, search_profile, today)
     written = report.write_report(
         new_matches,
         today,
         output_dir,
         sources=source_status,
         min_score=config.min_score,
-        applications=_already_applied(store, new_matches),
-        follow_ups=store.follow_up_reminders(
+        applications=_already_applied(db, new_matches),
+        follow_ups=db.follow_up_reminders(
             today,
             min_days=config.follow_up_min_days,
             max_days=config.follow_up_max_days,
         ),
-        open_feedback=_open_feedback(store),
+        open_feedback=_open_feedback(db),
     )
-    store.save_match_numbers(written.path.stem, written.match_numbers)
+    db.save_match_numbers(written.path.stem, written.match_numbers)
     return written.path
 
 
 def _new_matches(
-    store: Store,
+    db: Store,
     job_ads: list[JobAd],
     language_model: LanguageModel,
     search_profile: str,
@@ -77,7 +78,7 @@ def _new_matches(
     matches: list[report.Match] = []
 
     for job_ad in job_ads:
-        if not store.is_new(job_ad.id):
+        if not db.is_new(job_ad.id):
             continue
 
         assessment = score_job_ad(job_ad, search_profile, language_model)
@@ -85,23 +86,23 @@ def _new_matches(
             logger.warning("Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", job_ad.id)
             continue
 
-        store.remember_job_ad(job_ad, assessment, today)
+        db.remember_job_ad(job_ad, assessment, today)
         matches.append((job_ad, assessment))
 
     return matches
 
 
-def _open_feedback(store: Store) -> int:
-    count = store.count_open_feedback()
+def _open_feedback(db: Store) -> int:
+    count = db.count_open_feedback()
     return count if count >= _PROFILE_SUGGESTION_MIN_FEEDBACK else 0
 
 
-def _already_applied(store: Store, matches: list[report.Match]) -> dict[str, report.AlreadyApplied]:
+def _already_applied(db: Store, matches: list[report.Match]) -> dict[str, report.AlreadyApplied]:
     result: dict[str, report.AlreadyApplied] = {}
     for job_ad, _ in matches:
         if not job_ad.company:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
             continue
-        application = store.current_application(position_key(job_ad.company, job_ad.title))
+        application = db.current_application(position_key(job_ad.company, job_ad.title))
         if application is not None:
             result[job_ad.id] = report.AlreadyApplied(
                 application.status,

@@ -53,12 +53,12 @@ def main(
         language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
     search_profile = profile_path.read_text(encoding="utf-8")
 
-    with Store(db_path) as store:
+    with Store(db_path) as db:
         return run(
             sources=sources,
             language_model=language_model,
             search_profile=search_profile,
-            store=store,
+            db=db,
             config=config,
             today=date.today(),
             output_dir=output_dir,
@@ -89,13 +89,13 @@ def demo_run(output_dir: Path | None = None) -> str:
     """
     today = date.today()
     with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:
-        with Store(Path(temp) / "demo.db") as store:
-            demo.create_applications(store, today)
+        with Store(Path(temp) / "demo.db") as db:
+            demo.create_applications(db, today)
             path = run(
                 sources=demo.sources(),
                 language_model=demo.DemoLanguageModel(),
                 search_profile=demo.SEARCH_PROFILE,
-                store=store,
+                db=db,
                 config=demo.CONFIG,
                 today=today,
                 output_dir=output_dir or Path(temp),
