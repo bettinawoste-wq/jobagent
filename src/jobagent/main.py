@@ -52,16 +52,14 @@ def main(
     output_dir: Path = report.OUTPUT_DIR,
     config: Config | None = None,
     sources: Sequence[Source] | None = None,
-    assess: Assess | None = None,
     language_model: LanguageModel | None = None,
 ) -> Path:
     """Fuehrt einen Lauf aus: suchen, deduplizieren, bewerten, Report schreiben.
 
-    Ohne `config`, `sources` und `assess` gilt `config.toml`, die eingebauten Quellen
-    und die Bewertung gegen `profile.md`. Wer sie angibt, ersetzt sie: Dann wird
-    die jeweilige Datei nicht gelesen und das jeweilige Netz bzw. Modell nicht gefragt.
-    Ohne `assess` fragt die Bewertung `language_model`, ohne Angabe Haiku von Anthropic;
-    mit `assess` bleibt `language_model` ungenutzt.
+    Ohne `config`, `sources` und `language_model` gilt `config.toml`, die eingebauten
+    Quellen und Haiku von Anthropic. Wer sie angibt, ersetzt sie: Dann wird die jeweilige
+    Datei nicht gelesen und das jeweilige Netz bzw. Modell nicht gefragt. Bewertet wird
+    immer gegen das Suchprofil in `profile_path`.
     """
     logging.basicConfig(level=logging.INFO)
 
@@ -69,13 +67,9 @@ def main(
         config = load_config(config_path)
     if sources is None:
         sources = default_sources(config)
-    if assess is None:
-        if language_model is None:
-            language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
-        assess = _assessment_by(
-            language_model,
-            profile_path.read_text(encoding="utf-8"),
-        )
+    if language_model is None:
+        language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
+    assess = _assessment_by(language_model, profile_path.read_text(encoding="utf-8"))
     today = date.today()
 
     conn = store.connect(db_path)
@@ -238,17 +232,20 @@ def demo_run(output_dir: Path | None = None) -> str:
     """
     with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:
         db_path = Path(temp) / "demo.db"
+        profile_path = Path(temp) / "profile.md"
+        profile_path.write_text(demo.PROFILE, encoding="utf-8")
         conn = store.connect(db_path)
         try:
             demo.create_applications(conn, date.today())
         finally:
             conn.close()
         path = main(
+            profile_path=profile_path,
             db_path=db_path,
             output_dir=output_dir or Path(temp),
             config=demo.CONFIG,
             sources=demo.sources(),
-            assess=demo.assess,
+            language_model=demo.DemoLanguageModel(),
         )
         return path.read_text(encoding="utf-8")
 
