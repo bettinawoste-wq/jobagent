@@ -111,7 +111,7 @@ class FollowUpReminder:
 
 
 class Store:
-    """Der Speicher als Context-Manager: haelt seine Verbindung selbst und schliesst sie.
+    """Die Datenbank als Context-Manager: haelt ihre Verbindung selbst und schliesst sie.
 
     Die Methoden heissen nach den fachlichen Fragen des Laufs, nicht nach SQL.
     """
