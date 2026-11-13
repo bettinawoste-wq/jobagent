@@ -151,7 +151,7 @@ def test_max_tokens_reaches_the_tool_request() -> None:
     assert client.messages.last_kwargs["max_tokens"] == 2048
 
 
-def _json_answer(*content: object, stop_reason: str = "end_turn") -> BetaMessage:
+def _beta_message(*content: object, stop_reason: str = "end_turn") -> BetaMessage:
     return BetaMessage(
         id="msg_2",
         content=list(content),
@@ -165,28 +165,30 @@ def _json_answer(*content: object, stop_reason: str = "end_turn") -> BetaMessage
 
 
 def _thought_and_text(text: str, stop_reason: str = "end_turn") -> BetaMessage:
-    return _json_answer(
+    return _beta_message(
         BetaThinkingBlock(signature="sig", thinking="Erst nachdenken.", type="thinking"),
         BetaTextBlock(text=text, type="text"),
         stop_reason=stop_reason,
     )
 
 
-def _ask_thinking(result: object) -> dict:
-    model = AnthropicLanguageModel("claude-sonnet-5-5", thinking=True, client=_FakeClient(result))
+def _ask_json_model(result: object) -> dict:
+    model = AnthropicLanguageModel(
+        "claude-sonnet-5-5", json_answer=True, client=_FakeClient(result)
+    )
     return model.ask("System", "Text", _SCHEMA)
 
 
-def test_thinking_model_returns_data_of_json_answer() -> None:
-    assert _ask_thinking(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}')) == {
+def test_json_answer_after_thinking_returns_its_data() -> None:
+    assert _ask_json_model(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}')) == {
         "score": 4,
         "kurzfazit": "Passt.",
     }
 
 
-def test_thinking_model_asks_for_json_with_fallback_instead_of_tool() -> None:
+def test_json_answer_is_asked_with_fallback_instead_of_tool() -> None:
     client = _FakeClient(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}'))
-    model = AnthropicLanguageModel("modell-y", max_tokens=16000, thinking=True, client=client)
+    model = AnthropicLanguageModel("modell-y", max_tokens=16000, json_answer=True, client=client)
 
     model.ask("Denk nach.", "Rückmeldungen", _SCHEMA)
 
@@ -210,10 +212,13 @@ def test_thinking_model_asks_for_json_with_fallback_instead_of_tool() -> None:
         _thought_and_text('{"score": 4}'),
         _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="max_tokens"),
         _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="refusal"),
-        _json_answer(),
+        _beta_message(),
         TypeError("Could not resolve authentication method."),
+        anthropic.APIConnectionError(
+            request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        ),
     ],
 )
 def test_unusable_json_answer_becomes_language_model_error(answer: object) -> None:
     with pytest.raises(LanguageModelError):
-        _ask_thinking(answer)
+        _ask_json_model(answer)

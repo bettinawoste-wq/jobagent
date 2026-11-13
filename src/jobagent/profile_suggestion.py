@@ -162,7 +162,7 @@ def main(
         return 1
     if language_model is None:
         language_model = AnthropicLanguageModel(
-            _SUGGESTION_MODEL, max_tokens=_SUGGESTION_MAX_TOKENS, thinking=True
+            _SUGGESTION_MODEL, max_tokens=_SUGGESTION_MAX_TOKENS, json_answer=True
         )
 
     conn = store.connect(db_path)

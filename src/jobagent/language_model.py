@@ -4,6 +4,8 @@ import json
 from typing import Protocol
 
 import anthropic
+from anthropic.types import Message
+from anthropic.types.beta import BetaMessage
 
 _MAX_TOKENS = 1024
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -27,10 +29,11 @@ class LanguageModel(Protocol):
 class AnthropicLanguageModel:
     """Sprachmodell von Anthropic.
 
-    Ohne `thinking` erzwingt die Anfrage ein Werkzeug mit dem Schema. Mit `thinking`
-    denkt das Modell vor der Antwort nach; das verträgt sich nicht mit einem
-    erzwungenen Werkzeug, deshalb antwortet es dann als JSON-Text nach dem Schema,
-    über die Beta-Schnittstelle mit serverseitigem Fallback auf ein anderes Modell.
+    Ohne `json_answer` erzwingt die Anfrage ein Werkzeug mit dem Schema; ein erzwungenes
+    Werkzeug lässt kein Nachdenken des Modells zu. Mit `json_answer` antwortet das
+    Modell als JSON-Text nach dem Schema und darf vorher nachdenken, wie Sonnet es von
+    sich aus tut. Diese Anfrage läuft über die Beta-Schnittstelle mit serverseitigem
+    Fallback auf ein anderes Modell.
     """
 
     def __init__(
@@ -38,32 +41,35 @@ class AnthropicLanguageModel:
         model: str,
         *,
         max_tokens: int = _MAX_TOKENS,
-        thinking: bool = False,
+        json_answer: bool = False,
         client: anthropic.Anthropic | None = None,
     ) -> None:
         self._model = model
         self._max_tokens = max_tokens
-        self._thinking = thinking
+        self._json_answer = json_answer
         self._client = client
 
     def ask(self, system: str, text: str, schema: dict) -> dict:
-        messages = [{"role": "user", "content": text}]
+        if self._json_answer:
+            send, evaluate = self._ask_for_json, _json_object_from
+        else:
+            send, evaluate = self._ask_with_tool, _tool_input_from
         try:
             if self._client is None:
                 self._client = anthropic.Anthropic()  # einmal je Instanz, nicht je Frage
-            if self._thinking:
-                data = self._ask_for_json(system, messages, schema)
-            else:
-                data = self._ask_with_tool(system, messages, schema)
+            response = send(system, [{"role": "user", "content": text}], schema)
         except (anthropic.AnthropicError, TypeError) as error:
             # TypeError: So meldet das SDK einen fehlenden ANTHROPIC_API_KEY, schon beim
             # Aufbau der Anfrage und nicht als AnthropicError.
             raise LanguageModelError(f"Anthropic-API-Anfrage fehlgeschlagen: {error}") from error
-        return with_required_keys(schema, data)
 
-    def _ask_with_tool(self, system: str, messages: list[dict], schema: dict) -> dict:
+        # Das Auswerten steht außerhalb des try, damit ein Programmfehler dabei nicht
+        # wie ein Fehler der API aussieht.
+        return with_required_keys(schema, evaluate(response))
+
+    def _ask_with_tool(self, system: str, messages: list[dict], schema: dict) -> Message:
         tool = _tool_for(schema)
-        response = self._client.messages.create(
+        return self._client.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
             system=system,
@@ -71,15 +77,9 @@ class AnthropicLanguageModel:
             tool_choice={"type": "tool", "name": tool["name"]},
             messages=messages,
         )
-        data = next((block.input for block in response.content if block.type == "tool_use"), None)
-        if data is None:
-            raise LanguageModelError(
-                f"Keine Werkzeug-Antwort (stop_reason={response.stop_reason!r})"
-            )
-        return data
 
-    def _ask_for_json(self, system: str, messages: list[dict], schema: dict) -> dict:
-        response = self._client.beta.messages.create(
+    def _ask_for_json(self, system: str, messages: list[dict], schema: dict) -> BetaMessage:
+        return self._client.beta.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
             betas=[_FALLBACK_BETA],
@@ -88,21 +88,29 @@ class AnthropicLanguageModel:
             output_config={"format": {"type": "json_schema", "schema": schema}},
             messages=messages,
         )
-        if response.stop_reason != "end_turn":
-            # z.B. max_tokens oder refusal: Der Text ist dann abgeschnitten oder fehlt.
-            raise LanguageModelError(
-                f"Antwort unvollständig (stop_reason={response.stop_reason!r})"
-            )
-        text = next((block.text for block in response.content if block.type == "text"), None)
-        if text is None:
-            raise LanguageModelError("Antwort enthält keinen Text")
-        try:
-            data = json.loads(text)
-        except ValueError as error:
-            raise LanguageModelError(f"Antwort ist kein JSON: {text!r}") from error
-        if not isinstance(data, dict):
-            raise LanguageModelError(f"Antwort ist kein JSON-Objekt: {text!r}")
-        return data
+
+
+def _tool_input_from(response: Message) -> dict:
+    data = next((block.input for block in response.content if block.type == "tool_use"), None)
+    if data is None:
+        raise LanguageModelError(f"Keine Werkzeug-Antwort (stop_reason={response.stop_reason!r})")
+    return data
+
+
+def _json_object_from(response: BetaMessage) -> dict:
+    if response.stop_reason != "end_turn":
+        # z.B. max_tokens oder refusal: Der Text ist dann abgeschnitten oder fehlt.
+        raise LanguageModelError(f"Antwort unvollständig (stop_reason={response.stop_reason!r})")
+    text = next((block.text for block in response.content if block.type == "text"), None)
+    if text is None:
+        raise LanguageModelError("Antwort enthält keinen Text")
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        raise LanguageModelError(f"Antwort ist kein JSON: {text!r}") from error
+    if not isinstance(data, dict):
+        raise LanguageModelError(f"Antwort ist kein JSON-Objekt: {text!r}")
+    return data
 
 
 def _tool_for(schema: dict) -> dict:

@@ -309,6 +309,26 @@ def test_processed_feedback_is_not_sent_again(project: dict[str, Path]) -> None:
     assert '"anzeige_id": "a-1"' not in text
 
 
+def test_without_language_model_sonnet_is_built_for_json_answers(
+    project: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built: list[tuple[str, dict]] = []
+    sonnet = FakeLanguageModel(_suggestion())
+    real_class = profile_suggestion.AnthropicLanguageModel
+
+    def build(model: str, **options: object) -> FakeLanguageModel:
+        built.append((model, options))
+        real_class(model, **options)  # die Optionen passen zur echten Signatur
+        return sonnet
+
+    monkeypatch.setattr(profile_suggestion, "AnthropicLanguageModel", build)
+
+    assert profile_suggestion.main(**project, ask=lambda _: "n", now=_NOW) == 0
+
+    assert built == [("claude-sonnet-5-5", {"max_tokens": 16000, "json_answer": True})]
+    assert len(sonnet.requests) == 1
+
+
 def test_old_module_name_is_gone() -> None:
     assert importlib.util.find_spec("jobagent.profilvorschlag") is None
 
