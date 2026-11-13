@@ -1,18 +1,18 @@
-"""Tests fuer den Profil-Vorschlag, die Anthropic-API ist vollstaendig gemockt."""
+"""Tests fuer den Profil-Vorschlag, das Sprachmodell ist durch FakeLanguageModel ersetzt."""
 
 import importlib.util
 import json
 from datetime import date, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
-import anthropic
 import pytest
 
 from jobagent import profile_suggestion, store
 from jobagent.job_ad import JobAd
+from jobagent.language_model import LanguageModelError
 from jobagent.profile_suggestion import ProfileChange, apply_changes, create_suggestion
 from jobagent.score import Assessment
+from tests.fakes import FakeLanguageModel
 
 _PROFILE = "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2\n"
 _NOW = datetime(2026, 11, 8, 15, 1, 2)
@@ -23,38 +23,15 @@ _CHANGE = {
 }
 
 
-class _FakeClient:
-    def __init__(self, response: object) -> None:
-        self.response = response
-        self.calls: list[dict] = []
-        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
-
-    def _create(self, **kwargs: object) -> object:
-        self.calls.append(kwargs)
-        if isinstance(self.response, Exception):
-            raise self.response
-        return self.response
+def _suggestion(changes: list[dict] | None = None, model_errors: list[str] | None = None) -> dict:
+    return {
+        "aenderungen": [_CHANGE] if changes is None else changes,
+        "modellfehler": model_errors or [],
+    }
 
 
-def _response(data: object, stop_reason: str = "end_turn") -> SimpleNamespace:
-    text = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
-    return SimpleNamespace(
-        stop_reason=stop_reason,
-        content=[SimpleNamespace(type="thinking"), SimpleNamespace(type="text", text=text)],
-    )
-
-
-def _suggestion(changes: list[dict] | None = None, model_errors: list[str] | None = None):
-    return _response(
-        {
-            "aenderungen": [_CHANGE] if changes is None else changes,
-            "modellfehler": model_errors or [],
-        }
-    )
-
-
-def _api_error() -> anthropic.APIConnectionError:
-    return anthropic.APIConnectionError(request=None)  # type: ignore[arg-type]
+def _sent_text(model: FakeLanguageModel) -> str:
+    return model.requests[0].text
 
 
 @pytest.fixture
@@ -77,13 +54,13 @@ def _add_feedback(db: Path, job_ad_id: str) -> None:
     conn.close()
 
 
-def _run(project: dict[str, Path], client: _FakeClient, answer: str | Exception = "j") -> int:
+def _run(project: dict[str, Path], model: FakeLanguageModel, answer: str | Exception = "j") -> int:
     def ask(_: str) -> str:
         if isinstance(answer, Exception):
             raise answer
         return answer
 
-    return profile_suggestion.main(**project, client=client, ask=ask, now=_NOW)
+    return profile_suggestion.main(**project, language_model=model, ask=ask, now=_NOW)
 
 
 def _processed(project: dict[str, Path]) -> list[int]:
@@ -128,11 +105,11 @@ def test_suggestion_sends_feedback_with_german_keys() -> None:
         own_score=2,
         reason=None,
     )
-    client = _FakeClient(_suggestion())
+    model = FakeLanguageModel(_suggestion())
 
-    create_suggestion(_PROFILE, [without_assessment, _feedback()], client=client)
+    create_suggestion(_PROFILE, [without_assessment, _feedback()], model)
 
-    text = client.calls[0]["messages"][0]["content"]
+    text = _sent_text(model)
     data = json.loads(text.split("Rueckmeldungen:\n", 1)[1])
     assert data == [
         {
@@ -194,25 +171,22 @@ def test_apply_changes_applies_several_changes_in_order() -> None:
     assert new == "A\nB\n"
 
 
-def test_suggestion_uses_sonnet_with_structured_output() -> None:
-    client = _FakeClient(_suggestion())
+def test_suggestion_asks_for_changes_and_model_errors() -> None:
+    model = FakeLanguageModel(_suggestion())
 
-    create_suggestion(_PROFILE, [_feedback()], client=client)
+    create_suggestion(_PROFILE, [_feedback()], model)
 
-    call = client.calls[0]
-    assert call["model"] == "claude-sonnet-5-5"
-    assert "tool_choice" not in call
-    assert call["output_config"]["format"]["type"] == "json_schema"
-    assert call["fallbacks"] == "default"
-    assert call["betas"] == ["server-side-fallback-2026-07-01"]
+    schema = model.requests[0].schema
+    assert schema["required"] == ["aenderungen", "modellfehler"]
+    assert schema["properties"]["aenderungen"]["items"]["required"] == ["alt", "neu", "grund"]
 
 
 def test_suggestion_sends_profile_and_feedback() -> None:
-    client = _FakeClient(_suggestion())
+    model = FakeLanguageModel(_suggestion())
 
-    create_suggestion(_PROFILE, [_feedback()], client=client)
+    create_suggestion(_PROFILE, [_feedback()], model)
 
-    text = client.calls[0]["messages"][0]["content"]
+    text = _sent_text(model)
     assert _PROFILE in text
     assert "KPMG ist keine Zeitarbeit" in text
     assert '"modell_score": 2' in text
@@ -221,9 +195,9 @@ def test_suggestion_sends_profile_and_feedback() -> None:
 
 
 def test_suggestion_is_parsed() -> None:
-    client = _FakeClient(_suggestion(model_errors=["KPMG falsch gelesen"]))
+    model = FakeLanguageModel(_suggestion(model_errors=["KPMG falsch gelesen"]))
 
-    suggestion = create_suggestion(_PROFILE, [_feedback()], client=client)
+    suggestion = create_suggestion(_PROFILE, [_feedback()], model)
 
     assert suggestion is not None
     assert suggestion.changes == [
@@ -233,25 +207,22 @@ def test_suggestion_is_parsed() -> None:
 
 
 @pytest.mark.parametrize(
-    "response",
+    "answer",
     [
-        _api_error(),
-        TypeError("Could not resolve authentication method."),
-        _response({"modellfehler": []}),
-        _response("kein json"),
-        _response({"aenderungen": [], "modellfehler": []}, stop_reason="refusal"),
-        _response({"aenderungen": [], "modellfehler": []}, stop_reason="max_tokens"),
-        SimpleNamespace(stop_reason="end_turn", content=[]),
+        LanguageModelError("Anthropic-API-Anfrage fehlgeschlagen"),
+        {"modellfehler": []},
+        {"aenderungen": [{"alt": "a", "neu": "b"}], "modellfehler": []},
+        {"aenderungen": ["keine Aenderung"], "modellfehler": []},
     ],
 )
-def test_suggestion_returns_none_on_errors(response: object) -> None:
-    assert create_suggestion(_PROFILE, [_feedback()], client=_FakeClient(response)) is None
+def test_suggestion_returns_none_on_errors(answer: dict | LanguageModelError) -> None:
+    assert create_suggestion(_PROFILE, [_feedback()], FakeLanguageModel(answer)) is None
 
 
 def test_accepting_changes_profile_backs_up_and_processes(
     project: dict[str, Path], capsys: pytest.CaptureFixture
 ) -> None:
-    assert _run(project, _FakeClient(_suggestion()), "j") == 0
+    assert _run(project, FakeLanguageModel(_suggestion()), "j") == 0
 
     assert "Beratungsfirmen" in project["profile_path"].read_text(encoding="utf-8")
     backup = project["profile_path"].parent / "profile.sicherung-2026-11-08-150102.md"
@@ -263,7 +234,7 @@ def test_accepting_changes_profile_backs_up_and_processes(
 
 
 def test_rejecting_keeps_profile_and_processes(project: dict[str, Path]) -> None:
-    assert _run(project, _FakeClient(_suggestion()), "n") == 0
+    assert _run(project, FakeLanguageModel(_suggestion()), "n") == 0
 
     assert project["profile_path"].read_text(encoding="utf-8") == _PROFILE
     assert _backups(project) == []
@@ -272,7 +243,7 @@ def test_rejecting_keeps_profile_and_processes(project: dict[str, Path]) -> None
 
 @pytest.mark.parametrize("answer", ["a", "", "vielleicht", EOFError()])
 def test_cancelling_changes_nothing(project: dict[str, Path], answer: str | Exception) -> None:
-    assert _run(project, _FakeClient(_suggestion()), answer) == 0
+    assert _run(project, FakeLanguageModel(_suggestion()), answer) == 0
 
     assert project["profile_path"].read_text(encoding="utf-8") == _PROFILE
     assert _backups(project) == []
@@ -282,9 +253,9 @@ def test_cancelling_changes_nothing(project: dict[str, Path], answer: str | Exce
 def test_only_model_errors_keeps_profile_and_does_not_ask(
     project: dict[str, Path], capsys: pytest.CaptureFixture
 ) -> None:
-    client = _FakeClient(_suggestion(changes=[], model_errors=["KPMG falsch gelesen"]))
+    model = FakeLanguageModel(_suggestion(changes=[], model_errors=["KPMG falsch gelesen"]))
 
-    assert _run(project, client, AssertionError("darf nicht fragen")) == 0
+    assert _run(project, model, AssertionError("darf nicht fragen")) == 0
 
     assert project["profile_path"].read_text(encoding="utf-8") == _PROFILE
     assert _processed(project) == [1]
@@ -296,39 +267,44 @@ def test_only_unusable_changes_stay_unprocessed(
 ) -> None:
     broken = {"alt": "gibt es nicht", "neu": "x", "grund": "g"}
 
-    assert _run(project, _FakeClient(_suggestion([broken])), AssertionError("nicht fragen")) == 1
+    model = FakeLanguageModel(_suggestion([broken]))
+
+    assert _run(project, model, AssertionError("nicht fragen")) == 1
 
     assert project["profile_path"].read_text(encoding="utf-8") == _PROFILE
     assert _processed(project) == [0]
     assert "gibt es nicht" in capsys.readouterr().err
 
 
-def test_api_error_changes_nothing(project: dict[str, Path]) -> None:
-    assert _run(project, _FakeClient(_api_error())) == 1
+def test_language_model_error_changes_nothing(
+    project: dict[str, Path], capsys: pytest.CaptureFixture
+) -> None:
+    assert _run(project, FakeLanguageModel(LanguageModelError("Netz weg"))) == 1
 
     assert project["profile_path"].read_text(encoding="utf-8") == _PROFILE
     assert _processed(project) == [0]
+    assert "Kein brauchbarer Vorschlag" in capsys.readouterr().err
 
 
 def test_no_api_call_without_open_feedback(project: dict[str, Path]) -> None:
-    client = _FakeClient(_suggestion())
-    _run(project, client, "n")
-    client.calls.clear()
+    model = FakeLanguageModel(_suggestion())
+    _run(project, model, "n")
+    model.requests.clear()
 
-    assert _run(project, client, "n") == 0
+    assert _run(project, model, "n") == 0
 
-    assert client.calls == []
+    assert model.requests == []
 
 
 def test_processed_feedback_is_not_sent_again(project: dict[str, Path]) -> None:
-    client = _FakeClient(_suggestion([]))
-    _run(project, client, "n")
+    model = FakeLanguageModel(_suggestion([]))
+    _run(project, model, "n")
     _add_feedback(project["db_path"], "a-2")
-    client.calls.clear()
+    model.requests.clear()
 
-    _run(project, client, "n")
+    _run(project, model, "n")
 
-    text = client.calls[0]["messages"][0]["content"]
+    text = _sent_text(model)
     assert '"anzeige_id": "a-2"' in text
     assert '"anzeige_id": "a-1"' not in text
 
@@ -339,8 +315,8 @@ def test_old_module_name_is_gone() -> None:
 
 def test_missing_profile_is_error(project: dict[str, Path]) -> None:
     project["profile_path"].unlink()
-    client = _FakeClient(_suggestion())
+    model = FakeLanguageModel(_suggestion())
 
-    assert _run(project, client) == 1
+    assert _run(project, model) == 1
 
-    assert client.calls == []
+    assert model.requests == []

@@ -10,18 +10,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-import anthropic
-
 from jobagent import store
+from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
 
 logger = logging.getLogger(__name__)
 
 _DB_PATH = Path("jobagent.db")
 _PROFILE_PATH = Path("profile.md")
-
-_MODEL = "claude-sonnet-5-5"
-_MAX_TOKENS = 16000
-_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+# Zusammenbau: Sonnet mit Nachdenken und großem Antwortbudget (ADR 0004)
+_SUGGESTION_MODEL = "claude-sonnet-5-5"
+_SUGGESTION_MAX_TOKENS = 16000
 
 # Schema und Prompt gehen an das Modell und bleiben deutsch; die Uebersetzung
 # in die englischen Namen passiert nur in _to_suggestion und _as_model_data
@@ -84,35 +82,22 @@ class ProfileSuggestion:
 def create_suggestion(
     profile: str,
     feedback: list[store.Feedback],
-    *,
-    client: anthropic.Anthropic | None = None,
+    language_model: LanguageModel,
 ) -> ProfileSuggestion | None:
-    """Fragt das Modell nach Aenderungen; None, wenn keine brauchbare Antwort kommt."""
-    active_client = client or anthropic.Anthropic()
+    """Fragt das Sprachmodell nach Aenderungen; None, wenn keine brauchbare Antwort kommt."""
     data = json.dumps(
         [_as_model_data(entry) for entry in feedback],
         ensure_ascii=False,
         indent=2,
     )
+    text = f"Suchprofil:\n{profile}\n\nRueckmeldungen:\n{data}"
     try:
-        response = active_client.beta.messages.create(
-            model=_MODEL,
-            max_tokens=_MAX_TOKENS,
-            betas=[_FALLBACK_BETA],
-            fallbacks="default",
-            system=_SYSTEM_PROMPT,
-            output_config={"format": {"type": "json_schema", "schema": _RESPONSE_SCHEMA}},
-            messages=[
-                {"role": "user", "content": f"Suchprofil:\n{profile}\n\nRueckmeldungen:\n{data}"}
-            ],
-        )
-    except (anthropic.AnthropicError, TypeError):
-        # TypeError: die SDK wirft dies statt eines AnthropicError, wenn z.B.
-        # kein ANTHROPIC_API_KEY gesetzt ist (siehe language_model.py).
-        logger.exception("Anthropic-API-Anfrage fuer den Profil-Vorschlag fehlgeschlagen")
+        answer = language_model.ask(_SYSTEM_PROMPT, text, _RESPONSE_SCHEMA)
+    except LanguageModelError:
+        logger.exception("Sprachmodell fuer den Profil-Vorschlag fehlgeschlagen")
         return None
 
-    return _to_suggestion(response)
+    return _to_suggestion(answer)
 
 
 def _as_model_data(feedback: store.Feedback) -> dict:
@@ -130,18 +115,8 @@ def _as_model_data(feedback: store.Feedback) -> dict:
     }
 
 
-def _to_suggestion(response: object) -> ProfileSuggestion | None:
-    if response.stop_reason != "end_turn":
-        logger.error("Profil-Vorschlag unvollstaendig (stop_reason=%r)", response.stop_reason)
-        return None
-
-    text = next((block.text for block in response.content if block.type == "text"), None)
-    if text is None:
-        logger.error("Profil-Vorschlag enthaelt keinen Text")
-        return None
-
+def _to_suggestion(data: dict) -> ProfileSuggestion | None:
     try:
-        data = json.loads(text)
         return ProfileSuggestion(
             changes=[
                 ProfileChange(old=entry["alt"], new=entry["neu"], reason=entry["grund"])
@@ -149,8 +124,8 @@ def _to_suggestion(response: object) -> ProfileSuggestion | None:
             ],
             model_errors=[str(entry) for entry in data["modellfehler"]],
         )
-    except (KeyError, TypeError, ValueError):
-        logger.exception("Ungueltiger Profil-Vorschlag: %r", text)
+    except (KeyError, TypeError):
+        logger.exception("Ungueltiger Profil-Vorschlag: %r", data)
         return None
 
 
@@ -174,18 +149,25 @@ def main(
     *,
     db_path: Path = _DB_PATH,
     profile_path: Path = _PROFILE_PATH,
-    client: anthropic.Anthropic | None = None,
+    language_model: LanguageModel | None = None,
     ask: Callable[[str], str] = input,
     now: datetime | None = None,
 ) -> int:
-    """Erstellt einen Vorschlag, zeigt ihn an und fragt nach der Entscheidung."""
+    """Erstellt einen Vorschlag, zeigt ihn an und fragt nach der Entscheidung.
+
+    Ohne `language_model` fragt der Profil-Vorschlag Sonnet von Anthropic.
+    """
     if not profile_path.exists():
         print(f"Fehler: {profile_path} nicht gefunden.", file=sys.stderr)
         return 1
+    if language_model is None:
+        language_model = AnthropicLanguageModel(
+            _SUGGESTION_MODEL, max_tokens=_SUGGESTION_MAX_TOKENS, thinking=True
+        )
 
     conn = store.connect(db_path)
     try:
-        return _suggest_and_decide(conn, profile_path, client, ask, now or datetime.now())
+        return _suggest_and_decide(conn, profile_path, language_model, ask, now or datetime.now())
     finally:
         conn.close()
 
@@ -193,7 +175,7 @@ def main(
 def _suggest_and_decide(
     conn: sqlite3.Connection,
     profile_path: Path,
-    client: anthropic.Anthropic | None,
+    language_model: LanguageModel,
     ask: Callable[[str], str],
     now: datetime,
 ) -> int:
@@ -203,7 +185,7 @@ def _suggest_and_decide(
         return 0
 
     profile = profile_path.read_text(encoding="utf-8")
-    suggestion = create_suggestion(profile, feedback, client=client)
+    suggestion = create_suggestion(profile, feedback, language_model)
     if suggestion is None:
         print("Fehler: Kein brauchbarer Vorschlag, es wurde nichts geändert.", file=sys.stderr)
         return 1

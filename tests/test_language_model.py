@@ -4,6 +4,7 @@ import anthropic
 import httpx2
 import pytest
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
+from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaThinkingBlock, BetaUsage
 
 from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
 
@@ -43,9 +44,15 @@ class _FakeMessages:
         return self._result
 
 
+class _FakeBeta:
+    def __init__(self, result: object) -> None:
+        self.messages = _FakeMessages(result)
+
+
 class _FakeClient:
     def __init__(self, result: object) -> None:
         self.messages = _FakeMessages(result)
+        self.beta = _FakeBeta(result)
 
 
 def _ask(result: object) -> dict:
@@ -134,3 +141,79 @@ def test_answer_without_tool_becomes_language_model_error() -> None:
 def test_answer_without_required_key_becomes_language_model_error() -> None:
     with pytest.raises(LanguageModelError):
         _ask(_tool_answer({"score": 4}))
+
+
+def test_max_tokens_reaches_the_tool_request() -> None:
+    client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
+
+    AnthropicLanguageModel("modell-x", max_tokens=2048, client=client).ask("S", "T", _SCHEMA)
+
+    assert client.messages.last_kwargs["max_tokens"] == 2048
+
+
+def _json_answer(*content: object, stop_reason: str = "end_turn") -> BetaMessage:
+    return BetaMessage(
+        id="msg_2",
+        content=list(content),
+        model="claude-sonnet-5-5",
+        role="assistant",
+        stop_reason=stop_reason,
+        stop_sequence=None,
+        type="message",
+        usage=BetaUsage(input_tokens=10, output_tokens=5),
+    )
+
+
+def _thought_and_text(text: str, stop_reason: str = "end_turn") -> BetaMessage:
+    return _json_answer(
+        BetaThinkingBlock(signature="sig", thinking="Erst nachdenken.", type="thinking"),
+        BetaTextBlock(text=text, type="text"),
+        stop_reason=stop_reason,
+    )
+
+
+def _ask_thinking(result: object) -> dict:
+    model = AnthropicLanguageModel("claude-sonnet-5-5", thinking=True, client=_FakeClient(result))
+    return model.ask("System", "Text", _SCHEMA)
+
+
+def test_thinking_model_returns_data_of_json_answer() -> None:
+    assert _ask_thinking(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}')) == {
+        "score": 4,
+        "kurzfazit": "Passt.",
+    }
+
+
+def test_thinking_model_asks_for_json_with_fallback_instead_of_tool() -> None:
+    client = _FakeClient(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}'))
+    model = AnthropicLanguageModel("modell-y", max_tokens=16000, thinking=True, client=client)
+
+    model.ask("Denk nach.", "Rückmeldungen", _SCHEMA)
+
+    assert client.messages.last_kwargs is None
+    assert client.beta.messages.last_kwargs == {
+        "model": "modell-y",
+        "max_tokens": 16000,
+        "betas": ["server-side-fallback-2026-07-01"],
+        "fallbacks": "default",
+        "system": "Denk nach.",
+        "output_config": {"format": {"type": "json_schema", "schema": _SCHEMA}},
+        "messages": [{"role": "user", "content": "Rückmeldungen"}],
+    }
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        _thought_and_text("kein json"),
+        _thought_and_text('["keine", "Daten"]'),
+        _thought_and_text('{"score": 4}'),
+        _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="max_tokens"),
+        _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="refusal"),
+        _json_answer(),
+        TypeError("Could not resolve authentication method."),
+    ],
+)
+def test_unusable_json_answer_becomes_language_model_error(answer: object) -> None:
+    with pytest.raises(LanguageModelError):
+        _ask_thinking(answer)
