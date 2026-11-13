@@ -44,7 +44,7 @@ _Im Code_: `SearchProfile`
 _Avoid_: Profil, Lebenslauf
 
 **Sprachmodell**:
-Das Modell, das Anzeigen bewertet und Profil-Vorschläge ableitet.
+Das Modell, das eine Anzeige bewertet oder einen Profil-Vorschlag ableitet; für beide Aufgaben kann es ein anderes sein.
 _Im Code_: `LanguageModel`
 _Avoid_: LLM, Provider, KI
 
@@ -54,7 +54,7 @@ _Im Code_: `Assessment`
 _Avoid_: Rating, Analyse, Analyzer, Scoring
 
 **Unbewertete Anzeige**:
-Eine Anzeige, die ein Lauf gefunden, aber nicht bewertet hat; sie gilt als ungesehen und kommt im nächsten Lauf erneut.
+Eine neue Anzeige, deren Bewertung in einem Lauf gescheitert ist; sie gilt als ungesehen und kommt im nächsten Lauf erneut.
 _Im Code_: `unassessed`
 _Avoid_: übersprungen, fehlerhaft
 
