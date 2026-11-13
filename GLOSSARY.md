@@ -54,7 +54,7 @@ _Im Code_: `Assessment`
 _Avoid_: Rating, Analyse, Analyzer, Scoring
 
 **Unbewertete Anzeige**:
-Eine neue Anzeige, deren Bewertung in einem Lauf gescheitert ist; sie gilt als ungesehen und kommt im nächsten Lauf erneut.
+Eine neue Anzeige, deren Bewertung in einem Lauf gescheitert ist; sie gilt als ungesehen und wird im nächsten Lauf erneut bewertet, sofern eine Quelle sie dann noch liefert.
 _Im Code_: `unassessed`
 _Avoid_: übersprungen, fehlerhaft
 
