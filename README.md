@@ -140,9 +140,31 @@ API-Key setzen (niemals im Code/Repo):
 [Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "dein-key", "User")
 ```
 
-Suchparameter in `config.toml` anpassen (Ort, Umkreis, Zeitfenster,
-Suchbegriffe, optional `[[firmen]]` für eine Watchlist konkreter
-Greenhouse-/Lever-Jobboards).
+Suchparameter in `config.toml` anpassen. Die Datei ist in Abschnitte geteilt:
+
+```toml
+[suche]                      # gilt für alle Quellen
+was = ["Data Scientist", "IT Consultant"]
+wo = "München"
+veroeffentlichtseit = 7      # Tage
+
+[bundesagentur]
+umkreis = 25                 # km
+
+[[watchlist.firmen]]         # optional, je Firma ein Eintrag
+name = "GitLab"
+ats = "greenhouse"           # oder "lever"
+slug = "gitlab"
+
+[report]
+mindest_score = 3
+nachfassen_ab_tag = 14
+nachfassen_bis_tag = 28
+```
+
+Fehlende Werte behalten ihren Standard. Das alte flache Format ohne
+Abschnitte wird nicht mehr gelesen; der Lauf nennt dann den neuen Platz
+jedes alten Schlüssels.
 
 ## Verwenden
 
@@ -154,7 +176,7 @@ Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
 `output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
 Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht je
 Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
-Treffer unter `mindest_score` (`config.toml`, Standard 3) erscheinen nur
+Treffer unter `mindest_score` (`[report]` in `config.toml`, Standard 3) erscheinen nur
 einzeilig am Ende.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
 
@@ -180,7 +202,7 @@ uv run python -m jobagent.feedback beworben --firma "Firma X" --titel "Data Engi
 ```
 
 Steht eine Bewerbung auf `beworben` und liegt 14 bis 28 Tage zurück
-(`nachfassen_ab_tag`, `nachfassen_bis_tag` in `config.toml`), erinnert der
+(`nachfassen_ab_tag`, `nachfassen_bis_tag` unter `[report]` in `config.toml`), erinnert der
 Report ans Nachhaken. Danach verschwindet der Hinweis, der Status bleibt.
 
 Erscheint eine Stelle erneut, auf die du dich beworben hast, steht sie im

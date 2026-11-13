@@ -22,27 +22,59 @@ class Config:
     companies: list[WatchlistCompany] = field(default_factory=list)
 
 
-# Die einzige Stelle, an der die deutschen Schluessel aus `config.toml` uebersetzt werden.
+class ConfigError(Exception):
+    """`config.toml` laesst sich nicht als Konfiguration lesen."""
+
+
+# Die einzige Stelle, an der die deutschen Schluessel aus `config.toml` uebersetzt werden:
+# (Abschnitt, Schluessel) -> Feld von `Config`.
 _TOML_KEYS = {
-    "was": "keywords",
-    "wo": "location",
-    "umkreis": "radius",
-    "veroeffentlichtseit": "published_since",
-    "mindest_score": "min_score",
-    "nachfassen_ab_tag": "follow_up_min_days",
-    "nachfassen_bis_tag": "follow_up_max_days",
-    "firmen": "companies",
+    ("suche", "was"): "keywords",
+    ("suche", "wo"): "location",
+    ("suche", "veroeffentlichtseit"): "published_since",
+    ("bundesagentur", "umkreis"): "radius",
+    ("watchlist", "firmen"): "companies",
+    ("report", "mindest_score"): "min_score",
+    ("report", "nachfassen_ab_tag"): "follow_up_min_days",
+    ("report", "nachfassen_bis_tag"): "follow_up_max_days",
 }
 
 
 def load_config(path: Path) -> Config:
-    """Liest `config.toml`; fehlende Schluessel behalten ihren Standardwert."""
+    """Liest `config.toml`; fehlende Abschnitte und Schluessel behalten ihren Standardwert.
+
+    Steht ein Schluessel des alten flachen Formats noch oben in der Datei, bricht das Laden
+    mit `ConfigError` ab und nennt seinen neuen Platz.
+    """
     with path.open("rb") as file:
         raw = tomllib.load(file)
-    values = {english: raw[german] for german, english in _TOML_KEYS.items() if german in raw}
+    _reject_flat_keys(raw)
+    values = {
+        english: raw[section][german]
+        for (section, german), english in _TOML_KEYS.items()
+        if german in raw.get(section, {})
+    }
     if "companies" in values:
         values["companies"] = [_to_company(entry) for entry in values["companies"]]
     return Config(**values)
+
+
+def _reject_flat_keys(raw: dict) -> None:
+    moved = [
+        f"`{german}` steht jetzt unter `{_place(section, german)}`"
+        for section, german in _TOML_KEYS
+        if german in raw
+    ]
+    if moved:
+        raise ConfigError(
+            "config.toml nutzt noch das alte flache Format: " + "; ".join(moved) + "."
+        )
+
+
+def _place(section: str, german: str) -> str:
+    if german == "firmen":
+        return f"[[{section}.{german}]]"
+    return f"[{section}] {german}"
 
 
 def _to_company(entry: dict) -> WatchlistCompany:
