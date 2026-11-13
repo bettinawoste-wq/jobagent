@@ -63,3 +63,78 @@ def test_load_config_rejects_old_flat_key_and_names_its_new_place(
 
     assert f"`{old_key}`" in str(error.value)
     assert new_place in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("toml", "found", "new_place"),
+    [
+        ('[suche]\nwas = ["A"]\numkreis = 30', "`[suche] umkreis`", "`[bundesagentur] umkreis`"),
+        ('[[suche.firmen]]\nname = "GitLab"', "`[[suche.firmen]]`", "`[[watchlist.firmen]]`"),
+    ],
+)
+def test_load_config_rejects_known_key_in_wrong_section_and_names_its_place(
+    tmp_path: Path, toml: str, found: str, new_place: str
+) -> None:
+    config_path = _write(tmp_path, toml + "\n")
+
+    with pytest.raises(ConfigError) as error:
+        load_config(config_path)
+
+    assert found in str(error.value)
+    assert new_place in str(error.value)
+    assert "flache Format" not in str(error.value)
+
+
+def test_load_config_reports_all_problems_at_once(tmp_path: Path) -> None:
+    config_path = _write(tmp_path, 'suche = "wo"\numkreis = 30\n')
+
+    with pytest.raises(ConfigError) as error:
+        load_config(config_path)
+
+    assert "`[suche]`" in str(error.value)
+    assert "`[bundesagentur] umkreis`" in str(error.value)
+    assert "flache Format" in str(error.value)
+
+
+def test_load_config_rejects_section_that_is_no_table(tmp_path: Path) -> None:
+    config_path = _write(tmp_path, 'suche = "wo"\n')
+
+    with pytest.raises(ConfigError) as error:
+        load_config(config_path)
+
+    assert "`suche` muss ein Abschnitt `[suche]` sein" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "toml",
+    [
+        '[watchlist.firmen]\nname = "GitLab"',
+        '[watchlist]\nfirmen = "GitLab"',
+        '[firmen]\nname = "GitLab"',
+    ],
+)
+def test_load_config_names_list_of_tables_for_companies_in_wrong_shape(
+    tmp_path: Path, toml: str
+) -> None:
+    config_path = _write(tmp_path, toml + "\n")
+
+    with pytest.raises(ConfigError) as error:
+        load_config(config_path)
+
+    assert "`[[watchlist.firmen]]`" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("toml", "companies"),
+    [
+        ("[watchlist]\nfirmen = []", []),
+        (
+            '[watchlist]\nfirmen = [{ name = "A", ats = "lever", slug = "a" }]',
+            [WatchlistCompany(name="A", ats="lever", slug="a")],
+        ),
+    ],
+)
+def test_load_config_accepts_empty_and_inline_companies(
+    tmp_path: Path, toml: str, companies: list[WatchlistCompany]
+) -> None:
+    assert load_config(_write(tmp_path, toml + "\n")).companies == companies
