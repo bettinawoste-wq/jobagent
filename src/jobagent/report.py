@@ -41,6 +41,7 @@ def write_report(
     applications: Mapping[str, AlreadyApplied] | None = None,
     follow_ups: Sequence[FollowUpReminder] = (),
     open_feedback: int = 0,
+    unassessed: int = 0,
 ) -> WrittenReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -51,7 +52,8 @@ def write_report(
     path = _free_path(output_dir, day)
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
-        f"{_sources_block(sources)}{_follow_up_block(follow_ups, day)}"
+        f"{_sources_block(sources)}{_unassessed_line(unassessed)}"
+        f"{_follow_up_block(follow_ups, day)}"
         f"{_profile_hint(open_feedback)}"
     )
 
@@ -103,6 +105,13 @@ def _source_line(source: "SourceStatus") -> str:
     if not source.errors:
         return f"- {source.name}: {count}"
     return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
+
+
+def _unassessed_line(unassessed: int) -> str:
+    if not unassessed:
+        return ""
+    count = "1 unbewertete Anzeige" if unassessed == 1 else f"{unassessed} unbewertete Anzeigen"
+    return f"{count} – der nächste Lauf versucht es erneut.\n\n"
 
 
 def _profile_hint(open_feedback: int) -> str:

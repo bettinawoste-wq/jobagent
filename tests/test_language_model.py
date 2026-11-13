@@ -143,6 +143,35 @@ def test_answer_without_required_key_becomes_language_model_error() -> None:
         _ask(_tool_answer({"score": 4}))
 
 
+def test_cut_off_tool_answer_becomes_language_model_error() -> None:
+    # Bei max_tokens kann der Werkzeug-Input abgeschnitten sein, auch wenn alle
+    # Pflichtschlüssel schon drinstehen.
+    answer = _message(
+        ToolUseBlock(
+            id="toolu_1",
+            input={"score": 4, "kurzfazit": "Pas"},
+            name="antwort_abgeben",
+            type="tool_use",
+        ),
+        stop_reason="max_tokens",
+    )
+
+    with pytest.raises(LanguageModelError):
+        _ask(answer)
+
+
+@pytest.mark.parametrize("tool_input", [["score", "kurzfazit"], "score kurzfazit", 5])
+def test_tool_answer_that_is_no_object_becomes_language_model_error(tool_input: object) -> None:
+    answer = _message(
+        ToolUseBlock.model_construct(
+            id="toolu_1", input=tool_input, name="antwort_abgeben", type="tool_use"
+        )
+    )
+
+    with pytest.raises(LanguageModelError):
+        _ask(answer)
+
+
 def test_max_tokens_reaches_the_tool_request() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
 
@@ -210,6 +239,7 @@ def test_json_answer_is_asked_with_fallback_instead_of_tool() -> None:
         _thought_and_text("kein json"),
         _thought_and_text('["keine", "Daten"]'),
         _thought_and_text('{"score": 4}'),
+        _thought_and_text("[" * 100_000 + "]" * 100_000),
         _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="max_tokens"),
         _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="refusal"),
         _beta_message(),
