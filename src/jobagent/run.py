@@ -37,7 +37,7 @@ def run(
     *,
     sources: Sequence[Source],
     language_model: LanguageModel,
-    profile: str,
+    search_profile: str,
     store: Store,
     config: Config,
     today: date,
@@ -45,10 +45,10 @@ def run(
 ) -> Path:
     """Führt einen Lauf aus und gibt den Pfad des geschriebenen Reports zurück.
 
-    Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `profile`.
+    Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `search_profile`.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
-    new_matches = _new_matches(store, job_ads, language_model, profile, today)
+    new_matches = _new_matches(store, job_ads, language_model, search_profile, today)
     written = report.write_report(
         new_matches,
         today,
@@ -71,7 +71,7 @@ def _new_matches(
     store: Store,
     job_ads: list[JobAd],
     language_model: LanguageModel,
-    profile: str,
+    search_profile: str,
     today: date,
 ) -> list[report.Match]:
     matches: list[report.Match] = []
@@ -80,7 +80,7 @@ def _new_matches(
         if not store.is_new(job_ad.id):
             continue
 
-        assessment = score_job_ad(job_ad, profile, language_model)
+        assessment = score_job_ad(job_ad, search_profile, language_model)
         if assessment is None:
             logger.warning("Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", job_ad.id)
             continue

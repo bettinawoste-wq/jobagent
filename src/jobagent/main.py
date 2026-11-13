@@ -51,13 +51,13 @@ def main(
         sources = default_sources(config)
     if language_model is None:
         language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
-    profile = profile_path.read_text(encoding="utf-8")
+    search_profile = profile_path.read_text(encoding="utf-8")
 
     with Store(db_path) as store:
         return run(
             sources=sources,
             language_model=language_model,
-            profile=profile,
+            search_profile=search_profile,
             store=store,
             config=config,
             today=date.today(),
@@ -94,7 +94,7 @@ def demo_run(output_dir: Path | None = None) -> str:
             path = run(
                 sources=demo.sources(),
                 language_model=demo.DemoLanguageModel(),
-                profile=demo.SEARCH_PROFILE,
+                search_profile=demo.SEARCH_PROFILE,
                 store=store,
                 config=demo.CONFIG,
                 today=today,

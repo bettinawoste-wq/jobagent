@@ -67,7 +67,7 @@ def _run(
     path = run(
         sources=list(sources),
         language_model=model or FakeLanguageModel(_answer()),
-        profile=_PROFILE,
+        search_profile=_PROFILE,
         store=db,
         config=config,
         today=today,
@@ -131,7 +131,7 @@ def test_run_writes_report_dated_today_into_output_dir(db: Store, output_dir: Pa
     path = run(
         sources=[FakeSource([_job_ad("a-1")])],
         language_model=FakeLanguageModel(_answer()),
-        profile=_PROFILE,
+        search_profile=_PROFILE,
         store=db,
         config=_CONFIG,
         today=TODAY,
