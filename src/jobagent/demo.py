@@ -2,9 +2,10 @@
 
 Alles hier ist synthetisch und oeffentlich: nur erkennbar erfundene Firmen, Links auf
 example.com. Die Bewertungen sind so geschrieben, als kaemen sie vom Modell gegen das
-Demo-Suchprofil `PROFILE`, einen Auszug aus `profile.example.md`. Das Demo-Sprachmodell
-antwortet sie, damit sie dieselbe Pruefung durchlaufen wie echte Antworten. Ein Demo-Lauf
-holt nichts aus dem Netz, fragt kein Modell und liest oder speichert nichts Persoenliches.
+Demo-Suchprofil `SEARCH_PROFILE`, einen Auszug aus `profile.example.md`. Das
+Demo-Sprachmodell gibt sie als Antworten zurueck, damit sie dieselbe Pruefung durchlaufen
+wie echte Antworten. Ein Demo-Lauf holt nichts aus dem Netz, fragt kein echtes
+Sprachmodell und liest oder speichert nichts Persoenliches.
 """
 
 import sqlite3
@@ -15,7 +16,7 @@ from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError, with_required_keys
 from jobagent.position import position_key
-from jobagent.score import Assessment
+from jobagent.score import Assessment, job_ad_as_text
 from jobagent.sources import SearchResult, Source
 
 CONFIG = Config(
@@ -25,7 +26,7 @@ CONFIG = Config(
     follow_up_max_days=28,
 )
 
-PROFILE = """# Suchprofil (Demo)
+SEARCH_PROFILE = """# Suchprofil (Demo)
 
 ## Gesuchte Rollen
 1. Full-Stack-Entwicklung (z.B. Python, JavaScript, C++)
@@ -224,31 +225,24 @@ def sources() -> list[Source]:
 
 
 class DemoLanguageModel:
-    """Sprachmodell am Seam `LanguageModel`, das je Demo-Anzeige eine vorgefertigte
-    Bewertung antwortet, statt ein Modell zu fragen.
+    """Sprachmodell am Seam `LanguageModel`, das für jede Demo-Anzeige eine vorgefertigte
+    Bewertung antwortet, statt ein echtes Sprachmodell zu fragen.
 
-    Die Anzeige erkennt es an ihrer Titelzeile im Text der Anfrage; die Titel der
-    Demo-Anzeigen sind eindeutig. Für eine andere Anzeige hat es keine Antwort.
+    Die Anzeige erkennt es am Ende der Anfrage, wo die Bewertung sie als Text anhängt.
+    Für eine andere Anzeige hat es keine Antwort; fehlt einer Demo-Anzeige ihre
+    vorgefertigte Bewertung, scheitert schon der Aufbau.
     """
 
     def __init__(self) -> None:
-        job_ads = [
-            job_ad
-            for by_keyword in (_BUNDESAGENTUR, _ARBEITNOW, _WATCHLIST)
-            for found in by_keyword.values()
-            for job_ad in found
-        ]
         self._answers = {
-            f"Titel: {job_ad.title}": {
-                "score": ASSESSMENTS[job_ad.id].score,
-                **ASSESSMENTS[job_ad.id].as_model_data(),
-            }
-            for job_ad in job_ads
+            job_ad_as_text(job_ad): ASSESSMENTS[job_ad.id].as_model_answer()
+            for source in sources()
+            for job_ad in source.search(CONFIG.keywords).job_ads
         }
 
     def ask(self, system: str, text: str, schema: dict) -> dict:
         answer = next(
-            (self._answers[line] for line in text.splitlines() if line in self._answers), None
+            (answer for job_ad, answer in self._answers.items() if text.endswith(job_ad)), None
         )
         if answer is None:
             raise LanguageModelError("Keine vorgefertigte Bewertung für diese Anzeige")

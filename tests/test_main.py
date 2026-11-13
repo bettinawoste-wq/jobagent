@@ -88,7 +88,7 @@ def _assessment() -> Assessment:
 
 def _answer(score: int = 4) -> dict:
     """Antwort des Sprachmodells auf eine Bewertung, unter den deutschen Schlüsseln."""
-    return {"score": score, **_assessment().as_model_data()}
+    return replace(_assessment(), score=score).as_model_answer()
 
 
 def _asked_about(model: FakeLanguageModel) -> list[str]:

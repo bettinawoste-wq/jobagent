@@ -42,18 +42,19 @@ def _demo_run(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
 def test_demo_run_assesses_every_job_ad_via_demo_language_model(
     empty_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    asked: list[str] = []
+    answered: list[dict] = []
     ask = demo.DemoLanguageModel.ask
 
     def recording_ask(self: demo.DemoLanguageModel, system: str, text: str, schema: dict) -> dict:
-        asked.append(text)
-        return ask(self, system, text, schema)
+        answer = ask(self, system, text, schema)
+        answered.append(answer)
+        return answer
 
     monkeypatch.setattr(demo.DemoLanguageModel, "ask", recording_ask)
 
     _demo_run(capsys)
 
-    assert len(asked) == 8
+    assert len(answered) == len(demo.ASSESSMENTS)
 
 
 def test_demo_language_model_answers_pass_the_assessment_check() -> None:
@@ -61,14 +62,14 @@ def test_demo_language_model_answers_pass_the_assessment_check() -> None:
 
     for source in demo.sources():
         for job_ad in source.search(demo.CONFIG.keywords).job_ads:
-            assessment = score_job_ad(job_ad, demo.PROFILE, model)
+            assessment = score_job_ad(job_ad, demo.SEARCH_PROFILE, model)
             assert assessment == demo.ASSESSMENTS[job_ad.id]
 
 
 def test_demo_language_model_has_no_answer_for_unknown_job_ad() -> None:
     unknown = JobAd("x-1", "Unbekannte Stelle", "Niemand GmbH", None, "https://example.com/x")
 
-    assert score_job_ad(unknown, demo.PROFILE, demo.DemoLanguageModel()) is None
+    assert score_job_ad(unknown, demo.SEARCH_PROFILE, demo.DemoLanguageModel()) is None
 
 
 def test_demo_run_prints_report_without_creating_anything(

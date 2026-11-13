@@ -233,7 +233,7 @@ def demo_run(output_dir: Path | None = None) -> str:
     with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:
         db_path = Path(temp) / "demo.db"
         profile_path = Path(temp) / "profile.md"
-        profile_path.write_text(demo.PROFILE, encoding="utf-8")
+        profile_path.write_text(demo.SEARCH_PROFILE, encoding="utf-8")
         conn = store.connect(db_path)
         try:
             demo.create_applications(conn, date.today())
