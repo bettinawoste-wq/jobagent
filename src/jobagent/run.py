@@ -87,7 +87,7 @@ def _new_matches(
         assessment = _safe_score(job_ad, search_profile, language_model)
         if assessment is None:
             logger.warning(
-                "Anzeige unbewertet, der nächste Lauf versucht es erneut (id=%r)", job_ad.id
+                "Anzeige unbewertet, der nächste Lauf versucht es erneut (anzeige=%r)", job_ad.id
             )
             unassessed += 1
             continue
