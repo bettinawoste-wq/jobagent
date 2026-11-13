@@ -73,7 +73,6 @@ def test_score_job_ad_returns_none_on_language_model_error(
     [
         {**SCORE_FIXTURE, "score": 7},
         {**SCORE_FIXTURE, "passt": 123},
-        {k: v for k, v in SCORE_FIXTURE.items() if k != "kurzfazit"},
     ],
 )
 def test_score_job_ad_returns_none_on_invalid_response(
@@ -84,6 +83,17 @@ def test_score_job_ad_returns_none_on_invalid_response(
 
     assert assessment is None
     assert "Ungueltige Bewertungsantwort" in caplog.text
+
+
+def test_score_job_ad_returns_none_without_required_key(caplog: pytest.LogCaptureFixture) -> None:
+    # Fehlt ein Pflichtschlüssel des Schemas, scheitert schon das Sprachmodell am Seam.
+    data = {k: v for k, v in SCORE_FIXTURE.items() if k != "kurzfazit"}
+
+    with caplog.at_level("ERROR"):
+        assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(data))
+
+    assert assessment is None
+    assert "fehlgeschlagen" in caplog.text
 
 
 def test_score_job_ad_accepts_string_instead_of_list() -> None:

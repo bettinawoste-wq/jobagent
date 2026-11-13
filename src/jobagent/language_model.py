@@ -32,8 +32,9 @@ class AnthropicLanguageModel:
     def ask(self, system: str, text: str, schema: dict) -> dict:
         tool = _tool_for(schema)
         try:
-            client = self._client or anthropic.Anthropic()
-            response = client.messages.create(
+            if self._client is None:
+                self._client = anthropic.Anthropic()  # einmal je Instanz, nicht je Frage
+            response = self._client.messages.create(
                 model=self._model,
                 max_tokens=_MAX_TOKENS,
                 system=system,
@@ -42,8 +43,8 @@ class AnthropicLanguageModel:
                 messages=[{"role": "user", "content": text}],
             )
         except (anthropic.AnthropicError, TypeError) as error:
-            # TypeError: So meldet das SDK z.B. einen fehlenden ANTHROPIC_API_KEY, schon
-            # beim Aufbau der Anfrage und nicht als AnthropicError.
+            # TypeError: So meldet das SDK einen fehlenden ANTHROPIC_API_KEY, schon beim
+            # Aufbau der Anfrage und nicht als AnthropicError.
             raise LanguageModelError(f"Anthropic-API-Anfrage fehlgeschlagen: {error}") from error
 
         data = next((block.input for block in response.content if block.type == "tool_use"), None)
@@ -51,7 +52,7 @@ class AnthropicLanguageModel:
             raise LanguageModelError(
                 f"Keine Werkzeug-Antwort (stop_reason={response.stop_reason!r})"
             )
-        return _with_required_keys(schema, data)
+        return with_required_keys(schema, data)
 
 
 def _tool_for(schema: dict) -> dict:
@@ -66,10 +67,13 @@ def _tool_for(schema: dict) -> dict:
     return tool
 
 
-def _with_required_keys(schema: dict, data: dict) -> dict:
-    # Die Prüfung gegen das Schema bleibt bewusst grob: Feinere Regeln (Wertebereiche,
-    # Typen einzelner Felder) prüft, wer fragt, weil nur er weiß, was er davon
-    # nachsichtig behandelt (die Bewertung nimmt z.B. einen String statt einer Liste).
+def with_required_keys(schema: dict, data: dict) -> dict:
+    """Die Prüfung am Seam, die jedes Sprachmodell vor der Rückgabe macht.
+
+    Sie bleibt bewusst grob: Feinere Regeln (Wertebereiche, Typen einzelner Felder)
+    prüft, wer fragt, weil nur er weiß, was er davon nachsichtig behandelt (die
+    Bewertung nimmt z.B. einen String statt einer Liste).
+    """
     missing = [key for key in schema.get("required", []) if key not in data]
     if missing:
         raise LanguageModelError(f"Antwort ohne Pflichtschlüssel {missing}: {data!r}")

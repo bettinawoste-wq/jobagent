@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from jobagent.language_model import LanguageModelError
+from jobagent.language_model import LanguageModelError, with_required_keys
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,8 @@ class FakeLanguageModel:
     """Sprachmodell am Seam `LanguageModel` mit vorgegebenen Antworten; merkt sich Anfragen.
 
     Die Antworten gelten der Reihe nach, die letzte gilt für alle weiteren Anfragen. Ist
-    eine Antwort ein `LanguageModelError`, wird er geworfen. Ohne Antworten darf das
+    eine Antwort ein `LanguageModelError`, wird er geworfen; fehlt ihr ein Pflichtschlüssel
+    des Schemas, ebenso, wie beim echten Sprachmodell. Ohne Antworten darf das
     Sprachmodell gar nicht gefragt werden.
     """
 
@@ -33,4 +34,4 @@ class FakeLanguageModel:
         answer = self._answers.pop(0) if len(self._answers) > 1 else self._answers[0]
         if isinstance(answer, LanguageModelError):
             raise answer
-        return dict(answer)
+        return with_required_keys(schema, dict(answer))

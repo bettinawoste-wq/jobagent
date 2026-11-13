@@ -99,14 +99,27 @@ def test_api_error_becomes_language_model_error() -> None:
         _ask(error)
 
 
-def test_missing_api_key_becomes_language_model_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Echter SDK-Client: Ohne Schlüssel scheitert er schon beim Aufbau der Anfrage,
-    # vor jedem Netzzugriff, und zwar mit einem rohen TypeError.
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-
+def test_missing_api_key_becomes_language_model_error() -> None:
+    # So meldet das SDK 2.x einen fehlenden ANTHROPIC_API_KEY: als rohen TypeError beim
+    # Aufbau der Anfrage, nicht als AnthropicError (geprüft mit dem echten Client).
     with pytest.raises(LanguageModelError):
-        AnthropicLanguageModel("claude-haiku-4-5-20251001").ask("System", "Text", _SCHEMA)
+        _ask(TypeError("Could not resolve authentication method."))
+
+
+def test_client_is_created_once_for_all_questions(monkeypatch: pytest.MonkeyPatch) -> None:
+    clients: list[_FakeClient] = []
+
+    def create_client() -> _FakeClient:
+        clients.append(_FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."})))
+        return clients[-1]
+
+    monkeypatch.setattr(anthropic, "Anthropic", create_client)
+    model = AnthropicLanguageModel("claude-haiku-4-5-20251001")
+
+    model.ask("System", "Erste Anzeige", _SCHEMA)
+    model.ask("System", "Zweite Anzeige", _SCHEMA)
+
+    assert len(clients) == 1
 
 
 def test_answer_without_tool_becomes_language_model_error() -> None:
