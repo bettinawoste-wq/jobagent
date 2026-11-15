@@ -1,8 +1,9 @@
 """Leitet aus Feedback Aenderungen am Suchprofil ab, die erst nach Bestaetigung gelten.
 
-`main` ist Kommandozeile und Zusammenbau: Nur dort werden das Suchprofil gelesen, der Store
-geöffnet, das Sprachmodell gebaut und die Uhrzeit bestimmt. Die Logik dahinter
-(`suggest_and_decide`) bekommt all das übergeben.
+`main` ist Kommandozeile und Zusammenbau: Nur dort werden das Suchprofil gelesen und nach
+Zustimmung samt Sicherung geschrieben, der Store geöffnet, das Sprachmodell gebaut und die
+Uhrzeit bestimmt. Die Logik dahinter (`suggest_and_decide`) bekommt Store, Suchprofil und
+Sprachmodell übergeben und liefert die Entscheidung (`Decision`).
 """
 
 import difflib
@@ -19,7 +20,11 @@ import anthropic
 from jobagent import store
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
 from jobagent.logs import setup_logging
-from jobagent.search_profile import SearchProfileError, read_search_profile
+from jobagent.search_profile import (
+    SearchProfileError,
+    read_search_profile,
+    replace_search_profile,
+)
 from jobagent.store import Store, StoreError
 
 logger = logging.getLogger(__name__)
@@ -170,30 +175,50 @@ def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list
     return text, skipped
 
 
+@dataclass(frozen=True, slots=True)
+class AcceptedSuggestion:
+    """Ein Profil-Vorschlag, dem die Nutzerin zugestimmt hat, noch nicht gespeichert.
+
+    Das Speichern macht der Zusammenbau und markiert erst danach das Feedback
+    `feedback_ids` als verarbeitet.
+    """
+
+    new_search_profile: str
+    feedback_ids: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class Decision:
+    """Wie ein Profil-Vorschlag ausging; `accepted` nur, wenn die Nutzerin zugestimmt hat."""
+
+    exit_code: int
+    accepted: AcceptedSuggestion | None = None
+
+
 def suggest_and_decide(
     *,
     db: Store,
     search_profile: str,
-    profile_path: Path,
+    profile_name: str,
     language_model: LanguageModel,
     ask: Callable[[str], str],
-    now: datetime,
-) -> int:
-    """Erstellt einen Vorschlag zum offenen Feedback, zeigt ihn an und fragt nach der Entscheidung.
+) -> Decision:
+    """Erstellt einen Profil-Vorschlag zum offenen Feedback, zeigt ihn an und fragt nach der
+    Entscheidung.
 
-    Gibt den Exit-Code zurück. `search_profile` ist der Inhalt von `profile_path`. Nur wenn
-    die Nutzerin zustimmt, kommt das geänderte Suchprofil nach `profile_path` und die
-    bisherige Fassung daneben in eine Sicherung, benannt nach `now`.
+    `profile_name` ist der Dateiname des Suchprofils für die Anzeige der Änderungen. Lehnt
+    die Nutzerin ab oder ist keine Änderung nötig, gilt das Feedback hier schon als
+    verarbeitet; stimmt sie zu, siehe `Decision`.
     """
     feedback = db.open_feedback()
     if not feedback:
         print("Es gibt kein unverarbeitetes Feedback.")
-        return 0
+        return Decision(0)
 
     suggestion = create_suggestion(search_profile, feedback, language_model)
     if suggestion is None:
         print("Fehler: Kein brauchbarer Vorschlag, es wurde nichts geändert.", file=sys.stderr)
-        return 1
+        return Decision(1)
 
     ids = [entry.job_ad_id for entry in feedback]
     new_profile, skipped = apply_changes(search_profile, suggestion.changes)
@@ -204,49 +229,30 @@ def suggest_and_decide(
     if not suggestion.changes:
         db.mark_feedback_processed(ids)
         print("Keine Änderung am Suchprofil nötig.")
-        return 0
+        return Decision(0)
 
     if new_profile == search_profile:
         print("Fehler: Keine Änderung ließ sich anwenden, Feedback bleibt offen.", file=sys.stderr)
-        return 1
+        return Decision(1)
 
-    _show_changes(search_profile, new_profile, suggestion.changes, skipped, profile_path.name)
-    return _decide(db, profile_path, search_profile, new_profile, ids, ask, now)
+    _show_changes(search_profile, new_profile, suggestion.changes, skipped, profile_name)
+    return _decide(db, new_profile, ids, ask)
 
 
-def _decide(
-    db: Store,
-    profile_path: Path,
-    profile: str,
-    new_profile: str,
-    ids: list[str],
-    ask: Callable[[str], str],
-    now: datetime,
-) -> int:
+def _decide(db: Store, new_profile: str, ids: list[str], ask: Callable[[str], str]) -> Decision:
     try:
         answer = ask("Übernehmen? [j]a, [n]ein, [a]bbrechen: ").strip().lower()
     except EOFError:
         answer = ""
 
     if answer in ("j", "ja"):
-        backup = _back_up(profile_path, profile, now)
-        profile_path.write_text(new_profile, encoding="utf-8")
-        db.mark_feedback_processed(ids)
-        print(f"Suchprofil geändert, Sicherung: {backup.name}")
-    elif answer in ("n", "nein"):
+        return Decision(0, AcceptedSuggestion(new_profile, ids))
+    if answer in ("n", "nein"):
         db.mark_feedback_processed(ids)
         print("Vorschlag abgelehnt, Suchprofil unverändert.")
     else:
         print("Abgebrochen, nichts geändert. Das Feedback bleibt offen.")
-    return 0
-
-
-def _back_up(profile_path: Path, profile: str, now: datetime) -> Path:
-    name = f"{profile_path.stem}.sicherung-{now:%Y-%m-%d-%H%M%S}{profile_path.suffix}"
-    backup = profile_path.with_name(name)
-    with backup.open("x", encoding="utf-8") as file:  # "x": nie ueberschreiben
-        file.write(profile)
-    return backup
+    return Decision(0)
 
 
 def _show_model_errors(model_errors: list[str]) -> None:
@@ -307,18 +313,35 @@ def main(
         if language_model is None:
             language_model = suggestion_language_model()
         with Store(db_path) as db:
-            return suggest_and_decide(
+            decision = suggest_and_decide(
                 db=db,
                 search_profile=search_profile,
-                profile_path=profile_path,
+                profile_name=profile_path.name,
                 language_model=language_model,
                 ask=ask,
-                now=now or datetime.now(),
             )
+            if decision.accepted is not None:
+                backup = _save_accepted(
+                    db, profile_path, search_profile, decision.accepted, now or datetime.now()
+                )
+                print(f"Suchprofil geändert, Sicherung: {backup.name}")
+            return decision.exit_code
     except (SearchProfileError, StoreError) as error:
         logger.debug("Abgebrochen", exc_info=True)  # Traceback nur im Log, nicht auf der Konsole
         print(f"Fehler: {error}", file=sys.stderr)
         return 1
+
+
+def _save_accepted(
+    db: Store, profile_path: Path, previous: str, accepted: AcceptedSuggestion, now: datetime
+) -> Path:
+    # In einer Transaktion: Scheitert das Schreiben, bleibt das Feedback offen. Ein
+    # geschriebenes Suchprofil bleibt nur bei einem gescheiterten Commit mit offenem zurück.
+    with db.transaction():
+        db.mark_feedback_processed(accepted.feedback_ids)
+        return replace_search_profile(
+            profile_path, accepted.new_search_profile, previous=previous, now=now
+        )
 
 
 def suggestion_language_model(*, client: anthropic.Anthropic | None = None) -> LanguageModel:

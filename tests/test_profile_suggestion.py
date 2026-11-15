@@ -7,6 +7,7 @@ Text, eine feste Uhrzeit und die Antwort der Nutzerin übergeben. Über die Komm
 
 import importlib.util
 import json
+import stat
 from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from jobagent import profile_suggestion
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError
 from jobagent.profile_suggestion import (
+    AcceptedSuggestion,
+    Decision,
     ProfileChange,
     apply_changes,
     create_suggestion,
@@ -92,13 +95,21 @@ def _decide(
     model: FakeLanguageModel,
     answer: str | Exception = "j",
 ) -> int:
+    return _decision(db, profile_path, model, answer).exit_code
+
+
+def _decision(
+    db: Store,
+    profile_path: Path,
+    model: FakeLanguageModel,
+    answer: str | Exception = "j",
+) -> Decision:
     return suggest_and_decide(
         db=db,
         search_profile=profile_path.read_text(encoding="utf-8"),
-        profile_path=profile_path,
+        profile_name=profile_path.name,
         language_model=model,
         ask=_answering(answer),
-        now=_NOW,
     )
 
 
@@ -276,15 +287,21 @@ def test_suggestion_keeps_changes_despite_sloppy_model_errors(
     assert suggestion.model_errors == expected
 
 
-def test_accepting_changes_profile_backs_up_and_processes(
+def test_accepting_returns_new_profile_and_leaves_saving_to_main(
     db: Store, profile_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    assert _decide(db, profile_path, FakeLanguageModel(_suggestion()), "j") == 0
+    decision = _decision(db, profile_path, FakeLanguageModel(_suggestion()), "j")
 
-    assert "Beratungsfirmen" in profile_path.read_text(encoding="utf-8")
-    backup = profile_path.parent / "profile.sicherung-2026-11-08-150102.md"
-    assert backup.read_text(encoding="utf-8") == _PROFILE
-    assert _open_feedback(db) == []
+    assert decision.exit_code == 0
+    new_profile = (
+        "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2 "
+        "(Beratungsfirmen zählen nicht)\n"
+    )
+    assert decision.accepted == AcceptedSuggestion(new_profile, ["a-1"])
+    # Speichern und als verarbeitet markieren macht erst der Zusammenbau.
+    assert profile_path.read_text(encoding="utf-8") == _PROFILE
+    assert _backups(profile_path) == []
+    assert _open_feedback(db) == ["a-1"]
     output = capsys.readouterr().out
     assert "-- Zeitarbeit: maximal Score 2\n" in output
     assert "Mehrfach falsch eingeordnet" in output
@@ -385,9 +402,55 @@ def test_main_suggests_from_profile_file_and_database(
     assert exit_code == 0
     assert f"Suchprofil:\n{_PROFILE}" in _sent_text(model)
     assert "Beratungsfirmen" in profile_path.read_text(encoding="utf-8")
-    assert "profile.sicherung-2026-11-08-150102.md" in capsys.readouterr().out
+    backup = profile_path.parent / "profile.sicherung-2026-11-08-150102.md"
+    assert backup.read_text(encoding="utf-8") == _PROFILE
+    assert backup.name in capsys.readouterr().out
     with Store(db_path) as db:
         assert _open_feedback(db) == []
+
+
+def _accept_in_main(db_path: Path, profile_path: Path) -> int:
+    return profile_suggestion.main(
+        db_path=db_path,
+        profile_path=profile_path,
+        language_model=FakeLanguageModel(_suggestion()),
+        ask=_answering("j"),
+        now=_NOW,
+    )
+
+
+def _assert_aborted_unchanged(
+    exit_code: int, db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    assert exit_code == 1
+    error = capsys.readouterr().err
+    assert error.startswith(f"Fehler: Suchprofil {profile_path} ließ sich nicht ändern")
+    assert "Traceback" not in error
+    assert profile_path.read_text(encoding="utf-8") == _PROFILE
+    with Store(db_path) as db:
+        assert _open_feedback(db) == ["a-1"]
+
+
+def test_main_aborts_when_backup_cannot_be_written(
+    db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    (profile_path.parent / "profile.sicherung-2026-11-08-150102.md").mkdir()
+
+    exit_code = _accept_in_main(db_path, profile_path)
+
+    _assert_aborted_unchanged(exit_code, db_path, profile_path, capsys)
+
+
+def test_main_aborts_when_profile_cannot_be_written(
+    db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    profile_path.chmod(stat.S_IREAD)
+    try:
+        exit_code = _accept_in_main(db_path, profile_path)
+    finally:
+        profile_path.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+    _assert_aborted_unchanged(exit_code, db_path, profile_path, capsys)
 
 
 def test_main_shows_log_on_console(
