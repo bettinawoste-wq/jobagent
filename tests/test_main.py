@@ -26,10 +26,15 @@ from tests.fakes import FakeLanguageModel
 TODAY = date(2026, 3, 2)
 
 _CONFIG = """
-wo = "München"
-umkreis = 30
-veroeffentlichtseit = 1
+[suche]
 was = ["Softwareentwickler", "Data"]
+wo = "München"
+veroeffentlichtseit = 1
+
+[bundesagentur]
+umkreis = 30
+
+[report]
 mindest_score = 5
 """
 

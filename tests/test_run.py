@@ -233,6 +233,53 @@ def test_run_does_not_mark_seen_when_assessment_fails(db: Store, output_dir: Pat
     assert "Stelle a-1" in second_run
 
 
+class LanguageModelWithBug:
+    """Sprachmodell, das bei einer Anzeige unerwartet scheitert, etwa durch einen Programmfehler."""
+
+    def __init__(self, broken_title: str) -> None:
+        self._broken_title = broken_title
+
+    def ask(self, system: str, text: str, schema: dict) -> dict:
+        if f"Titel: {self._broken_title}\n" in text:
+            raise RuntimeError("Programmfehler")
+        return _answer()
+
+
+def test_run_survives_unexpected_error_in_assessment(db: Store, output_dir: Path) -> None:
+    source = FakeSource([_job_ad("a-1"), _job_ad("a-2")])
+
+    first_run = _run(db, output_dir, source, model=LanguageModelWithBug("Stelle a-1"))
+    assert "Stelle a-2" in first_run
+    assert "Stelle a-1" not in first_run
+    assert "\n1 unbewertete Anzeige – der nächste Lauf versucht es erneut.\n" in first_run
+
+    model = FakeLanguageModel(_answer())
+    _run(db, output_dir, source, model=model)
+
+    assert _asked_about(model) == ["Stelle a-1"]
+
+
+def test_run_reports_unassessed_job_ads_under_source_status(db: Store, output_dir: Path) -> None:
+    source = FakeSource([_job_ad("a-1"), _job_ad("a-2"), _job_ad("a-3"), _job_ad("a-4")])
+    model = FakeLanguageModel(
+        LanguageModelError("weg"), _answer(score=7), _answer(score=7), _answer()
+    )
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert content.startswith(
+        "# Stellenvorschläge 2026-03-02\n\n"
+        "## Quellen\n- Bundesagentur für Arbeit: 4 Anzeigen\n\n"
+        "3 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n\n"
+    )
+
+
+def test_run_without_unassessed_job_ads_has_no_such_line(db: Store, output_dir: Path) -> None:
+    content = _run(db, output_dir, FakeSource([_job_ad("a-1")]))
+
+    assert "unbewertet" not in content
+
+
 def test_run_does_not_mark_seen_when_answer_is_invalid(db: Store, output_dir: Path) -> None:
     source = FakeSource([_job_ad("a-1")])
 

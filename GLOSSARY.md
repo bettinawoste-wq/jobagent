@@ -27,12 +27,12 @@ _Im Code_: `Source`; Eigennamen bleiben erhalten: `BundesagenturSource`, `Arbeit
 _Avoid_: Portal, Feed
 
 **Suchbegriff**:
-Ein Stichwort, nach dem in den Quellen gesucht wird; in `config.toml` als `was`.
+Ein Stichwort, nach dem in den Quellen gesucht wird; in `config.toml` als `was` im Abschnitt `[suche]`.
 _Im Code_: `keywords`
 _Avoid_: Query, Filter
 
 **Ort**:
-Der Ort, um den herum gesucht wird; in `config.toml` als `wo`.
+Der Ort, um den herum gesucht wird; in `config.toml` als `wo` im Abschnitt `[suche]`.
 _Im Code_: `location`
 _Avoid_: Region, Standort
 

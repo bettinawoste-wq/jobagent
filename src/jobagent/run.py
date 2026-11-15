@@ -15,7 +15,7 @@ from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModel
 from jobagent.position import position_key
-from jobagent.score import score_job_ad
+from jobagent.score import Assessment, score_job_ad
 from jobagent.sources import SearchResult, Source
 from jobagent.store import Store, description_hash
 
@@ -49,12 +49,13 @@ def run(
     In `db` merkt sich der Lauf die bewerteten Anzeigen und die Treffernummern des Reports.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
-    new_matches = _new_matches(db, job_ads, language_model, search_profile, today)
+    new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile, today)
     written = report.write_report(
         new_matches,
         today,
         output_dir,
         sources=source_status,
+        unassessed=unassessed,
         min_score=config.min_score,
         applications=_already_applied(db, new_matches),
         follow_ups=db.follow_up_reminders(
@@ -74,22 +75,39 @@ def _new_matches(
     language_model: LanguageModel,
     search_profile: str,
     today: date,
-) -> list[report.Match]:
+) -> tuple[list[report.Match], int]:
+    """Bewertet die neuen Anzeigen; gibt die Treffer und die Zahl der unbewerteten zurück."""
     matches: list[report.Match] = []
+    unassessed = 0
 
     for job_ad in job_ads:
         if not db.is_new(job_ad.id):
             continue
 
-        assessment = score_job_ad(job_ad, search_profile, language_model)
+        assessment = _safe_score(job_ad, search_profile, language_model)
         if assessment is None:
-            logger.warning("Bewertung uebersprungen, bleibt fuer naechsten Lauf (id=%r)", job_ad.id)
+            logger.warning(
+                "Anzeige unbewertet, der nächste Lauf versucht es erneut (anzeige=%r)", job_ad.id
+            )
+            unassessed += 1
             continue
 
         db.remember_job_ad(job_ad, assessment, today)
         matches.append((job_ad, assessment))
 
-    return matches
+    return matches, unassessed
+
+
+def _safe_score(
+    job_ad: JobAd, search_profile: str, language_model: LanguageModel
+) -> Assessment | None:
+    # Bekannte Fehler des Sprachmodells behandelt die Bewertung selbst. Dieses Netz fängt
+    # z.B. einen Programmfehler in der Prüfung ab: Eine Bewertung darf den Lauf nie abbrechen.
+    try:
+        return score_job_ad(job_ad, search_profile, language_model)
+    except Exception:
+        logger.exception("Unerwarteter Fehler in der Bewertung (anzeige=%r)", job_ad.id)
+        return None
 
 
 def _open_feedback(db: Store) -> int:

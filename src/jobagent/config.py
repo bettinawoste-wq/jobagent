@@ -22,27 +22,93 @@ class Config:
     companies: list[WatchlistCompany] = field(default_factory=list)
 
 
-# Die einzige Stelle, an der die deutschen Schluessel aus `config.toml` uebersetzt werden.
+class ConfigError(Exception):
+    """Ein Schluessel in `config.toml` steht nicht an seinem Platz oder in falscher Form."""
+
+
+# Die einzige Stelle, an der die deutschen Schluessel aus `config.toml` uebersetzt werden:
+# (Abschnitt, Schluessel) -> Feld von `Config`.
 _TOML_KEYS = {
-    "was": "keywords",
-    "wo": "location",
-    "umkreis": "radius",
-    "veroeffentlichtseit": "published_since",
-    "mindest_score": "min_score",
-    "nachfassen_ab_tag": "follow_up_min_days",
-    "nachfassen_bis_tag": "follow_up_max_days",
-    "firmen": "companies",
+    ("suche", "was"): "keywords",
+    ("suche", "wo"): "location",
+    ("suche", "veroeffentlichtseit"): "published_since",
+    ("bundesagentur", "umkreis"): "radius",
+    ("watchlist", "firmen"): "companies",
+    ("report", "mindest_score"): "min_score",
+    ("report", "nachfassen_ab_tag"): "follow_up_min_days",
+    ("report", "nachfassen_bis_tag"): "follow_up_max_days",
 }
+# Abschnitt, in den ein deutscher Schluessel gehoert.
+_HOME = {german: section for section, german in _TOML_KEYS}
+_SECTIONS = set(_HOME.values())
 
 
 def load_config(path: Path) -> Config:
-    """Liest `config.toml`; fehlende Schluessel behalten ihren Standardwert."""
+    """Liest `config.toml`; fehlende Abschnitte und Schluessel behalten ihren Standardwert.
+
+    Steht ein bekannter Schluessel oben in der Datei wie im alten flachen Format oder in einem
+    anderen bekannten Abschnitt, bricht das Laden mit `ConfigError` ab und nennt seinen Platz.
+    Unbekannte Abschnitte und Schluessel werden nicht geprueft.
+    """
     with path.open("rb") as file:
         raw = tomllib.load(file)
-    values = {english: raw[german] for german, english in _TOML_KEYS.items() if german in raw}
+    _reject_misplaced(raw)
+    values = {
+        english: raw[section][german]
+        for (section, german), english in _TOML_KEYS.items()
+        if german in raw.get(section, {})
+    }
     if "companies" in values:
         values["companies"] = [_to_company(entry) for entry in values["companies"]]
     return Config(**values)
+
+
+def _reject_misplaced(raw: dict) -> None:
+    problems = []
+    for key, value in raw.items():
+        if key in _HOME:
+            problems.append(f"`{key}` gehört unter `{_place(_HOME[key], key)}`")
+        elif key in _SECTIONS:
+            if not isinstance(value, dict):
+                problems.append(f"`{key}` muss ein Abschnitt `[{key}]` sein")
+                continue
+            for german, inner in value.items():
+                home = _HOME.get(german)
+                if home is None:
+                    continue
+                if home != key:
+                    found = _written(key, german, inner)
+                    problems.append(f"`{found}` gehört unter `{_place(home, german)}`")
+                elif _is_companies(home, german) and not _is_list_of_tables(inner):
+                    problems.append(f"`[{key}] {german}` muss als `{_place(home, german)}` stehen")
+    if problems:
+        flat = any(key in _HOME for key in raw)
+        hint = " Das alte flache Format ohne Abschnitte wird nicht mehr gelesen." if flat else ""
+        raise ConfigError(
+            "config.toml ist nicht richtig gegliedert: " + "; ".join(problems) + "." + hint
+        )
+
+
+def _place(section: str, german: str) -> str:
+    if _is_companies(section, german):
+        return f"[[{section}.{german}]]"
+    return f"[{section}] {german}"
+
+
+def _written(section: str, german: str, value: object) -> str:
+    # So, wie der Schluessel in der Datei steht.
+    if value and _is_list_of_tables(value):
+        return f"[[{section}.{german}]]"
+    return f"[{section}] {german}"
+
+
+def _is_companies(section: str, german: str) -> bool:
+    # Die Firmen der Watchlist sind der einzige Eintrag, der eine Liste von Tabellen ist.
+    return _TOML_KEYS[(section, german)] == "companies"
+
+
+def _is_list_of_tables(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, dict) for item in value)
 
 
 def _to_company(entry: dict) -> WatchlistCompany:

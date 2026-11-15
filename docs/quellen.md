@@ -36,7 +36,7 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
 
 ## Firmen-Watchlist (`WatchlistSource`)
 - Statt einer breiten Suche werden konkrete Firmen aus `config.toml` direkt über ihr öffentliches Jobboard durchsucht:
-  - Sie stehen dort als `[[firmen]]` mit `name`, `ats` und `slug`.
+  - Sie stehen dort als `[[watchlist.firmen]]` mit `name`, `ats` und `slug`.
   - Im Code heißen sie `WatchlistCompany`.
 - Jedes Board wird pro Lauf einmal abgefragt, die Suchbegriffe werden lokal auf den Titel gefiltert.
 - Scheitert eine Firma, werden die übrigen trotzdem durchsucht.
