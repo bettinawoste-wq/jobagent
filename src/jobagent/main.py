@@ -144,23 +144,35 @@ def cli(argv: list[str] | None = None) -> int:
             return _abort(error)
         return 0
 
-    with RunLog() as run_log:
-        try:
-            report_path = main()
-        except _ABORTS as error:
-            exit_code = _abort(error)
-            # Ohne Report gibt es keinen Namen für die Log-Datei; abgebrochene Läufe
-            # sammeln sich deshalb in einer eigenen.
-            log_path = report.OUTPUT_DIR / _ABORTED_LOG
+    return _real_run()
+
+
+def _real_run() -> int:
+    """Ein echter Lauf mit Log-Datei: benannt wie der Report, ohne Report `abgebrochen.log`."""
+    report_path: Path | None = None
+    run_log = RunLog()
+    try:
+        with run_log:
+            try:
+                report_path = main()
+            except _ABORTS as error:
+                return _abort(error)
+            except BaseException:
+                logger.debug("Unerwartet abgebrochen", exc_info=True)
+                raise
+    finally:
+        # Ohne Report gibt es keinen Namen für die Log-Datei; abgebrochene Läufe
+        # sammeln sich deshalb in einer eigenen.
+        if report_path is None:
+            run_log.save(report.OUTPUT_DIR / _ABORTED_LOG, append=True)
         else:
-            exit_code = 0
-            log_path = report_path.with_suffix(".log")
-    run_log.save(log_path)
-    return exit_code
+            run_log.save(report_path.with_suffix(".log"))
+    return 0
 
 
 def _abort(error: Exception) -> int:
-    # DEBUG, damit der Traceback nur in der Log-Datei steht, nicht neben der Meldung.
+    # DEBUG, damit der Traceback nicht neben der Meldung auf der Konsole steht; die
+    # Log-Datei eines Laufs schreibt ihn mit.
     logger.debug("Abgebrochen", exc_info=True)
     print(f"Fehler: {error}", file=sys.stderr)
     return 1

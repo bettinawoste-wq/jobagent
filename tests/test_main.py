@@ -7,6 +7,9 @@ aber echtes SQLite und eine echte Report-Datei.
 
 import dataclasses
 import logging
+import os
+import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -319,6 +322,7 @@ def test_cli_logs_job_ad_ids_but_never_their_full_text(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fixed_today: Callable[[date], None],
+    caplog: pytest.LogCaptureFixture,
     no_builtins: None,
 ) -> None:
     fixed_today(TODAY)
@@ -334,6 +338,7 @@ def test_cli_logs_job_ad_ids_but_never_their_full_text(
             logging.getLogger("anthropic._base_client").debug("Request options: %s", text)
             return super().ask(system, text, schema)
 
+    caplog.set_level(logging.DEBUG, logger="anthropic")  # wie mit ANTHROPIC_LOG=debug
     model = ChattyLanguageModel(LanguageModelError(f"Antwort zu: {job_ad.id}"))
     monkeypatch.setattr(main, "AnthropicLanguageModel", lambda model_name: model)
 
@@ -343,3 +348,58 @@ def test_cli_logs_job_ad_ids_but_never_their_full_text(
     log = (tmp_path / "output" / "2026-03-02.log").read_text(encoding="utf-8")
     assert "anzeige='a-1'" in log
     assert "Leidenschaft" not in log
+
+
+def test_cli_replaces_stale_log_file_of_a_deleted_report(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fixed_today: Callable[[date], None],
+    no_builtins: None,
+) -> None:
+    fixed_today(TODAY)
+    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource()])
+    (tmp_path / "output").mkdir()
+    (tmp_path / "output" / "2026-03-02.log").write_text("Log eines alten Laufs", encoding="utf-8")
+
+    main.cli([])
+
+    log = (tmp_path / "output" / "2026-03-02.log").read_text(encoding="utf-8")
+    assert "Log eines alten Laufs" not in log
+
+
+def test_cli_keeps_log_of_unexpected_crash(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    def crash(**kwargs: object) -> Path:
+        raise RuntimeError("Programmfehler im Lauf")
+
+    monkeypatch.setattr(main, "run", crash)
+
+    with pytest.raises(RuntimeError):
+        main.cli([])
+
+    log = (tmp_path / "output" / "abgebrochen.log").read_text(encoding="utf-8")
+    assert "RuntimeError: Programmfehler im Lauf" in log
+
+
+def test_command_writes_traceback_of_abort_into_log_file(tmp_path: Path) -> None:
+    # Eigener Prozess wie `python -m jobagent.main`: Dort heißt der Logger `__main__`.
+    unset = {"ANTHROPIC_API_KEY", "ANTHROPIC_LOG"}
+    env = {name: value for name, value in os.environ.items() if name not in unset}
+    env["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "jobagent.main"], cwd=tmp_path, env=env, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert b"Traceback" not in result.stderr
+    log = (tmp_path / "output" / "abgebrochen.log").read_text(encoding="utf-8")
+    assert "Abgebrochen\nTraceback (most recent call last):" in log
+    assert "ConfigError: config.toml nicht gefunden" in log
