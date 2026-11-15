@@ -32,6 +32,9 @@ GERMAN_STEMS = (
     "lauf",
     "profil",
     "rueckmeld",
+    "sprachmodell",
+    "modell",
+    "unbewert",
     # Programmierwörter
     "daten",
     "fehler",
@@ -185,6 +188,18 @@ def test_german_profile_words_are_still_reported():
     assert [(f.name, f.part) for f in findings] == [
         ("profil", "profil"),
         ("profil_vorschlag", "profil"),
+    ]
+
+
+def test_german_words_for_language_model_and_unassessed_are_reported():
+    source = "sprachmodell = 1\ndemo_modell = 2\nunbewertete_anzeigen = 3\n"
+
+    findings = find_german_identifiers(source, "beispiel.py")
+
+    assert [(f.name, f.part) for f in findings] == [
+        ("sprachmodell", "sprachmodell"),
+        ("demo_modell", "modell"),
+        ("unbewertete_anzeigen", "unbewertete"),
     ]
 
 
