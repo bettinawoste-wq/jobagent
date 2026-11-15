@@ -7,7 +7,6 @@ Text, eine feste Uhrzeit und die Antwort der Nutzerin übergeben. Über die Komm
 
 import importlib.util
 import json
-import stat
 from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
@@ -458,11 +457,11 @@ def test_main_aborts_when_backup_cannot_be_written(
 def test_main_aborts_when_profile_cannot_be_written(
     db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    profile_path.chmod(stat.S_IREAD)
-    try:
-        exit_code = _accept_in_main(db_path, profile_path)
-    finally:
-        profile_path.chmod(stat.S_IREAD | stat.S_IWRITE)
+    # Das neue Suchprofil entsteht erst daneben und ersetzt profile.md dann in einem Schritt;
+    # scheitert schon das, bleibt profile.md unangetastet statt halb geschrieben.
+    (profile_path.parent / "profile.md.neu").mkdir()
+
+    exit_code = _accept_in_main(db_path, profile_path)
 
     _assert_aborted_unchanged(exit_code, db_path, profile_path, capsys)
 

@@ -3,6 +3,7 @@
 Geschrieben wird es nur, wenn die Nutzerin einem Profil-Vorschlag zustimmt (ADR 0003).
 """
 
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -40,11 +41,17 @@ def replace_search_profile(path: Path, new: str, *, previous: str, now: datetime
     davon, wirft `SearchProfileError`.
     """
     backup = path.with_name(f"{path.stem}.sicherung-{now:%Y-%m-%d-%H%M%S}{path.suffix}")
+    # Erst daneben schreiben, dann in einem Schritt ersetzen: Scheitert das Schreiben
+    # mittendrin, bleibt `path` unverändert statt halb geschrieben.
+    draft = path.with_name(f"{path.name}.neu")
     try:
         with backup.open("x", encoding="utf-8") as file:  # "x": nie überschreiben
             file.write(previous)
-        path.write_text(new, encoding="utf-8")
+        draft.write_text(new, encoding="utf-8")
+        draft.replace(path)
     except OSError as error:
+        with suppress(OSError):
+            draft.unlink(missing_ok=True)
         raise SearchProfileError(
             f"Suchprofil {path} ließ sich nicht ändern: {error.strerror or error}"
         ) from error

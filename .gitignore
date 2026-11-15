@@ -12,6 +12,7 @@ output/
 .env
 profile.md
 profile.sicherung-*.md
+profile.md.neu
 # Log-Datei älterer Versionen; heute liegen die Logs in output/
 run.log
 
