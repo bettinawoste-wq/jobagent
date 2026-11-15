@@ -108,9 +108,16 @@ Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
     report.py ──►  output/YYYY-MM-DD.md (sortiert nach Score)
 ```
 
-Jeder Schritt ist defensiv: Schlägt eine einzelne Anzeige fehl (API-Fehler,
-ungültige LLM-Antwort), wird das geloggt und die Anzeige beim nächsten Lauf
-erneut versucht — der Gesamtlauf bricht nie ab.
+Den Ablauf führt `run.py` aus; was er braucht (Quellen, Sprachmodell,
+Suchprofil, Datenbank, Konfiguration, Datum), baut `main.py` zusammen. Das
+Sprachmodell ist eine eigene Schnittstelle (`language_model.py`), hinter der
+der Anthropic-Adapter steckt, in Tests und im Demo-Lauf ein Ersatz.
+
+Jeder Schritt ist defensiv: Fällt eine Quelle aus, steht das im Quellenstatus
+des Reports. Scheitert die Bewertung einer Anzeige (API-Fehler, ungültige
+Antwort des Sprachmodells), wird das geloggt. Der Report zählt die Anzeige dann
+als unbewertet, und der nächste Lauf versucht es erneut, sofern eine Quelle sie
+noch liefert. Der Gesamtlauf bricht daran nicht ab.
 
 ## Stack
 
@@ -143,7 +150,7 @@ API-Key setzen (niemals im Code/Repo):
 Suchparameter in `config.toml` anpassen. Die Datei ist in Abschnitte geteilt:
 
 ```toml
-[suche]                      # gilt für alle Quellen
+[suche]                      # was für alle Quellen, wo/veroeffentlichtseit ohne Watchlist
 was = ["Data Scientist", "IT Consultant"]
 wo = "München"
 veroeffentlichtseit = 7      # Tage

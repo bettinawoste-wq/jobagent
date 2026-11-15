@@ -29,3 +29,7 @@ Gleichzeitig ist die Fachsprache deutsch und soll es bleiben: Das Suchprofil, di
 - Englische Wörter, die jetzt Code-Namen sind (etwa Job, Posting, Application), stehen nicht mehr in den _Avoid_-Listen. In Texten für Menschen gilt weiter der deutsche Begriff.
 - Wo `config.toml`, die Datenbank oder Bewertungen der Modelle gelesen und geschrieben werden, stehen deutsche Schlüssel neben englischen Namen. Diese Übersetzung ist gewollt und bleibt auf diese drei Stellen beschränkt.
 - Die ADRs 0001 bis 0004 nennen noch die alten Datei- und Funktionsnamen, etwa `profilvorschlag.py`. Sie halten den Stand ihrer Entscheidung fest und werden nicht nachgezogen.
+
+## Nachtrag (Version 0.6.0)
+
+Die Begründung „ohne Migration“ galt für die Umbenennung der Bezeichner. Mit 0.6.0 wurde `config.toml` aus anderem Grund in Abschnitte geteilt (`[suche]`, `[bundesagentur]`, `[watchlist]`, `[report]`). Die Schlüssel blieben deutsch und dieselben, nur ihr Platz änderte sich. Eine bestehende Konfiguration musste dafür einmal von Hand umgestellt werden. Das alte flache Format liest der Lauf nicht mehr, er nennt aber für jeden alten Schlüssel den neuen Platz. An der Entscheidung ändert das nichts: Übersetzt wird weiterhin nur beim Laden der Konfiguration.

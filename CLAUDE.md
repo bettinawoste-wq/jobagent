@@ -12,6 +12,8 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/sources/`: Quellen als Adapter am Seam `Source`. Vor jeder Arbeit dort oder an den Fixtures: `docs/quellen.md`
 - `src/jobagent/run.py`: der Lauf `run` (suchen, dedupe, bewerten, Report); bekommt alles übergeben
 - `src/jobagent/main.py`: Kommandozeile und Zusammenbau des Laufs und Demo-Laufs, dazu `default_sources`, die die eingebauten Quellen aus der Konfiguration baut
+- `src/jobagent/language_model.py`: Seam `LanguageModel` mit dem Anthropic-Adapter; Bewertung und Profil-Vorschlag kennen nur ihn, Tests nutzen `FakeLanguageModel` aus `tests/fakes.py`
+- `src/jobagent/logs.py`: Logging der Kommandos und Log-Datei pro Lauf neben dem Report
 - `src/jobagent/demo.py`: Demo-Lauf, im README zitiert; nur Fantasiefirmen und `example.com`
 - `GLOSSARY.md`: Fachbegriffe mit ihrem Namen im Code
 - `CODING_STANDARDS.md`: Ermessensregeln, gegen die jedes Review prüft
@@ -29,7 +31,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 ## Konventionen
 - Bezeichner und Dateinamen englisch nach der Spalte „Im Code“ in `GLOSSARY.md`; Texte für Menschen (Kommentare, Docstrings, Logs, Report, CLI-Ausgaben, Commits) deutsch mit den Glossar-Begriffen. Deutsch bleiben auch Feldnamen fremder APIs, Schlüssel in `config.toml`, das DB-Schema und die Bewertungs-Schlüssel gegenüber den Modellen, jeweils an genau einer Stelle übersetzt (ADR 0005)
 - Bewertung liefert strikt JSON: `score` (1-5), `passt` (Liste), `passt_nicht` (Liste), `luecken` (Liste), `kurzfazit`
-- Fehler einer Quelle dürfen den Lauf nicht abbrechen, sie werden geloggt und im Quellenstatus des Reports ausgewiesen
+- Fehler einer Quelle dürfen den Lauf nicht abbrechen, sie werden geloggt und im Quellenstatus des Reports ausgewiesen; scheitert eine Bewertung, bleibt die Anzeige unbewertet und kommt im nächsten Lauf wieder
 - Netzwerk und Modell sind in Tests immer ersetzt, nie live
 - Eine Aufgabe pro Durchgang, danach committen
 

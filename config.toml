@@ -1,4 +1,5 @@
-# Suche: gilt fuer alle Quellen.
+# Suche: was gilt fuer alle Quellen, wo und veroeffentlichtseit nur fuer
+# Bundesagentur und Arbeitnow (die Watchlist filtert nur nach was).
 [suche]
 # Ein Suchlauf pro Begriff, Ergebnisse werden ueber refnr dedupliziert.
 was = [

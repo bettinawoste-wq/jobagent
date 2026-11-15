@@ -19,10 +19,10 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
 - Doku und Beispiele stehen im GitHub-Projekt `bundesAPI/jobsuche-api`. Endpunkt, Header und Parameter immer dort gegenprüfen.
 - Die Live-API (`pc/v6/jobs`) weicht vom dokumentierten Schema ab, zum Beispiel `ergebnisliste` statt `stellenangebote` und `referenznummer` statt `refnr`. Feldnamen gegen echte Antworten verifizieren, nicht nur gegen die Doku.
 - Suchparameter:
-  - Stichwort (`was`)
-  - Ort (`wo`)
-  - Umkreis (`umkreis`)
-  - Alter der Anzeige (`veroeffentlichtseit`)
+  - Stichwort (`was` unter `[suche]`)
+  - Ort (`wo` unter `[suche]`)
+  - Umkreis (`umkreis` unter `[bundesagentur]`, nur diese Quelle nutzt ihn)
+  - Alter der Anzeige (`veroeffentlichtseit` unter `[suche]`)
 - Die Beschreibung kommt per Detail-Call, einmal je Anzeige.
 - Die ID ist die rohe `referenznummer`.
 
@@ -38,7 +38,7 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
 - Statt einer breiten Suche werden konkrete Firmen aus `config.toml` direkt über ihr öffentliches Jobboard durchsucht:
   - Sie stehen dort als `[[watchlist.firmen]]` mit `name`, `ats` und `slug`.
   - Im Code heißen sie `WatchlistCompany`.
-- Jedes Board wird pro Lauf einmal abgefragt, die Suchbegriffe werden lokal auf den Titel gefiltert.
+- Jedes Board wird pro Lauf einmal abgefragt, die Suchbegriffe werden lokal auf den Titel gefiltert. Von `[suche]` nutzt die Watchlist nur `was`, nicht `wo` und nicht `veroeffentlichtseit`.
 - Scheitert eine Firma, werden die übrigen trotzdem durchsucht.
 - **Greenhouse** (`GreenhouseBoard`):
   - Abruf über `boards-api.greenhouse.io/v1/boards/{slug}/jobs`.
