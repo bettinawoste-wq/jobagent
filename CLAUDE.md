@@ -12,7 +12,9 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/sources/`: Quellen als Adapter am Seam `Source`. Vor jeder Arbeit dort oder an den Fixtures: `docs/quellen.md`
 - `src/jobagent/run.py`: der Lauf `run` (suchen, dedupe, bewerten, Report); bekommt alles übergeben
 - `src/jobagent/main.py`: Kommandozeile und Zusammenbau des Laufs und Demo-Laufs, dazu `default_sources`, die die eingebauten Quellen aus der Konfiguration baut
-- `src/jobagent/language_model.py`: Seam `LanguageModel` mit dem Anthropic-Adapter; Bewertung und Profil-Vorschlag kennen nur ihn, Tests nutzen `FakeLanguageModel` aus `tests/fakes.py`
+- `src/jobagent/language_model.py`: Seam `LanguageModel` mit dem Anthropic-Adapter `AnthropicLanguageModel`. Bewertung und Profil-Vorschlag sprechen nur mit dem Seam; den Adapter samt Modellnamen bauen `main.py` und `profile_suggestion.py` beim Zusammenbau ein. Tests nutzen `FakeLanguageModel` aus `tests/fakes.py`
+- `src/jobagent/config.py`: `config.toml` in Abschnitten; die einzige Stelle, die deren deutsche Schlüssel übersetzt
+- `src/jobagent/store.py`: der `Store` (SQLite); einzige Stelle, die das deutsche DB-Schema übersetzt. Report und Merken gelingen zusammen oder gar nicht
 - `src/jobagent/logs.py`: Logging der Kommandos und Log-Datei pro Lauf neben dem Report
 - `src/jobagent/demo.py`: Demo-Lauf, im README zitiert; nur Fantasiefirmen und `example.com`
 - `GLOSSARY.md`: Fachbegriffe mit ihrem Namen im Code
@@ -44,7 +46,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 
 ## Leitplanken
 Begründungen stehen in den ADRs, hier nur die harten Grenzen:
-- Gespeichert werden nur ID, Titel, Firma, Link, Score, Datum, Report, Treffernummer, Hash der Beschreibung und die Bewertung; Anzeigen-Volltexte bleiben flüchtig (ADR 0001)
+- Gespeichert werden nur ID, Titel, Firma, Link, Score, Datum, Report, Treffernummer, Hash der Beschreibung und die Bewertung; Anzeigen-Volltexte bleiben flüchtig, auch im Log eines Laufs (ADR 0001)
 - Anzeigen kommen nur über öffentliche Schnittstellen; LinkedIn, Xing und Indeed bleiben außen vor (ADR 0002)
 - Der Agent liefert nur Vorschläge: Bewerbungen und Nachrichten schickt die Nutzerin selbst, den Bewerbungsstatus setzt nur sie, `profile.md` ändert sich erst nach ihrer ausdrücklichen Bestätigung (ADR 0003)
 
