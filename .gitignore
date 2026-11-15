@@ -12,6 +12,8 @@ output/
 .env
 profile.md
 profile.sicherung-*.md
+# Log-Datei älterer Versionen; heute liegen die Logs in output/
+run.log
 
 # Tools
 .ruff_cache/
