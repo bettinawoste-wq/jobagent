@@ -65,8 +65,8 @@ def load_config(path: Path) -> Config:
 
 def _read_toml(path: Path) -> dict:
     try:
-        with path.open("rb") as file:
-            return tomllib.load(file)
+        # "utf-8-sig": Windows-Editoren setzen gern ein BOM vor UTF-8, TOML erlaubt keines.
+        return tomllib.loads(path.read_bytes().decode("utf-8-sig"))
     except FileNotFoundError:
         raise ConfigError(f"{path} nicht gefunden.") from None
     except OSError as error:

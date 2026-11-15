@@ -10,7 +10,8 @@ class SearchProfileError(Exception):
 def read_search_profile(path: Path) -> str:
     """Liest das Suchprofil; wirft `SearchProfileError`, wenn das nicht geht."""
     try:
-        return path.read_text(encoding="utf-8")
+        # "utf-8-sig": Windows-Editoren setzen gern ein BOM vor UTF-8, das gehört nicht dazu.
+        return path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         raise SearchProfileError(
             f"Suchprofil {path} nicht gefunden. Vorlage: profile.example.md"

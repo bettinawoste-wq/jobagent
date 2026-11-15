@@ -22,6 +22,13 @@ def test_load_config_names_file_that_is_not_utf8(tmp_path: Path) -> None:
         load_config(config_path)
 
 
+def test_load_config_reads_utf8_with_bom_from_windows_editors(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[suche]\nwo = "München"\n', encoding="utf-8-sig")
+
+    assert load_config(config_path).location == "München"
+
+
 def test_load_config_reads_sections_with_german_keys(tmp_path: Path) -> None:
     config_path = _write(
         tmp_path,

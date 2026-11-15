@@ -118,6 +118,19 @@ def test_main_runs_whole_run_from_files_into_sqlite_and_report(
         assert not db.is_new("a-1")
 
 
+def test_main_reads_search_profile_with_bom_without_the_bom(
+    project: dict[str, Path], fixed_today: Callable[[date], None], no_builtins: None
+) -> None:
+    fixed_today(TODAY)
+    project["profile_path"].write_text(_PROFILE, encoding="utf-8-sig")
+    model = FakeLanguageModel(_answer(4))
+
+    main.main(**project, sources=[FakeSource([_job_ad("a-1")])], language_model=model)
+
+    assert chr(0xFEFF) not in model.requests[0].text  # kein BOM
+    assert _PROFILE in model.requests[0].text
+
+
 def test_main_keeps_seen_job_ads_in_database_between_runs(
     project: dict[str, Path], fixed_today: Callable[[date], None], no_builtins: None
 ) -> None:
