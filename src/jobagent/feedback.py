@@ -14,7 +14,7 @@ import sys
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final, Literal, get_args
 
 from jobagent import store
 from jobagent.logs import setup_logging
@@ -25,11 +25,12 @@ logger = logging.getLogger(__name__)
 
 _DB_PATH = Path("jobagent.db")
 
-WITHDRAW_ENTRY: Final = "zurücknehmen"
+_Withdraw = Literal["zurücknehmen"]
+WITHDRAW_ENTRY: Final[_Withdraw] = get_args(_Withdraw)[0]
 
 # Was eine Rückmeldung mit der Bewerbung tut: einen Bewerbungsstatus setzen oder sie
 # zurücknehmen, also löschen, als hätte es sie nie gegeben.
-type Action = ApplicationStatus | Literal["zurücknehmen"]
+type Action = ApplicationStatus | _Withdraw
 
 _STATUSES = [str(status) for status in ApplicationStatus]
 _SCORE = "score"
