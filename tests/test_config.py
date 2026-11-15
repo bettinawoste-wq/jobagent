@@ -111,6 +111,16 @@ def test_load_config_reports_all_problems_at_once(tmp_path: Path) -> None:
     assert "flache Format" in str(error.value)
 
 
+def test_load_config_names_given_file_when_misplaced(tmp_path: Path) -> None:
+    config_path = tmp_path / "andere.toml"
+    config_path.write_text("umkreis = 30\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError) as error:
+        load_config(config_path)
+
+    assert str(error.value).startswith(f"{config_path} ist nicht richtig gegliedert:")
+
+
 def test_load_config_rejects_section_that_is_no_table(tmp_path: Path) -> None:
     config_path = _write(tmp_path, 'suche = "wo"\n')
 

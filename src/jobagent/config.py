@@ -52,7 +52,7 @@ def load_config(path: Path) -> Config:
     nicht lesbar oder kein gueltiges TOML, wirft das Laden ebenfalls `ConfigError`.
     """
     raw = _read_toml(path)
-    _reject_misplaced(raw)
+    _reject_misplaced(raw, path)
     values = {
         english: raw[section][german]
         for (section, german), english in _TOML_KEYS.items()
@@ -79,7 +79,7 @@ def _read_toml(path: Path) -> dict:
         raise ConfigError(f"{path} ist kein gültiges TOML: {error}") from error
 
 
-def _reject_misplaced(raw: dict) -> None:
+def _reject_misplaced(raw: dict, path: Path) -> None:
     problems = []
     for key, value in raw.items():
         if key in _HOME:
@@ -101,7 +101,7 @@ def _reject_misplaced(raw: dict) -> None:
         flat = any(key in _HOME for key in raw)
         hint = " Das alte flache Format ohne Abschnitte wird nicht mehr gelesen." if flat else ""
         raise ConfigError(
-            "config.toml ist nicht richtig gegliedert: " + "; ".join(problems) + "." + hint
+            f"{path} ist nicht richtig gegliedert: " + "; ".join(problems) + "." + hint
         )
 
 
