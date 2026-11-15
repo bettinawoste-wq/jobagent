@@ -37,7 +37,7 @@ def db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def store(db_path: Path) -> Iterator[Store]:
+def db(db_path: Path) -> Iterator[Store]:
     with Store(db_path) as opened:
         yield opened
 
@@ -82,37 +82,37 @@ def _hash_of(db_path: Path, job_ad_id: str) -> str | None:
     return value
 
 
-def test_is_new_true_for_unknown_id(store: Store) -> None:
-    assert store.is_new("unbekannte-id") is True
+def test_is_new_true_for_unknown_id(db: Store) -> None:
+    assert db.is_new("unbekannte-id") is True
 
 
-def test_remember_job_ad_makes_is_new_false(store: Store) -> None:
+def test_remember_job_ad_makes_is_new_false(db: Store) -> None:
     job_ad = _example_job_ad()
 
-    store.remember_job_ad(job_ad, _assessment(4), date(2026, 11, 5))
+    db.remember_job_ad(job_ad, _assessment(4), date(2026, 11, 5))
 
-    assert store.is_new(job_ad.id) is False
+    assert db.is_new(job_ad.id) is False
 
 
-def test_remember_job_ad_stores_correct_values(store: Store, db_path: Path) -> None:
+def test_remember_job_ad_stores_correct_values(db: Store, db_path: Path) -> None:
     job_ad = _example_job_ad()
 
-    store.remember_job_ad(job_ad, _assessment(4), date(2026, 11, 5))
+    db.remember_job_ad(job_ad, _assessment(4), date(2026, 11, 5))
 
     assert _query(
         db_path, "SELECT id, titel, firma, link, score, datum FROM gesehene_anzeigen"
     ) == [(job_ad.id, job_ad.title, job_ad.company, job_ad.link, 4, "2026-11-05")]
 
 
-def test_remember_job_ad_stores_no_full_text(store: Store, db_path: Path) -> None:
-    store.remember_job_ad(_example_job_ad(), _assessment(4), date(2026, 11, 5))
+def test_remember_job_ad_stores_no_full_text(db: Store, db_path: Path) -> None:
+    db.remember_job_ad(_example_job_ad(), _assessment(4), date(2026, 11, 5))
 
     stored = str(_query(db_path, "SELECT * FROM gesehene_anzeigen"))
     assert "Lange Stellenbeschreibung" not in stored
 
 
-def test_remember_job_ad_stores_assessment_details(store: Store, db_path: Path) -> None:
-    store.remember_job_ad(_example_job_ad(), _assessment(), date(2026, 11, 5))
+def test_remember_job_ad_stores_assessment_details(db: Store, db_path: Path) -> None:
+    db.remember_job_ad(_example_job_ad(), _assessment(), date(2026, 11, 5))
 
     [(raw,)] = _query(db_path, "SELECT bewertung FROM gesehene_anzeigen")
     assert json.loads(raw) == {
@@ -123,91 +123,91 @@ def test_remember_job_ad_stores_assessment_details(store: Store, db_path: Path) 
     }
 
 
-def test_hash_ignores_whitespace_differences(store: Store, db_path: Path) -> None:
+def test_hash_ignores_whitespace_differences(db: Store, db_path: Path) -> None:
     single_line = replace(_example_job_ad("a-1"), description="Python in München")
     wrapped = replace(_example_job_ad("a-2"), description="  Python\n\nin   München ")
 
-    store.remember_job_ad(single_line, _assessment(), date(2026, 11, 5))
-    store.remember_job_ad(wrapped, _assessment(), date(2026, 11, 5))
+    db.remember_job_ad(single_line, _assessment(), date(2026, 11, 5))
+    db.remember_job_ad(wrapped, _assessment(), date(2026, 11, 5))
 
     assert _hash_of(db_path, "a-1") == _hash_of(db_path, "a-2")
 
 
-def test_hash_distinguishes_differing_text(store: Store, db_path: Path) -> None:
+def test_hash_distinguishes_differing_text(db: Store, db_path: Path) -> None:
     old = replace(_example_job_ad("a-1"), description="Python in München")
     new = replace(_example_job_ad("a-2"), description="Python in Berlin")
 
-    store.remember_job_ad(old, _assessment(), date(2026, 11, 5))
-    store.remember_job_ad(new, _assessment(), date(2026, 11, 5))
+    db.remember_job_ad(old, _assessment(), date(2026, 11, 5))
+    db.remember_job_ad(new, _assessment(), date(2026, 11, 5))
 
     assert _hash_of(db_path, "a-1") != _hash_of(db_path, "a-2")
 
 
 @pytest.mark.parametrize("description", [None, "", "  \n "])
-def test_no_hash_without_description(store: Store, db_path: Path, description: str | None) -> None:
+def test_no_hash_without_description(db: Store, db_path: Path, description: str | None) -> None:
     job_ad = replace(_example_job_ad(), description=description)
 
-    store.remember_job_ad(job_ad, _assessment(), date(2026, 11, 5))
+    db.remember_job_ad(job_ad, _assessment(), date(2026, 11, 5))
 
     assert _hash_of(db_path, job_ad.id) is None
 
 
-def test_match_numbers_make_job_ads_findable(store: Store) -> None:
-    store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
-    store.remember_job_ad(_example_job_ad("a-2"), _assessment(), date(2026, 11, 5))
+def test_match_numbers_make_job_ads_findable(db: Store) -> None:
+    db.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+    db.remember_job_ad(_example_job_ad("a-2"), _assessment(), date(2026, 11, 5))
 
-    store.save_match_numbers("2026-11-05-2", {"a-1": 2, "a-2": 1})
+    db.save_match_numbers("2026-11-05-2", {"a-1": 2, "a-2": 1})
 
     title, company = "Softwareentwickler/in (m/w/d)", "Beispiel GmbH"
-    assert store.find_match("2026-11-05-2", 2) == StoredMatch("a-1", title, company)
-    assert store.find_match("2026-11-05-2", 1) == StoredMatch("a-2", title, company)
-    assert store.find_match("2026-11-05-2", 3) is None
-    assert store.find_match("2026-11-05", 1) is None
+    assert db.find_match("2026-11-05-2", 2) == StoredMatch("a-1", title, company)
+    assert db.find_match("2026-11-05-2", 1) == StoredMatch("a-2", title, company)
+    assert db.find_match("2026-11-05-2", 3) is None
+    assert db.find_match("2026-11-05", 1) is None
 
 
-def test_application_for_job_ad_finds_created_application(store: Store) -> None:
-    assert store.application_for_job_ad("a-1") is None
+def test_application_for_job_ad_finds_created_application(db: Store) -> None:
+    assert db.application_for_job_ad("a-1") is None
 
-    store.create_application(_application("a-1"), ApplicationStatus.APPLIED, date(2026, 11, 1))
+    db.create_application(_application("a-1"), ApplicationStatus.APPLIED, date(2026, 11, 1))
 
-    assert store.application_for_job_ad("a-1") == 1
-    assert store.application_for_job_ad("a-2") is None
+    assert db.application_for_job_ad("a-1") == 1
+    assert db.application_for_job_ad("a-2") is None
 
 
-def test_update_application_changes_status_and_keeps_date_without_one(store: Store) -> None:
-    store.create_application(_application(), ApplicationStatus.APPLIED, date(2026, 11, 1))
+def test_update_application_changes_status_and_keeps_date_without_one(db: Store) -> None:
+    db.create_application(_application(), ApplicationStatus.APPLIED, date(2026, 11, 1))
 
-    store.update_application(1, ApplicationStatus.INTERVIEW, None)
+    db.update_application(1, ApplicationStatus.INTERVIEW, None)
 
-    assert store.current_application("beispiel gmbh|dev") == KnownApplication(
+    assert db.current_application("beispiel gmbh|dev") == KnownApplication(
         ApplicationStatus.INTERVIEW, date(2026, 11, 1), None
     )
 
 
-def test_update_application_sets_given_date(store: Store) -> None:
-    store.create_application(_application(), ApplicationStatus.INTERVIEW, date(2026, 11, 1))
+def test_update_application_sets_given_date(db: Store) -> None:
+    db.create_application(_application(), ApplicationStatus.INTERVIEW, date(2026, 11, 1))
 
-    store.update_application(1, ApplicationStatus.APPLIED, date(2026, 11, 4))
+    db.update_application(1, ApplicationStatus.APPLIED, date(2026, 11, 4))
 
-    assert store.current_application("beispiel gmbh|dev") == KnownApplication(
+    assert db.current_application("beispiel gmbh|dev") == KnownApplication(
         ApplicationStatus.APPLIED, date(2026, 11, 4), None
     )
 
 
-def test_delete_application_removes_it(store: Store) -> None:
-    store.create_application(_application(), ApplicationStatus.APPLIED, date(2026, 11, 1))
+def test_delete_application_removes_it(db: Store) -> None:
+    db.create_application(_application(), ApplicationStatus.APPLIED, date(2026, 11, 1))
 
-    store.delete_application(1)
+    db.delete_application(1)
 
-    assert store.application_for_job_ad("a-1") is None
-    assert store.latest_application_id("beispiel gmbh|dev") is None
+    assert db.application_for_job_ad("a-1") is None
+    assert db.latest_application_id("beispiel gmbh|dev") is None
 
 
-def test_open_feedback_returns_assessment_with_english_fields(store: Store) -> None:
-    store.remember_job_ad(_example_job_ad("a-1"), _assessment(2), date(2026, 11, 5))
-    store.save_feedback("a-1", 4, "Passt doch", date(2026, 11, 6))
+def test_open_feedback_returns_assessment_with_english_fields(db: Store) -> None:
+    db.remember_job_ad(_example_job_ad("a-1"), _assessment(2), date(2026, 11, 5))
+    db.save_feedback("a-1", 4, "Passt doch", date(2026, 11, 6))
 
-    assert store.open_feedback() == [
+    assert db.open_feedback() == [
         Feedback(
             job_ad_id="a-1",
             title="Softwareentwickler/in (m/w/d)",
@@ -220,25 +220,25 @@ def test_open_feedback_returns_assessment_with_english_fields(store: Store) -> N
     ]
 
 
-def test_processed_feedback_is_no_longer_open(store: Store) -> None:
+def test_processed_feedback_is_no_longer_open(db: Store) -> None:
     for job_ad_id in ("a-1", "a-2"):
-        store.remember_job_ad(_example_job_ad(job_ad_id), _assessment(), date(2026, 11, 5))
-        store.save_feedback(job_ad_id, 3, None, date(2026, 11, 6))
+        db.remember_job_ad(_example_job_ad(job_ad_id), _assessment(), date(2026, 11, 5))
+        db.save_feedback(job_ad_id, 3, None, date(2026, 11, 6))
 
-    store.mark_feedback_processed(["a-1"])
+    db.mark_feedback_processed(["a-1"])
 
-    assert [entry.job_ad_id for entry in store.open_feedback()] == ["a-2"]
-    assert store.count_open_feedback() == 1
+    assert [entry.job_ad_id for entry in db.open_feedback()] == ["a-2"]
+    assert db.count_open_feedback() == 1
 
 
-def test_new_feedback_replaces_old_and_is_open_again(store: Store) -> None:
-    store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
-    store.save_feedback("a-1", 1, None, date(2026, 11, 6))
-    store.mark_feedback_processed(["a-1"])
+def test_new_feedback_replaces_old_and_is_open_again(db: Store) -> None:
+    db.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+    db.save_feedback("a-1", 1, None, date(2026, 11, 6))
+    db.mark_feedback_processed(["a-1"])
 
-    store.save_feedback("a-1", 5, "Doch gut", date(2026, 11, 7))
+    db.save_feedback("a-1", 5, "Doch gut", date(2026, 11, 7))
 
-    [entry] = store.open_feedback()
+    [entry] = db.open_feedback()
     assert (entry.own_score, entry.reason) == (5, "Doch gut")
 
 
@@ -258,8 +258,8 @@ def _db_before_0_3_0(path: Path) -> None:
 def test_store_migrates_old_database_without_data_loss(db_path: Path) -> None:
     _db_before_0_3_0(db_path)
 
-    with Store(db_path) as store:
-        assert store.is_new("alt-1") is False
+    with Store(db_path) as db:
+        assert db.is_new("alt-1") is False
 
     assert _query(
         db_path,
@@ -278,8 +278,8 @@ def test_store_is_stable_when_opened_repeatedly(db_path: Path) -> None:
 
 
 def test_store_creates_database_file(db_path: Path) -> None:
-    with Store(db_path) as store:
-        assert store.is_new("irgendeine-id") is True
+    with Store(db_path) as db:
+        assert db.is_new("irgendeine-id") is True
 
     assert db_path.exists()
 
@@ -323,11 +323,11 @@ def test_store_names_database_that_cannot_be_opened(tmp_path: Path) -> None:
     assert str(tmp_path) in str(error.value)
 
 
-def test_multiple_job_ads_are_tracked_independently(store: Store) -> None:
-    store.remember_job_ad(_example_job_ad("a-1"), _assessment(5), date(2026, 11, 5))
+def test_multiple_job_ads_are_tracked_independently(db: Store) -> None:
+    db.remember_job_ad(_example_job_ad("a-1"), _assessment(5), date(2026, 11, 5))
 
-    assert store.is_new("a-1") is False
-    assert store.is_new("a-2") is True
+    assert db.is_new("a-1") is False
+    assert db.is_new("a-2") is True
 
 
 def _schema(db_path: Path) -> dict[str, list[str]]:
@@ -340,7 +340,7 @@ def _schema(db_path: Path) -> dict[str, list[str]]:
     }
 
 
-def test_db_schema_keeps_german_tables_and_columns(store: Store, db_path: Path) -> None:
+def test_db_schema_keeps_german_tables_and_columns(db: Store, db_path: Path) -> None:
     assert _schema(db_path) == {
         "bewerbungen": ["id", "stelle", "firma", "titel", "anzeige_id", "status", "beworben_am"],
         "feedback": ["anzeige_id", "score", "grund", "datum", "verarbeitet"],
@@ -397,40 +397,40 @@ def _db_from_version_0_4_0(path: Path) -> None:
 def test_database_from_old_code_can_be_read_and_written(db_path: Path) -> None:
     _db_from_version_0_4_0(db_path)
 
-    with Store(db_path) as store:
-        assert store.is_new("a-1") is False
-        assert store.find_match("2026-11-01", 1) == StoredMatch("a-1", "Data Engineer", "Firma X")
-        assert store.application_for_job_ad("a-1") == 1
-        assert store.latest_application_id("firma x|data engineer") == 1
-        assert store.current_application("firma x|data engineer") == KnownApplication(
+    with Store(db_path) as db:
+        assert db.is_new("a-1") is False
+        assert db.find_match("2026-11-01", 1) == StoredMatch("a-1", "Data Engineer", "Firma X")
+        assert db.application_for_job_ad("a-1") == 1
+        assert db.latest_application_id("firma x|data engineer") == 1
+        assert db.current_application("firma x|data engineer") == KnownApplication(
             ApplicationStatus.APPLIED, date(2026, 11, 1), "hash-1"
         )
-        assert store.follow_up_reminders(date(2026, 11, 15), min_days=14, max_days=28) == [
+        assert db.follow_up_reminders(date(2026, 11, 15), min_days=14, max_days=28) == [
             FollowUpReminder("Firma X", "Data Engineer", date(2026, 11, 1))
         ]
-        assert store.count_open_feedback() == 1
-        [feedback] = store.open_feedback()
+        assert db.count_open_feedback() == 1
+        [feedback] = db.open_feedback()
         assert feedback.assessment == Assessment(2, ["Python"], ["Reisen"], [], "Eher nein.")
 
-        store.remember_job_ad(_example_job_ad("a-2"), _assessment(), date(2026, 11, 3))
-        store.save_match_numbers("2026-11-03", {"a-2": 1})
-        store.create_application(_application("a-2"), ApplicationStatus.APPLIED, date(2026, 11, 3))
-        store.mark_feedback_processed(["a-1"])
+        db.remember_job_ad(_example_job_ad("a-2"), _assessment(), date(2026, 11, 3))
+        db.save_match_numbers("2026-11-03", {"a-2": 1})
+        db.create_application(_application("a-2"), ApplicationStatus.APPLIED, date(2026, 11, 3))
+        db.mark_feedback_processed(["a-1"])
 
-    with Store(db_path) as store:
-        assert store.find_match("2026-11-03", 1) == StoredMatch(
+    with Store(db_path) as db:
+        assert db.find_match("2026-11-03", 1) == StoredMatch(
             "a-2", "Softwareentwickler/in (m/w/d)", "Beispiel GmbH"
         )
-        assert store.application_for_job_ad("a-2") == 2
-        assert store.count_open_feedback() == 0
+        assert db.application_for_job_ad("a-2") == 2
+        assert db.count_open_feedback() == 0
 
 
 def test_feedback_without_stored_assessment_has_none(db_path: Path) -> None:
     _db_before_0_3_0(db_path)
 
-    with Store(db_path) as store:
-        store.save_feedback("alt-1", 5, None, date(2026, 11, 7))
-        [feedback] = store.open_feedback()
+    with Store(db_path) as db:
+        db.save_feedback("alt-1", 5, None, date(2026, 11, 7))
+        [feedback] = db.open_feedback()
 
     assert feedback.assessment is None
     assert feedback.model_score == 3
@@ -464,31 +464,31 @@ def test_store_closes_its_connection_on_exit(db_path: Path) -> None:
         opened.is_new("a-1")
 
 
-def _applications_on(store: Store, *applications: tuple[str, str, date]) -> None:
+def _applications_on(db: Store, *applications: tuple[str, str, date]) -> None:
     """Legt Bewerbungen auf die Stelle "beispiel gmbh|dev" an: (Anzeigen-ID, Status, Datum)."""
     for job_ad_id, status, applied_on in applications:
-        store.create_application(_application(job_ad_id), status, applied_on)
+        db.create_application(_application(job_ad_id), status, applied_on)
 
 
-def test_current_application_skips_withdrawn_latest_application_does_not(store: Store) -> None:
+def test_current_application_skips_withdrawn_latest_application_does_not(db: Store) -> None:
     _applications_on(
-        store,
+        db,
         ("a-1", ApplicationStatus.INTERVIEW, date(2026, 11, 1)),
         ("a-2", ApplicationStatus.WITHDRAWN, date(2026, 11, 3)),
     )
 
-    assert store.current_application("beispiel gmbh|dev") == KnownApplication(
+    assert db.current_application("beispiel gmbh|dev") == KnownApplication(
         ApplicationStatus.INTERVIEW, date(2026, 11, 1), None
     )
-    assert store.latest_application_id("beispiel gmbh|dev") == 2
+    assert db.latest_application_id("beispiel gmbh|dev") == 2
 
 
-def test_no_current_application_when_only_withdrawn(store: Store) -> None:
-    _applications_on(store, ("a-1", ApplicationStatus.WITHDRAWN, date(2026, 11, 1)))
+def test_no_current_application_when_only_withdrawn(db: Store) -> None:
+    _applications_on(db, ("a-1", ApplicationStatus.WITHDRAWN, date(2026, 11, 1)))
 
-    assert store.current_application("beispiel gmbh|dev") is None
-    assert store.latest_application_id("beispiel gmbh|dev") == 1
-    assert store.latest_application_id("andere firma|dev") is None
+    assert db.current_application("beispiel gmbh|dev") is None
+    assert db.latest_application_id("beispiel gmbh|dev") == 1
+    assert db.latest_application_id("andere firma|dev") is None
 
 
 def test_only_the_store_module_knows_sqlite() -> None:
@@ -507,13 +507,13 @@ def test_only_the_store_module_knows_sqlite() -> None:
 
 
 def test_transaction_forgets_everything_when_it_fails(db_path: Path) -> None:
-    with Store(db_path) as store:
-        with pytest.raises(RuntimeError), store.transaction():
-            store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
-            store.save_match_numbers("2026-11-05", {"a-1": 1})
+    with Store(db_path) as db:
+        with pytest.raises(RuntimeError), db.transaction():
+            db.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+            db.save_match_numbers("2026-11-05", {"a-1": 1})
             raise RuntimeError("Report nicht geschrieben")
 
-        assert store.is_new("a-1") is True
+        assert db.is_new("a-1") is True
 
     with Store(db_path) as reopened:
         assert reopened.is_new("a-1") is True
@@ -527,13 +527,13 @@ def _locked(self: object) -> None:
 def test_transaction_forgets_everything_when_commit_fails(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with Store(db_path) as store:
+    with Store(db_path) as db:
         with monkeypatch.context() as patch:
             patch.setattr(_Connection, "commit", _locked)
-            with pytest.raises(StoreError), store.transaction():
-                store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+            with pytest.raises(StoreError), db.transaction():
+                db.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
 
-        store.save_feedback("a-2", 3, None, date(2026, 11, 5))  # committet wieder
+        db.save_feedback("a-2", 3, None, date(2026, 11, 5))  # committet wieder
 
     with Store(db_path) as reopened:
         assert reopened.is_new("a-1") is True
@@ -547,30 +547,30 @@ def _internal(self: object) -> None:
 def test_store_is_closed_when_rollback_fails_too(
     failing_rollback: Callable[[object], None], db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with Store(db_path) as store:
+    with Store(db_path) as db:
         with monkeypatch.context() as patch:
             patch.setattr(_Connection, "commit", _locked)
             patch.setattr(_Connection, "rollback", failing_rollback)
-            with pytest.raises(StoreError, match="locked"), store.transaction():
-                store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+            with pytest.raises(StoreError, match="locked"), db.transaction():
+                db.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
 
         # Ein spaeterer Commit darf die halbe Transaktion nicht doch noch festschreiben.
         with pytest.raises(sqlite3.ProgrammingError):
-            store.save_feedback("a-2", 3, None, date(2026, 11, 5))
+            db.save_feedback("a-2", 3, None, date(2026, 11, 5))
 
     with Store(db_path) as reopened:
         assert reopened.is_new("a-1") is True
 
 
-def test_transactions_do_not_nest(store: Store) -> None:
-    with store.transaction(), pytest.raises(RuntimeError), store.transaction():
+def test_transactions_do_not_nest(db: Store) -> None:
+    with db.transaction(), pytest.raises(RuntimeError), db.transaction():
         pass
 
 
 def test_transaction_keeps_everything_when_it_succeeds(db_path: Path) -> None:
-    with Store(db_path) as store, store.transaction():
-        store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
-        store.save_match_numbers("2026-11-05", {"a-1": 1})
+    with Store(db_path) as db, db.transaction():
+        db.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+        db.save_match_numbers("2026-11-05", {"a-1": 1})
 
     with Store(db_path) as reopened:
         assert reopened.find_match("2026-11-05", 1).id == "a-1"

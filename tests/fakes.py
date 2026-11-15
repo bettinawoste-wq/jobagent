@@ -1,8 +1,44 @@
 """Gemeinsame Fakes für Tests: `from tests.fakes import FakeLanguageModel`."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError, with_required_keys
+from jobagent.score import Assessment
+from jobagent.sources import SearchResult
+
+
+@dataclass
+class FakeSource:
+    """Quelle am Interface `Source`, die feste Anzeigen und Fehler liefert.
+
+    Sie hält in `received` die Suchbegriffe jeder Suche fest.
+    """
+
+    job_ads: list[JobAd] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    name: str = "Bundesagentur für Arbeit"
+    received: list[list[str]] = field(default_factory=list)
+
+    def search(self, keywords: list[str]) -> SearchResult:
+        self.received.append(keywords)
+        return SearchResult(list(self.job_ads), list(self.errors))
+
+
+def fake_job_ad(id_: str) -> JobAd:
+    """Eine Anzeige "Stelle <id_>" der Beispiel GmbH in München."""
+    return JobAd(
+        id=id_,
+        title=f"Stelle {id_}",
+        company="Beispiel GmbH",
+        location="München",
+        link=f"https://example.com/{id_}",
+    )
+
+
+def assessment_answer(score: int = 4) -> dict:
+    """Antwort des Sprachmodells auf eine Bewertung, unter den deutschen Schlüsseln."""
+    return Assessment(score, ["Python"], [], [], "Passt.").as_model_answer()
 
 
 @dataclass(frozen=True)

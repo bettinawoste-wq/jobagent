@@ -4,7 +4,7 @@ Der Lauf bekommt alles übergeben; die Tests geben ihm Fake-Quellen, `FakeLangua
 einen `Store` auf echtem SQLite, eine `Config`, ein festes Datum und einen Report-Ordner.
 """
 
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -19,27 +19,13 @@ from jobagent.run import run
 from jobagent.score import Assessment
 from jobagent.sources import SearchResult, Source
 from jobagent.store import ApplicationStatus, NewApplication, Store, StoreError
-from tests.fakes import FakeLanguageModel
+from tests.fakes import FakeLanguageModel, FakeSource, assessment_answer, fake_job_ad
 
 TODAY = date(2026, 3, 2)
 
 _CONFIG = Config(keywords=["Softwareentwickler"])
 
 _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
-
-
-@dataclass
-class FakeSource:
-    """Quelle am Interface `Source`, die feste Anzeigen und Fehler liefert."""
-
-    job_ads: list[JobAd] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    name: str = "Bundesagentur für Arbeit"
-    received: list[list[str]] = field(default_factory=list)
-
-    def search(self, keywords: list[str]) -> SearchResult:
-        self.received.append(keywords)
-        return SearchResult(list(self.job_ads), list(self.errors))
 
 
 @pytest.fixture
@@ -67,7 +53,7 @@ def _run(
     """
     path = run(
         sources=list(sources),
-        language_model=model or FakeLanguageModel(_answer()),
+        language_model=model or FakeLanguageModel(assessment_answer()),
         search_profile=_PROFILE,
         db=db,
         config=config,
@@ -77,27 +63,12 @@ def _run(
     return path.read_text(encoding="utf-8")
 
 
-def _job_ad(id_: str) -> JobAd:
-    return JobAd(
-        id=id_,
-        title=f"Stelle {id_}",
-        company="Beispiel GmbH",
-        location="München",
-        link=f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{id_}",
-    )
-
-
 def _assessment() -> Assessment:
     return Assessment(score=4, fits=["Python"], misfits=[], gaps=[], summary="Passt.")
 
 
-def _answer(score: int = 4) -> dict:
-    """Antwort des Sprachmodells auf eine Bewertung, unter den deutschen Schlüsseln."""
-    return replace(_assessment(), score=score).as_model_answer()
-
-
 def test_run_writes_report_for_new_matches(db: Store, output_dir: Path) -> None:
-    content = _run(db, output_dir, FakeSource([_job_ad("a-1")]))
+    content = _run(db, output_dir, FakeSource([fake_job_ad("a-1")]))
 
     assert "Stelle a-1" in content
     assert "4/5" in content
@@ -121,17 +92,17 @@ class BrokenSource:
 
 
 def test_run_assesses_against_given_profile(db: Store, output_dir: Path) -> None:
-    model = FakeLanguageModel(_answer())
+    model = FakeLanguageModel(assessment_answer())
 
-    _run(db, output_dir, FakeSource([_job_ad("a-1")]), model=model)
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), model=model)
 
     assert _PROFILE in model.requests[0].system + model.requests[0].text
 
 
 def test_run_writes_report_dated_today_into_output_dir(db: Store, output_dir: Path) -> None:
     path = run(
-        sources=[FakeSource([_job_ad("a-1")])],
-        language_model=FakeLanguageModel(_answer()),
+        sources=[FakeSource([fake_job_ad("a-1")])],
+        language_model=FakeLanguageModel(assessment_answer()),
         search_profile=_PROFILE,
         db=db,
         config=_CONFIG,
@@ -145,7 +116,7 @@ def test_run_writes_report_dated_today_into_output_dir(db: Store, output_dir: Pa
 def test_failed_report_loses_no_matches(db: Store, tmp_path: Path) -> None:
     blocked = tmp_path / "keinordner"
     blocked.write_text("eine Datei, wo der Report-Ordner hin soll", encoding="utf-8")
-    source = FakeSource([_job_ad("a-1")])
+    source = FakeSource([fake_job_ad("a-1")])
 
     with pytest.raises(ReportError, match="keinordner"):
         _run(db, blocked, source)
@@ -162,7 +133,7 @@ class _StoreFailingOnMatchNumbers(Store):
 def test_report_without_saved_match_numbers_is_removed(tmp_path: Path, output_dir: Path) -> None:
     with _StoreFailingOnMatchNumbers(tmp_path / "jobagent.db") as db:
         with pytest.raises(StoreError):
-            _run(db, output_dir, FakeSource([_job_ad("a-1")]))
+            _run(db, output_dir, FakeSource([fake_job_ad("a-1")]))
 
         assert db.is_new("a-1")
     assert list(output_dir.iterdir()) == []
@@ -180,7 +151,7 @@ def test_report_that_cannot_be_removed_is_named_in_log(
     with _StoreFailingOnMatchNumbers(tmp_path / "jobagent.db") as db:
         monkeypatch.setattr(Path, "unlink", locked_by_editor)
         with pytest.raises(StoreError):
-            _run(db, output_dir, FakeSource([_job_ad("a-1")]))
+            _run(db, output_dir, FakeSource([fake_job_ad("a-1")]))
 
     assert "2026-03-02.md" in caplog.text
     assert "von Hand" in caplog.text
@@ -199,7 +170,7 @@ def test_run_writes_source_status_into_report(db: Store, output_dir: Path) -> No
     content = _run(
         db,
         output_dir,
-        FakeSource([_job_ad("a-1")]),
+        FakeSource([fake_job_ad("a-1")]),
         FakeSource([], ["x: HTTP 500"], name="Arbeitnow"),
     )
 
@@ -209,7 +180,7 @@ def test_run_writes_source_status_into_report(db: Store, output_dir: Path) -> No
 
 
 def test_run_counts_job_ads_once_and_merges_same_errors(db: Store, output_dir: Path) -> None:
-    source = FakeSource([_job_ad("a-1"), _job_ad("a-1")], ["kaputt", "kaputt"])
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-1")], ["kaputt", "kaputt"])
 
     content = _run(db, output_dir, source)
 
@@ -221,7 +192,7 @@ def test_run_survives_unexpected_source_error(db: Store, output_dir: Path) -> No
         db,
         output_dir,
         BrokenSource(),
-        FakeSource([_job_ad("a-1")], name="Arbeitnow"),
+        FakeSource([fake_job_ad("a-1")], name="Arbeitnow"),
         config=Config(keywords=["Python", "Data"]),
     )
 
@@ -235,24 +206,24 @@ def test_run_survives_unexpected_source_error(db: Store, output_dir: Path) -> No
 def test_run_takes_min_score_from_config(db: Store, output_dir: Path) -> None:
     config = Config(keywords=["A"], min_score=5)
 
-    content = _run(db, output_dir, FakeSource([_job_ad("a-1")]), config=config)
+    content = _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), config=config)
 
     assert "## Weitere Treffer (Score unter 5)" in content
     assert "- **1.** Stelle a-1" in content
 
 
 def test_run_remembers_report_and_match_number(db: Store, output_dir: Path) -> None:
-    model = FakeLanguageModel(_answer(score=2), _answer(score=5))
+    model = FakeLanguageModel(assessment_answer(score=2), assessment_answer(score=5))
 
-    _run(db, output_dir, FakeSource([_job_ad("a-1"), _job_ad("a-2")]), model=model)
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")]), model=model)
 
     assert db.find_match("2026-03-02", 1).id == "a-2"
     assert db.find_match("2026-03-02", 2).id == "a-1"
 
 
 def test_run_skips_already_seen_job_ads(db: Store, output_dir: Path) -> None:
-    model = FakeLanguageModel(_answer())
-    source = FakeSource([_job_ad("a-1")])
+    model = FakeLanguageModel(assessment_answer())
+    source = FakeSource([fake_job_ad("a-1")])
 
     _run(db, output_dir, source, model=model)
     second_run = _run(db, output_dir, source, model=model)
@@ -264,7 +235,10 @@ def test_run_skips_already_seen_job_ads(db: Store, output_dir: Path) -> None:
 def test_run_survives_lone_surrogate_in_job_ad_text(db: Store, output_dir: Path) -> None:
     # Ein halbes Emoji aus einer Quelle ließ sich nicht als UTF-8 merken oder schreiben.
     broken = replace(
-        _job_ad("a-1"), title="Entwickler \ud83d", company="Firma \udc00", description="Text \ud83d"
+        fake_job_ad("a-1"),
+        title="Entwickler \ud83d",
+        company="Firma \udc00",
+        description="Text \ud83d",
     )
 
     content = _run(db, output_dir, FakeSource([broken]))
@@ -279,12 +253,12 @@ def test_run_without_search_results_writes_note(db: Store, output_dir: Path) -> 
 
 
 def test_run_does_not_mark_seen_when_assessment_fails(db: Store, output_dir: Path) -> None:
-    source = FakeSource([_job_ad("a-1")])
+    source = FakeSource([fake_job_ad("a-1")])
 
     first_run = _run(db, output_dir, source, model=FakeLanguageModel(LanguageModelError("weg")))
     assert "Keine neuen Treffer" in first_run
 
-    model = FakeLanguageModel(_answer())
+    model = FakeLanguageModel(assessment_answer())
     second_run = _run(db, output_dir, source, model=model)
 
     assert _asked_about(model) == ["Stelle a-1"]
@@ -300,27 +274,32 @@ class LanguageModelWithBug:
     def ask(self, system: str, text: str, schema: dict) -> dict:
         if f"Titel: {self._broken_title}\n" in text:
             raise RuntimeError("Programmfehler")
-        return _answer()
+        return assessment_answer()
 
 
 def test_run_survives_unexpected_error_in_assessment(db: Store, output_dir: Path) -> None:
-    source = FakeSource([_job_ad("a-1"), _job_ad("a-2")])
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
 
     first_run = _run(db, output_dir, source, model=LanguageModelWithBug("Stelle a-1"))
     assert "Stelle a-2" in first_run
     assert "Stelle a-1" not in first_run
     assert "\n1 unbewertete Anzeige – der nächste Lauf versucht es erneut.\n" in first_run
 
-    model = FakeLanguageModel(_answer())
+    model = FakeLanguageModel(assessment_answer())
     _run(db, output_dir, source, model=model)
 
     assert _asked_about(model) == ["Stelle a-1"]
 
 
 def test_run_reports_unassessed_job_ads_under_source_status(db: Store, output_dir: Path) -> None:
-    source = FakeSource([_job_ad("a-1"), _job_ad("a-2"), _job_ad("a-3"), _job_ad("a-4")])
+    source = FakeSource(
+        [fake_job_ad("a-1"), fake_job_ad("a-2"), fake_job_ad("a-3"), fake_job_ad("a-4")]
+    )
     model = FakeLanguageModel(
-        LanguageModelError("weg"), _answer(score=7), _answer(score=7), _answer()
+        LanguageModelError("weg"),
+        assessment_answer(score=7),
+        assessment_answer(score=7),
+        assessment_answer(),
     )
 
     content = _run(db, output_dir, source, model=model)
@@ -333,28 +312,28 @@ def test_run_reports_unassessed_job_ads_under_source_status(db: Store, output_di
 
 
 def test_run_without_unassessed_job_ads_has_no_such_line(db: Store, output_dir: Path) -> None:
-    content = _run(db, output_dir, FakeSource([_job_ad("a-1")]))
+    content = _run(db, output_dir, FakeSource([fake_job_ad("a-1")]))
 
     assert "unbewertet" not in content
 
 
 def test_run_does_not_mark_seen_when_answer_is_invalid(db: Store, output_dir: Path) -> None:
-    source = FakeSource([_job_ad("a-1")])
+    source = FakeSource([fake_job_ad("a-1")])
 
-    first_run = _run(db, output_dir, source, model=FakeLanguageModel(_answer(score=7)))
+    first_run = _run(db, output_dir, source, model=FakeLanguageModel(assessment_answer(score=7)))
     assert "Keine neuen Treffer" in first_run
 
     assert "Stelle a-1" in _run(db, output_dir, source)
 
 
 def test_run_deduplicates_matches_across_sources(db: Store, output_dir: Path) -> None:
-    model = FakeLanguageModel(_answer())
+    model = FakeLanguageModel(assessment_answer())
 
     content = _run(
         db,
         output_dir,
-        FakeSource([_job_ad("a-1")]),
-        FakeSource([_job_ad("a-1")], name="Arbeitnow"),
+        FakeSource([fake_job_ad("a-1")]),
+        FakeSource([fake_job_ad("a-1")], name="Arbeitnow"),
         model=model,
     )
 
@@ -371,12 +350,12 @@ def test_run_combines_matches_from_both_sources(db: Store, output_dir: Path) -> 
         location="Berlin",
         link="https://www.arbeitnow.com/jobs/companies/arbeitnow-firma/full-stack-entwickler-100",
     )
-    model = FakeLanguageModel(_answer())
+    model = FakeLanguageModel(assessment_answer())
 
     content = _run(
         db,
         output_dir,
-        FakeSource([_job_ad("a-1")]),
+        FakeSource([fake_job_ad("a-1")]),
         FakeSource([arbeitnow_job_ad], name="Arbeitnow"),
         model=model,
     )
@@ -387,13 +366,13 @@ def test_run_combines_matches_from_both_sources(db: Store, output_dir: Path) -> 
 
 
 def test_run_sorts_matches_by_score(db: Store, output_dir: Path) -> None:
-    model = FakeLanguageModel(_answer(3), _answer(5), _answer(4))
+    model = FakeLanguageModel(assessment_answer(3), assessment_answer(5), assessment_answer(4))
 
     content = _run(
         db,
         output_dir,
-        FakeSource([_job_ad("a-1"), _job_ad("a-2")], name="Quelle A"),
-        FakeSource([_job_ad("b-1")], name="Quelle B"),
+        FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")], name="Quelle A"),
+        FakeSource([fake_job_ad("b-1")], name="Quelle B"),
         model=model,
     )
 
@@ -616,7 +595,7 @@ def test_run_follow_up_reminder_does_not_change_status(db: Store, output_dir: Pa
 def _open_feedback(db: Store, count: int) -> None:
     for number in range(count):
         job_ad_id = f"f-{number}"
-        db.remember_job_ad(_job_ad(job_ad_id), _assessment(), TODAY)
+        db.remember_job_ad(fake_job_ad(job_ad_id), _assessment(), TODAY)
         db.save_feedback(job_ad_id, 3, None, TODAY)
 
 

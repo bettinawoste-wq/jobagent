@@ -11,7 +11,6 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -22,11 +21,9 @@ from jobagent import main
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
-from jobagent.score import Assessment
-from jobagent.sources import SearchResult
 from jobagent.sources.watchlist import WatchlistCompany
 from jobagent.store import Store
-from tests.fakes import FakeLanguageModel
+from tests.fakes import FakeLanguageModel, FakeSource, assessment_answer, fake_job_ad
 
 TODAY = date(2026, 3, 2)
 
@@ -44,33 +41,6 @@ mindest_score = 5
 """
 
 _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
-
-
-@dataclass
-class FakeSource:
-    """Quelle am Interface `Source`, die feste Anzeigen liefert und Suchbegriffe festhält."""
-
-    job_ads: list[JobAd] = field(default_factory=list)
-    name: str = "Quelle A"
-    received: list[list[str]] = field(default_factory=list)
-
-    def search(self, keywords: list[str]) -> SearchResult:
-        self.received.append(keywords)
-        return SearchResult(list(self.job_ads), [])
-
-
-def _job_ad(id_: str) -> JobAd:
-    return JobAd(
-        id=id_,
-        title=f"Stelle {id_}",
-        company="Beispiel GmbH",
-        location="München",
-        link=f"https://example.com/{id_}",
-    )
-
-
-def _answer(score: int) -> dict:
-    return Assessment(score, ["Python"], [], [], "Passt.").as_model_answer()
 
 
 @pytest.fixture
@@ -105,8 +75,8 @@ def test_main_runs_whole_run_from_files_into_sqlite_and_report(
     project: dict[str, Path], fixed_today: Callable[[date], None], no_builtins: None
 ) -> None:
     fixed_today(TODAY)
-    source = FakeSource([_job_ad("a-1"), _job_ad("a-2")])
-    model = FakeLanguageModel(_answer(4), _answer(5))
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")], name="Quelle A")
+    model = FakeLanguageModel(assessment_answer(4), assessment_answer(5))
 
     path = main.main(**project, sources=[source], language_model=model)
 
@@ -127,9 +97,9 @@ def test_main_reads_search_profile_with_bom_without_the_bom(
 ) -> None:
     fixed_today(TODAY)
     project["profile_path"].write_text(_PROFILE, encoding="utf-8-sig")
-    model = FakeLanguageModel(_answer(4))
+    model = FakeLanguageModel(assessment_answer(4))
 
-    main.main(**project, sources=[FakeSource([_job_ad("a-1")])], language_model=model)
+    main.main(**project, sources=[FakeSource([fake_job_ad("a-1")])], language_model=model)
 
     assert chr(0xFEFF) not in model.requests[0].text  # kein BOM
     assert _PROFILE in model.requests[0].text
@@ -139,8 +109,8 @@ def test_main_keeps_seen_job_ads_in_database_between_runs(
     project: dict[str, Path], fixed_today: Callable[[date], None], no_builtins: None
 ) -> None:
     fixed_today(TODAY)
-    source = FakeSource([_job_ad("a-1")])
-    model = FakeLanguageModel(_answer(4))
+    source = FakeSource([fake_job_ad("a-1")])
+    model = FakeLanguageModel(assessment_answer(4))
 
     main.main(**project, sources=[source], language_model=model)
     second_run = main.main(**project, sources=[source], language_model=model)
@@ -232,7 +202,7 @@ def test_cli_writes_log_file_named_like_its_report(
     no_builtins: None,
 ) -> None:
     fixed_today(TODAY)
-    source = FakeSource([_job_ad("a-1")])
+    source = FakeSource([fake_job_ad("a-1")])
     monkeypatch.setattr(main, "default_sources", lambda config: [source])
     model = FakeLanguageModel(LanguageModelError("Zeitüberschreitung"))
     monkeypatch.setattr(main, "AnthropicToolLanguageModel", lambda model_name: model)
