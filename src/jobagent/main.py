@@ -17,7 +17,7 @@ import httpx
 
 from jobagent import demo, report
 from jobagent.config import Config, ConfigError, load_config
-from jobagent.language_model import AnthropicLanguageModel, LanguageModel
+from jobagent.language_model import AnthropicToolLanguageModel, LanguageModel
 from jobagent.logs import RunLog, setup_logging
 from jobagent.report import ReportError
 from jobagent.run import run
@@ -55,7 +55,7 @@ def main(
     if sources is None:
         sources = default_sources(config)
     if language_model is None:
-        language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
+        language_model = AnthropicToolLanguageModel(_ASSESSMENT_MODEL)
     search_profile = read_search_profile(profile_path)
 
     with Store(db_path) as db:

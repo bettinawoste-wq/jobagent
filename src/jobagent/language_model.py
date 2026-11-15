@@ -1,6 +1,7 @@
 """Seam Sprachmodell: System-Prompt, Text und JSON-Schema rein, geprüfte Daten raus."""
 
 import json
+from abc import ABC, abstractmethod
 from typing import Protocol
 
 import anthropic
@@ -26,14 +27,12 @@ class LanguageModel(Protocol):
         ...
 
 
-class AnthropicLanguageModel:
-    """Sprachmodell von Anthropic.
+class AnthropicLanguageModel[Response](ABC):
+    """Gemeinsamer Teil der Sprachmodelle von Anthropic: Client, Fehler und Prüfung am Seam.
 
-    Ohne `json_answer` erzwingt die Anfrage ein Werkzeug mit dem Schema; ein erzwungenes
-    Werkzeug lässt kein Nachdenken des Modells zu. Mit `json_answer` antwortet das
-    Modell als JSON-Text nach dem Schema und darf vorher nachdenken, wie Sonnet es von
-    sich aus tut. Diese Anfrage läuft über die Beta-Schnittstelle mit serverseitigem
-    Fallback auf ein anderes Modell.
+    Wie gefragt und die Antwort gelesen wird, legen die beiden Adapter fest:
+    `AnthropicToolLanguageModel` für die Bewertung, `AnthropicJsonLanguageModel` für den
+    Profil-Vorschlag.
     """
 
     def __init__(
@@ -41,23 +40,17 @@ class AnthropicLanguageModel:
         model: str,
         *,
         max_tokens: int = _MAX_TOKENS,
-        json_answer: bool = False,
         client: anthropic.Anthropic | None = None,
     ) -> None:
         self._model = model
         self._max_tokens = max_tokens
-        self._json_answer = json_answer
         self._client = client
 
     def ask(self, system: str, text: str, schema: dict) -> dict:
-        if self._json_answer:
-            send, evaluate = self._ask_for_json, _json_object_from
-        else:
-            send, evaluate = self._ask_with_tool, _tool_input_from
         try:
             if self._client is None:
                 self._client = anthropic.Anthropic()  # einmal je Instanz, nicht je Frage
-            response = send(system, [{"role": "user", "content": text}], schema)
+            response = self._send(self._client, system, text, schema)
         except (anthropic.AnthropicError, TypeError) as error:
             # TypeError: So meldet das SDK einen fehlenden ANTHROPIC_API_KEY, schon beim
             # Aufbau der Anfrage und nicht als AnthropicError.
@@ -65,29 +58,65 @@ class AnthropicLanguageModel:
 
         # Das Auswerten steht außerhalb des try, damit ein Programmfehler dabei nicht
         # wie ein Fehler der API aussieht.
-        return with_required_keys(schema, evaluate(response))
+        return with_required_keys(schema, self._answer_from(response))
 
-    def _ask_with_tool(self, system: str, messages: list[dict], schema: dict) -> Message:
+    @abstractmethod
+    def _send(self, client: anthropic.Anthropic, system: str, text: str, schema: dict) -> Response:
+        """Schickt die Anfrage; Fehler des SDK übersetzt `ask`."""
+
+    @abstractmethod
+    def _answer_from(self, response: Response) -> dict:
+        """Liest die Daten aus der Antwort; wirft `LanguageModelError`, wenn das nicht geht."""
+
+
+class AnthropicToolLanguageModel(AnthropicLanguageModel[Message]):
+    """Sprachmodell von Anthropic, das über ein erzwungenes Werkzeug mit dem Schema antwortet.
+
+    Ein erzwungenes Werkzeug lässt kein Nachdenken des Modells zu; für die Bewertung mit
+    Haiku braucht es das nicht.
+    """
+
+    def _send(self, client: anthropic.Anthropic, system: str, text: str, schema: dict) -> Message:
         tool = _tool_for(schema)
-        return self._client.messages.create(
+        return client.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
             system=system,
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
-            messages=messages,
+            messages=_messages(text),
         )
 
-    def _ask_for_json(self, system: str, messages: list[dict], schema: dict) -> BetaMessage:
-        return self._client.beta.messages.create(
+    def _answer_from(self, response: Message) -> dict:
+        return _tool_input_from(response)
+
+
+class AnthropicJsonLanguageModel(AnthropicLanguageModel[BetaMessage]):
+    """Sprachmodell von Anthropic, das als JSON-Text nach dem Schema antwortet.
+
+    Vorher darf es nachdenken, wie Sonnet es von sich aus tut. Die Anfrage läuft über die
+    Beta-Schnittstelle mit serverseitigem Fallback auf ein anderes Modell.
+    """
+
+    def _send(
+        self, client: anthropic.Anthropic, system: str, text: str, schema: dict
+    ) -> BetaMessage:
+        return client.beta.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
             betas=[_FALLBACK_BETA],
             fallbacks="default",
             system=system,
             output_config={"format": {"type": "json_schema", "schema": schema}},
-            messages=messages,
+            messages=_messages(text),
         )
+
+    def _answer_from(self, response: BetaMessage) -> dict:
+        return _json_object_from(response)
+
+
+def _messages(text: str) -> list[dict]:
+    return [{"role": "user", "content": text}]
 
 
 def _tool_input_from(response: Message) -> dict:

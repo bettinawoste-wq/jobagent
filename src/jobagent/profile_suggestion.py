@@ -18,7 +18,7 @@ from pathlib import Path
 import anthropic
 
 from jobagent import store
-from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
+from jobagent.language_model import AnthropicJsonLanguageModel, LanguageModel, LanguageModelError
 from jobagent.logs import setup_logging
 from jobagent.search_profile import (
     SearchProfileError,
@@ -349,10 +349,9 @@ def _save_accepted(
 
 def suggestion_language_model(*, client: anthropic.Anthropic | None = None) -> LanguageModel:
     """Das Sprachmodell für den Profil-Vorschlag: Sonnet, das vor der JSON-Antwort nachdenkt."""
-    return AnthropicLanguageModel(
+    return AnthropicJsonLanguageModel(
         _SUGGESTION_MODEL,
         max_tokens=_SUGGESTION_MAX_TOKENS,
-        json_answer=True,
         client=client,
     )
 

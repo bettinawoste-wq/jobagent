@@ -6,7 +6,11 @@ import pytest
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaThinkingBlock, BetaUsage
 
-from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
+from jobagent.language_model import (
+    AnthropicJsonLanguageModel,
+    AnthropicToolLanguageModel,
+    LanguageModelError,
+)
 
 _SCHEMA = {
     "type": "object",
@@ -56,7 +60,7 @@ class _FakeClient:
 
 
 def _ask(result: object) -> dict:
-    model = AnthropicLanguageModel("claude-haiku-4-5-20251001", client=_FakeClient(result))
+    model = AnthropicToolLanguageModel("claude-haiku-4-5-20251001", client=_FakeClient(result))
     return model.ask("System", "Text", _SCHEMA)
 
 
@@ -70,7 +74,7 @@ def test_ask_returns_data_of_forced_tool() -> None:
 def test_ask_sends_model_system_text_and_schema_as_forced_tool() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
 
-    AnthropicLanguageModel("modell-x", client=client).ask("Sei knapp.", "Anzeige", _SCHEMA)
+    AnthropicToolLanguageModel("modell-x", client=client).ask("Sei knapp.", "Anzeige", _SCHEMA)
 
     kwargs = client.messages.last_kwargs
     assert kwargs["model"] == "modell-x"
@@ -84,7 +88,7 @@ def test_schema_title_and_description_name_and_describe_the_tool() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
     schema = {"title": "bewertung_abgeben", "description": "Gibt die Bewertung zurück.", **_SCHEMA}
 
-    AnthropicLanguageModel("modell-x", client=client).ask("System", "Text", schema)
+    AnthropicToolLanguageModel("modell-x", client=client).ask("System", "Text", schema)
 
     kwargs = client.messages.last_kwargs
     assert kwargs["tools"] == [
@@ -121,7 +125,7 @@ def test_client_is_created_once_for_all_questions(monkeypatch: pytest.MonkeyPatc
         return clients[-1]
 
     monkeypatch.setattr(anthropic, "Anthropic", create_client)
-    model = AnthropicLanguageModel("claude-haiku-4-5-20251001")
+    model = AnthropicToolLanguageModel("claude-haiku-4-5-20251001")
 
     model.ask("System", "Erste Anzeige", _SCHEMA)
     model.ask("System", "Zweite Anzeige", _SCHEMA)
@@ -175,7 +179,7 @@ def test_tool_answer_that_is_no_object_becomes_language_model_error(tool_input: 
 def test_max_tokens_reaches_the_tool_request() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
 
-    AnthropicLanguageModel("modell-x", max_tokens=2048, client=client).ask("S", "T", _SCHEMA)
+    AnthropicToolLanguageModel("modell-x", max_tokens=2048, client=client).ask("S", "T", _SCHEMA)
 
     assert client.messages.last_kwargs["max_tokens"] == 2048
 
@@ -202,9 +206,7 @@ def _thought_and_text(text: str, stop_reason: str = "end_turn") -> BetaMessage:
 
 
 def _ask_json_model(result: object) -> dict:
-    model = AnthropicLanguageModel(
-        "claude-sonnet-5-5", json_answer=True, client=_FakeClient(result)
-    )
+    model = AnthropicJsonLanguageModel("claude-sonnet-5-5", client=_FakeClient(result))
     return model.ask("System", "Text", _SCHEMA)
 
 
@@ -217,7 +219,7 @@ def test_json_answer_after_thinking_returns_its_data() -> None:
 
 def test_json_answer_is_asked_with_fallback_instead_of_tool() -> None:
     client = _FakeClient(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}'))
-    model = AnthropicLanguageModel("modell-y", max_tokens=16000, json_answer=True, client=client)
+    model = AnthropicJsonLanguageModel("modell-y", max_tokens=16000, client=client)
 
     model.ask("Denk nach.", "Rückmeldungen", _SCHEMA)
 

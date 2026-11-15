@@ -235,7 +235,7 @@ def test_cli_writes_log_file_named_like_its_report(
     source = FakeSource([_job_ad("a-1")])
     monkeypatch.setattr(main, "default_sources", lambda config: [source])
     model = FakeLanguageModel(LanguageModelError("Zeitüberschreitung"))
-    monkeypatch.setattr(main, "AnthropicLanguageModel", lambda model_name: model)
+    monkeypatch.setattr(main, "AnthropicToolLanguageModel", lambda model_name: model)
 
     main.cli([])
     main.cli([])
@@ -340,7 +340,7 @@ def test_cli_logs_job_ad_ids_but_never_their_full_text(
 
     caplog.set_level(logging.DEBUG, logger="anthropic")  # wie mit ANTHROPIC_LOG=debug
     model = ChattyLanguageModel(LanguageModelError(f"Antwort zu: {job_ad.id}"))
-    monkeypatch.setattr(main, "AnthropicLanguageModel", lambda model_name: model)
+    monkeypatch.setattr(main, "AnthropicToolLanguageModel", lambda model_name: model)
 
     main.cli([])
 

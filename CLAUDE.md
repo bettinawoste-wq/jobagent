@@ -12,7 +12,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/sources/`: Quellen als Adapter am Seam `Source`. Vor jeder Arbeit dort oder an den Fixtures: `docs/quellen.md`
 - `src/jobagent/run.py`: der Lauf `run` (suchen, dedupe, bewerten, Report); bekommt alles übergeben
 - `src/jobagent/main.py`: Kommandozeile und Zusammenbau des Laufs und Demo-Laufs, dazu `default_sources`, die die eingebauten Quellen aus der Konfiguration baut
-- `src/jobagent/language_model.py`: Seam `LanguageModel` mit dem Anthropic-Adapter `AnthropicLanguageModel`. Bewertung und Profil-Vorschlag sprechen nur mit dem Seam; den Adapter samt Modellnamen bauen `main.py` und `profile_suggestion.py` beim Zusammenbau ein. Tests nutzen `FakeLanguageModel` aus `tests/fakes.py`
+- `src/jobagent/language_model.py`: Seam `LanguageModel` mit den Anthropic-Adaptern `AnthropicToolLanguageModel` (Bewertung) und `AnthropicJsonLanguageModel` (Profil-Vorschlag). Bewertung und Profil-Vorschlag sprechen nur mit dem Seam; die Adapter samt Modellnamen bauen `main.py` und `profile_suggestion.py` beim Zusammenbau ein. Tests nutzen `FakeLanguageModel` aus `tests/fakes.py`
 - `src/jobagent/config.py`: `config.toml` in Abschnitten; die einzige Stelle, die deren deutsche Schlüssel übersetzt
 - `src/jobagent/store.py`: der `Store` (SQLite); einzige Stelle, die das deutsche DB-Schema übersetzt. Report und Merken gelingen zusammen oder gar nicht
 - `src/jobagent/logs.py`: Logging der Kommandos und Log-Datei pro Lauf neben dem Report
