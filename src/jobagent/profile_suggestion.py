@@ -18,6 +18,7 @@ import anthropic
 
 from jobagent import store
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
+from jobagent.search_profile import SearchProfileError, read_search_profile
 from jobagent.store import Store, StoreError
 
 logger = logging.getLogger(__name__)
@@ -299,14 +300,10 @@ def main(
 
     Ohne `language_model` fragt der Profil-Vorschlag Sonnet von Anthropic.
     """
-    if not profile_path.exists():
-        print(f"Fehler: {profile_path} nicht gefunden.", file=sys.stderr)
-        return 1
-    search_profile = profile_path.read_text(encoding="utf-8")
-    if language_model is None:
-        language_model = suggestion_language_model()
-
     try:
+        search_profile = read_search_profile(profile_path)
+        if language_model is None:
+            language_model = suggestion_language_model()
         with Store(db_path) as db:
             return suggest_and_decide(
                 db=db,
@@ -316,7 +313,7 @@ def main(
                 ask=ask,
                 now=now or datetime.now(),
             )
-    except StoreError as error:
+    except (SearchProfileError, StoreError) as error:
         logger.debug("Abgebrochen", exc_info=True)  # Traceback nur im Log, nicht auf der Konsole
         print(f"Fehler: {error}", file=sys.stderr)
         return 1

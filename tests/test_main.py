@@ -196,11 +196,14 @@ def test_cli_returns_exit_code_0_after_run(
     project: dict[str, Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fixed_today: Callable[[date], None],
     no_builtins: None,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
+    fixed_today(TODAY)  # arbeitet auch in tmp_path
+    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource()])
 
     assert main.cli([]) == 0
+    assert (tmp_path / "output" / "2026-03-02.md").exists()
 
 
 def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:

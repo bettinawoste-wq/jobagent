@@ -14,6 +14,14 @@ def _write(tmp_path: Path, text: str) -> Path:
     return config_path
 
 
+def test_load_config_names_file_that_is_not_utf8(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_bytes('[suche]\nwo = "München"\n'.encode("cp1252"))
+
+    with pytest.raises(ConfigError, match="config.toml ist nicht in UTF-8 gespeichert"):
+        load_config(config_path)
+
+
 def test_load_config_reads_sections_with_german_keys(tmp_path: Path) -> None:
     config_path = _write(
         tmp_path,

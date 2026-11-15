@@ -405,6 +405,23 @@ def test_missing_profile_is_error(
     assert "profile.md nicht gefunden" in capsys.readouterr().err
 
 
+def test_unreadable_profile_is_error(
+    db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    profile_path.write_bytes("Suchprofil für München".encode("cp1252"))
+    model = FakeLanguageModel(_suggestion())
+
+    exit_code = profile_suggestion.main(
+        db_path=db_path, profile_path=profile_path, language_model=model, now=_NOW
+    )
+
+    assert exit_code == 1
+    assert model.requests == []
+    error = capsys.readouterr().err
+    assert error.startswith(f"Fehler: Suchprofil {profile_path} ist nicht in UTF-8 gespeichert")
+    assert "Traceback" not in error
+
+
 def test_main_aborts_with_message_when_database_is_unusable(
     tmp_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

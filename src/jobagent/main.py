@@ -20,6 +20,7 @@ from jobagent.config import Config, ConfigError, load_config
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel
 from jobagent.report import ReportError
 from jobagent.run import run
+from jobagent.search_profile import SearchProfileError, read_search_profile
 from jobagent.sources import Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
@@ -54,7 +55,7 @@ def main(
         sources = default_sources(config)
     if language_model is None:
         language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
-    search_profile = _read_search_profile(profile_path)
+    search_profile = read_search_profile(profile_path)
 
     with Store(db_path) as db:
         return run(
@@ -66,21 +67,6 @@ def main(
             today=date.today(),
             output_dir=output_dir,
         )
-
-
-class SearchProfileError(Exception):
-    """Das Suchprofil fehlt oder ist nicht lesbar; die Meldung nennt die Datei."""
-
-
-def _read_search_profile(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise SearchProfileError(
-            f"Suchprofil {path} nicht gefunden. Vorlage: profile.example.md"
-        ) from None
-    except (OSError, UnicodeDecodeError) as error:
-        raise SearchProfileError(f"Suchprofil {path} nicht lesbar: {error}") from error
 
 
 # Fehler, die nicht eine Quelle oder Anzeige betreffen, sondern den ganzen Lauf abbrechen.

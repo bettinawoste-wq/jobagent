@@ -71,6 +71,10 @@ def _read_toml(path: Path) -> dict:
         raise ConfigError(f"{path} nicht gefunden.") from None
     except OSError as error:
         raise ConfigError(f"{path} nicht lesbar: {error.strerror or error}") from error
+    except UnicodeDecodeError as error:
+        raise ConfigError(
+            f"{path} ist nicht in UTF-8 gespeichert; bitte als UTF-8 speichern."
+        ) from error
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{path} ist kein gültiges TOML: {error}") from error
 
