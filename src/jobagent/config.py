@@ -39,8 +39,8 @@ _TOML_KEYS = {
     ("report", "nachfassen_bis_tag"): "follow_up_max_days",
 }
 # Abschnitt, in den ein deutscher Schlüssel gehört.
-_HOME = {german: section for section, german in _TOML_KEYS}
-_SECTIONS = set(_HOME.values())
+_SECTION_OF_KEY = {german: section for section, german in _TOML_KEYS}
+_SECTIONS = set(_SECTION_OF_KEY.values())
 
 
 def load_config(path: Path) -> Config:
@@ -80,40 +80,75 @@ def _read_toml(path: Path) -> dict:
 
 
 def _reject_misplaced(raw: dict, path: Path) -> None:
-    problems = []
-    for key, value in raw.items():
-        if key in _HOME:
-            problems.append(f"`{key}` gehört unter `{_place(_HOME[key], key)}`")
-        elif key in _SECTIONS:
-            if not isinstance(value, dict):
-                problems.append(f"`{key}` muss ein Abschnitt `[{key}]` sein")
-                continue
-            for german, inner in value.items():
-                home = _HOME.get(german)
-                if home is None:
-                    continue
-                if home != key:
-                    found = _written(key, german, inner)
-                    problems.append(f"`{found}` gehört unter `{_place(home, german)}`")
-                elif _is_companies(home, german) and not _is_list_of_tables(inner):
-                    problems.append(f"`[{key}] {german}` muss als `{_place(home, german)}` stehen")
+    problems = [
+        *_flat_keys(raw),
+        *_sections_without_table(raw),
+        *_keys_in_other_section(raw),
+        *_companies_without_tables(raw),
+    ]
     if problems:
-        flat = any(key in _HOME for key in raw)
+        flat = any(key in _SECTION_OF_KEY for key in raw)
         hint = " Das alte flache Format ohne Abschnitte wird nicht mehr gelesen." if flat else ""
         raise ConfigError(
             f"{path} ist nicht richtig gegliedert: " + "; ".join(problems) + "." + hint
         )
 
 
+def _flat_keys(raw: dict) -> list[str]:
+    # Bekannte Schlüssel oben in der Datei, wie im alten flachen Format.
+    return [
+        f"`{key}` gehört unter `{_place(_SECTION_OF_KEY[key], key)}`"
+        for key in raw
+        if key in _SECTION_OF_KEY
+    ]
+
+
+def _sections_without_table(raw: dict) -> list[str]:
+    return [
+        f"`{key}` muss ein Abschnitt `[{key}]` sein"
+        for key, value in raw.items()
+        if key in _SECTIONS and not isinstance(value, dict)
+    ]
+
+
+def _keys_in_other_section(raw: dict) -> list[str]:
+    return [
+        f"`{_spelling(section, german, bool(value) and _is_list_of_tables(value))}` gehört "
+        f"unter `{_place(_SECTION_OF_KEY[german], german)}`"
+        for section, german, value in _known_keys_in_sections(raw)
+        if _SECTION_OF_KEY[german] != section
+    ]
+
+
+def _companies_without_tables(raw: dict) -> list[str]:
+    return [
+        f"`[{section}] {german}` muss als `{_place(section, german)}` stehen"
+        for section, german, value in _known_keys_in_sections(raw)
+        if _SECTION_OF_KEY[german] == section
+        and _is_companies(section, german)
+        and not _is_list_of_tables(value)
+    ]
+
+
+def _known_keys_in_sections(raw: dict) -> list[tuple[str, str, object]]:
+    """Bekannte Schlüssel in bekannten Abschnitten als (Abschnitt, Schlüssel, Wert)."""
+    return [
+        (section, german, value)
+        for section, table in raw.items()
+        if section in _SECTIONS and isinstance(table, dict)
+        for german, value in table.items()
+        if german in _SECTION_OF_KEY
+    ]
+
+
 def _place(section: str, german: str) -> str:
-    if _is_companies(section, german):
-        return f"[[{section}.{german}]]"
-    return f"[{section}] {german}"
+    """So wird der Schlüssel an seinem Platz geschrieben."""
+    return _spelling(section, german, list_of_tables=_is_companies(section, german))
 
 
-def _written(section: str, german: str, value: object) -> str:
-    # So, wie der Schlüssel in der Datei steht.
-    if value and _is_list_of_tables(value):
+def _spelling(section: str, german: str, list_of_tables: bool) -> str:
+    """So steht ein Schlüssel in der Datei: als Liste von Tabellen oder im Abschnitt."""
+    if list_of_tables:
         return f"[[{section}.{german}]]"
     return f"[{section}] {german}"
 
