@@ -5,6 +5,7 @@ Zusammenbau: Konfiguration und Suchprofil aus Dateien, Fake-Quellen und `FakeLan
 aber echtes SQLite und eine echte Report-Datei.
 """
 
+import dataclasses
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -17,7 +18,7 @@ import pytest
 from jobagent import main
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import AnthropicLanguageModel
+from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
 from jobagent.score import Assessment
 from jobagent.sources import SearchResult
 from jobagent.sources.watchlist import WatchlistCompany
@@ -192,6 +193,7 @@ def test_cli_aborts_with_message_and_exit_code_1(
     no_builtins: None,
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource()])
     breakage(tmp_path)
     caplog.set_level(logging.DEBUG)
 
@@ -217,6 +219,33 @@ def test_cli_returns_exit_code_0_after_run(
 
     assert main.cli([]) == 0
     assert (tmp_path / "output" / "2026-03-02.md").exists()
+
+
+def test_cli_writes_log_file_named_like_its_report(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fixed_today: Callable[[date], None],
+    no_builtins: None,
+) -> None:
+    fixed_today(TODAY)
+    source = FakeSource([_job_ad("a-1")])
+    monkeypatch.setattr(main, "default_sources", lambda config: [source])
+    model = FakeLanguageModel(LanguageModelError("Zeitüberschreitung"))
+    monkeypatch.setattr(main, "AnthropicLanguageModel", lambda model_name: model)
+
+    main.cli([])
+    main.cli([])
+
+    output = tmp_path / "output"
+    assert sorted(path.name for path in output.iterdir()) == [
+        "2026-03-02-2.log",
+        "2026-03-02-2.md",
+        "2026-03-02.log",
+        "2026-03-02.md",
+    ]
+    log = (output / "2026-03-02.log").read_text(encoding="utf-8")
+    assert "Anzeige unbewertet, der nächste Lauf versucht es erneut (anzeige='a-1')" in log
 
 
 def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:
@@ -263,3 +292,54 @@ def test_default_sources_search_with_location_radius_and_age_from_config() -> No
         "umkreis": "30",
         "veroeffentlichtseit": "7",
     }
+
+
+def test_cli_keeps_traceback_of_abort_in_log_file_not_on_console(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+
+    assert main.cli([]) == 1
+    assert main.cli([]) == 1
+
+    assert "Traceback" not in capsys.readouterr().err
+    assert sorted(path.name for path in (tmp_path / "output").iterdir()) == ["abgebrochen.log"]
+    log = (tmp_path / "output" / "abgebrochen.log").read_text(encoding="utf-8")
+    assert log.count("DEBUG jobagent.main: Abgebrochen\nTraceback (most recent call last):") == 2
+    assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+
+
+def test_cli_logs_job_ad_ids_but_never_their_full_text(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fixed_today: Callable[[date], None],
+    no_builtins: None,
+) -> None:
+    fixed_today(TODAY)
+    full_text = "Wir suchen eine Entwicklerin mit Leidenschaft für saubere Daten."
+    job_ad = JobAd("a-1", "Stelle a-1", "Beispiel GmbH", "München", "https://example.com/a-1")
+    job_ad = dataclasses.replace(job_ad, description=full_text)
+    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource([job_ad])])
+
+    class ChattyLanguageModel(FakeLanguageModel):
+        """Loggt wie das SDK von Anthropic die ganze Anfrage auf DEBUG und scheitert dann."""
+
+        def ask(self, system: str, text: str, schema: dict) -> dict:
+            logging.getLogger("anthropic._base_client").debug("Request options: %s", text)
+            return super().ask(system, text, schema)
+
+    model = ChattyLanguageModel(LanguageModelError(f"Antwort zu: {job_ad.id}"))
+    monkeypatch.setattr(main, "AnthropicLanguageModel", lambda model_name: model)
+
+    main.cli([])
+
+    assert full_text in model.requests[0].text  # das Sprachmodell hat den Volltext bekommen
+    log = (tmp_path / "output" / "2026-03-02.log").read_text(encoding="utf-8")
+    assert "anzeige='a-1'" in log
+    assert "Leidenschaft" not in log

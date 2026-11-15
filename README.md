@@ -232,7 +232,10 @@ uv run ruff check . && uv run ruff format .
 ## Automatisierung
 
 Lässt sich z. B. per Windows Task Scheduler (`Register-ScheduledTask`) oder
-cron an bestimmten Wochentagen morgens automatisch starten.
+cron an bestimmten Wochentagen morgens automatisch starten. Das Log eines Laufs
+bleibt dabei erhalten: Es liegt neben dem Report und heißt wie er
+(`output/YYYY-MM-DD.log`). Bricht ein Lauf ganz ab, gibt es keinen Report; sein Log
+samt Traceback landet dann in `output/abgebrochen.log`.
 
 ## Hinweis zur Entstehung
 

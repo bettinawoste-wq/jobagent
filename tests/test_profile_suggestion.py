@@ -390,6 +390,19 @@ def test_main_suggests_from_profile_file_and_database(
         assert _open_feedback(db) == []
 
 
+def test_main_shows_log_on_console(
+    db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    model = FakeLanguageModel(LanguageModelError("Netz weg"))
+
+    profile_suggestion.main(
+        db_path=db_path, profile_path=profile_path, language_model=model, now=_NOW
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR:jobagent.profile_suggestion:Sprachmodell fuer den Profil-Vorschlag" in error
+
+
 def test_missing_profile_is_error(
     db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

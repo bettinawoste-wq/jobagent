@@ -18,6 +18,7 @@ import httpx
 from jobagent import demo, report
 from jobagent.config import Config, ConfigError, load_config
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel
+from jobagent.logs import RunLog, setup_logging
 from jobagent.report import ReportError
 from jobagent.run import run
 from jobagent.search_profile import SearchProfileError, read_search_profile
@@ -71,6 +72,7 @@ def main(
 
 # Fehler, die nicht eine Quelle oder Anzeige betreffen, sondern den ganzen Lauf abbrechen.
 _ABORTS = (ConfigError, SearchProfileError, StoreError, ReportError)
+_ABORTED_LOG = "abgebrochen.log"
 
 
 def default_sources(
@@ -134,18 +136,34 @@ def cli(argv: list[str] | None = None) -> int:
     if args.output is not None and not args.demo:
         parser.error("--ausgabe gibt es nur zusammen mit --demo")
 
-    logging.basicConfig(level=logging.INFO)
-    try:
-        if args.demo:
+    setup_logging()
+    if args.demo:  # ohne Log-Datei: Der Demo-Lauf hinterlässt nichts außer dem Report
+        try:
             _write_utf8(demo_run(args.output))
+        except _ABORTS as error:
+            return _abort(error)
+        return 0
+
+    with RunLog() as run_log:
+        try:
+            report_path = main()
+        except _ABORTS as error:
+            exit_code = _abort(error)
+            # Ohne Report gibt es keinen Namen für die Log-Datei; abgebrochene Läufe
+            # sammeln sich deshalb in einer eigenen.
+            log_path = report.OUTPUT_DIR / _ABORTED_LOG
         else:
-            main()
-    except _ABORTS as error:
-        # DEBUG, damit der Traceback nicht neben der Meldung auf der Konsole steht.
-        logger.debug("Abgebrochen", exc_info=True)
-        print(f"Fehler: {error}", file=sys.stderr)
-        return 1
-    return 0
+            exit_code = 0
+            log_path = report_path.with_suffix(".log")
+    run_log.save(log_path)
+    return exit_code
+
+
+def _abort(error: Exception) -> int:
+    # DEBUG, damit der Traceback nur in der Log-Datei steht, nicht neben der Meldung.
+    logger.debug("Abgebrochen", exc_info=True)
+    print(f"Fehler: {error}", file=sys.stderr)
+    return 1
 
 
 def _write_utf8(text: str) -> None:

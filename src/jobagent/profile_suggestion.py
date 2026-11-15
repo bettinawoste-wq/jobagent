@@ -18,6 +18,7 @@ import anthropic
 
 from jobagent import store
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
+from jobagent.logs import setup_logging
 from jobagent.search_profile import SearchProfileError, read_search_profile
 from jobagent.store import Store, StoreError
 
@@ -300,6 +301,7 @@ def main(
 
     Ohne `language_model` fragt der Profil-Vorschlag Sonnet von Anthropic.
     """
+    setup_logging()
     try:
         search_profile = read_search_profile(profile_path)
         if language_model is None:

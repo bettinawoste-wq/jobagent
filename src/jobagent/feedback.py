@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 from jobagent import store
+from jobagent.logs import setup_logging
 from jobagent.position import position_key
 from jobagent.store import ApplicationStatus, Store, StoreError
 
@@ -60,6 +61,7 @@ def main(
     today: date | None = None,
 ) -> int:
     """Fuehrt eine Rueckmeldung aus und gibt den Exit-Code zurueck."""
+    setup_logging()
     arguments = sys.argv[1:] if argv is None else argv
     day = today or date.today()
 
