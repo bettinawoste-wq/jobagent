@@ -19,8 +19,9 @@ class JobAd:
         for field in fields(self):
             value = getattr(self, field.name)
             if isinstance(value, str):
-                object.__setattr__(self, field.name, _encodable(value))
+                object.__setattr__(self, field.name, encodable(value))
 
 
-def _encodable(text: str) -> str:
+def encodable(text: str) -> str:
+    """Der Text mit "?" statt einzelner Surrogate, damit er sich als UTF-8 schreiben lässt."""
     return text.encode("utf-8", "replace").decode("utf-8")

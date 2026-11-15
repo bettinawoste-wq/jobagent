@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass
 
-from jobagent.job_ad import JobAd
+from jobagent.job_ad import JobAd, encodable
 from jobagent.language_model import LanguageModel, LanguageModelError
 
 logger = logging.getLogger(__name__)
@@ -114,13 +114,14 @@ def _validate(data: dict) -> Assessment:
     if not 1 <= score <= 5:
         raise ValueError(f"score außerhalb 1-5: {score}")
 
+    # encodable: Ein einzelnes Surrogat in der Antwort ließe Merken und Report scheitern.
     assessment = Assessment.from_model_data(score, data)
     return Assessment(
         score=score,
         fits=_as_string_list(assessment.fits),
         misfits=_as_string_list(assessment.misfits),
         gaps=_as_string_list(assessment.gaps),
-        summary=str(assessment.summary),
+        summary=encodable(str(assessment.summary)),
     )
 
 
@@ -130,7 +131,7 @@ def _as_string_list(value: object) -> list[str]:
     # Bewertung zu verwerfen, wird der String als Ein-Elemente-Liste
     # übernommen - kein Datenverlust, nur weniger granular dargestellt.
     if isinstance(value, str):
-        return [value]
+        return [encodable(value)]
     if not isinstance(value, list):
         raise TypeError(f"erwartete Liste oder String, bekam {type(value)}")
-    return [str(entry) for entry in value]
+    return [encodable(str(entry)) for entry in value]

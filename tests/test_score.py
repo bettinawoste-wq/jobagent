@@ -28,6 +28,23 @@ def _job_ad() -> JobAd:
     )
 
 
+def test_score_job_ad_replaces_lone_surrogates_in_answer() -> None:
+    # Ein halbes Emoji vom Sprachmodell ließ sich nicht als UTF-8 merken oder schreiben.
+    answer = {
+        "score": 4,
+        "passt": ["Python \ud83d"],
+        "passt_nicht": "Pendeln \udc00",
+        "luecken": ["Kubernetes \ud83d"],
+        "kurzfazit": "Passt \ud83d.",
+    }
+
+    assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(answer))
+
+    assert assessment == Assessment(
+        score=4, fits=["Python ?"], misfits=["Pendeln ?"], gaps=["Kubernetes ?"], summary="Passt ?."
+    )
+
+
 def test_score_job_ad_returns_assessment() -> None:
     assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(SCORE_FIXTURE))
 
