@@ -80,15 +80,17 @@ def _read_toml(path: Path) -> dict:
 
 
 def _reject_misplaced(raw: dict, path: Path) -> None:
+    flat_keys = _flat_keys(raw)
     problems = [
-        *_flat_keys(raw),
+        *flat_keys,
         *_sections_without_table(raw),
         *_keys_in_other_section(raw),
         *_companies_without_tables(raw),
     ]
     if problems:
-        flat = any(key in _SECTION_OF_KEY for key in raw)
-        hint = " Das alte flache Format ohne Abschnitte wird nicht mehr gelesen." if flat else ""
+        hint = (
+            " Das alte flache Format ohne Abschnitte wird nicht mehr gelesen." if flat_keys else ""
+        )
         raise ConfigError(
             f"{path} ist nicht richtig gegliedert: " + "; ".join(problems) + "." + hint
         )
