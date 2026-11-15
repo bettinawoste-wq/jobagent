@@ -2,13 +2,13 @@
 
 import json
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import Protocol, cast
 
 import anthropic
 from anthropic.types import Message
 from anthropic.types.beta import BetaMessage
 
-from jobagent.text import encodable, encodable_data
+from jobagent.text import encodable_data
 
 _MAX_TOKENS = 1024
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -24,7 +24,9 @@ class LanguageModel(Protocol):
     def ask(self, system: str, text: str, schema: dict) -> dict:
         """Fragt das Sprachmodell und liefert seine Antwort als Daten nach `schema`.
 
-        Wirft nur `LanguageModelError`, nie einen Fehler des SDK dahinter.
+        Wirft nur `LanguageModelError`, nie einen Fehler des SDK dahinter. Jede Umsetzung
+        gibt ihre Antwort durch `with_required_keys`: Pflichtschlüssel sind da, und Texte
+        enthalten keine einzelnen Surrogate.
         """
         ...
 
@@ -170,9 +172,17 @@ def with_required_keys(schema: dict, data: dict) -> dict:
     Bewertung nimmt z.B. einen String statt einer Liste). Einzelne Surrogate in Texten
     der Antwort werden zu "?", damit jeder Aufrufer sie schreiben kann.
     """
+    try:
+        return _checked(schema, data)
+    except RecursionError as error:  # sehr tief verschachtelt, wie in _json_object_from
+        raise LanguageModelError("Antwort ist zu tief verschachtelt") from error
+
+
+def _checked(schema: dict, data: dict) -> dict:
+    # Auch repr und Bereinigung gehen rekursiv durch die Antwort, daher alles im try oben.
     if not isinstance(data, dict):
         raise LanguageModelError(f"Antwort ist kein Objekt: {data!r}")
     missing = [key for key in schema.get("required", []) if key not in data]
     if missing:
         raise LanguageModelError(f"Antwort ohne Pflichtschlüssel {missing}: {data!r}")
-    return {encodable(key): encodable_data(value) for key, value in data.items()}
+    return cast(dict, encodable_data(data))

@@ -10,6 +10,7 @@ from jobagent.language_model import (
     AnthropicJsonLanguageModel,
     AnthropicToolLanguageModel,
     LanguageModelError,
+    with_required_keys,
 )
 
 _SCHEMA = {
@@ -215,6 +216,25 @@ def test_json_answer_replaces_lone_surrogates() -> None:
     answer = _thought_and_text('{"score": 4, "kurzfazit": "Passt \\ud83d", "x": [["a \\udc00"]]}')
 
     assert _ask_json_model(answer) == {"score": 4, "kurzfazit": "Passt ?", "x": [["a ?"]]}
+
+
+def _deeply_nested(depth: int = 100_000) -> list:
+    nested: list = []
+    for _ in range(depth):
+        nested = [nested]
+    return nested
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"score": 4, "kurzfazit": "x", "tief": _deeply_nested()},  # Bereinigung der Texte
+        {"score": 4, "tief": _deeply_nested()},  # repr in der Meldung zum fehlenden Schlüssel
+    ],
+)
+def test_deeply_nested_answer_becomes_language_model_error(answer: dict) -> None:
+    with pytest.raises(LanguageModelError):
+        with_required_keys(_SCHEMA, answer)
 
 
 def test_json_answer_after_thinking_returns_its_data() -> None:
