@@ -261,6 +261,19 @@ def test_run_skips_already_seen_job_ads(db: Store, output_dir: Path) -> None:
     assert "Keine neuen Treffer" in second_run
 
 
+def test_run_survives_lone_surrogate_in_job_ad_text(db: Store, output_dir: Path) -> None:
+    # Ein halbes Emoji aus einer Quelle ließ sich nicht als UTF-8 merken oder schreiben.
+    broken = replace(
+        _job_ad("a-1"), title="Entwickler \ud83d", company="Firma \udc00", description="Text \ud83d"
+    )
+
+    content = _run(db, output_dir, FakeSource([broken]))
+
+    assert "## 1. Entwickler ? – Score 4/5" in content
+    assert "- Firma: Firma ?" in content
+    assert not db.is_new("a-1")
+
+
 def test_run_without_search_results_writes_note(db: Store, output_dir: Path) -> None:
     assert "Keine neuen Treffer" in _run(db, output_dir, FakeSource())
 

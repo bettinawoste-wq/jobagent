@@ -129,7 +129,8 @@ def test_every_report_starts_again_at_one(tmp_path: Path) -> None:
 
 def test_failed_write_leaves_no_half_report(tmp_path: Path) -> None:
     # Ein einzelnes Surrogat liefert json.loads klaglos, UTF-8 kann es nicht schreiben.
-    broken = (_job_ad("a-1", "Kaputter Titel \ud83d"), _assessment(4))
+    # Die Anzeige bereinigt es selbst, das Kurzfazit des Sprachmodells nicht.
+    broken = (_job_ad("a-1", "Titel"), _assessment(4, "Kaputtes Kurzfazit \ud83d"))
 
     with pytest.raises(UnicodeEncodeError):
         write_report([broken], date(2026, 11, 5), output_dir=tmp_path)
