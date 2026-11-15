@@ -218,7 +218,7 @@ class Store:
             # Auch nach gescheitertem Commit zuruecksetzen; der erste Fehler bleibt der gemeldete.
             try:
                 self._conn.rollback()
-            except StoreError:
+            except Exception:  # welcher Fehler auch immer: nichts darf mehr committen
                 self._conn.close()
             raise
         finally:

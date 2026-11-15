@@ -3,6 +3,8 @@
 from datetime import date, timedelta
 from pathlib import Path
 
+import pytest
+
 from jobagent.job_ad import JobAd
 from jobagent.report import AlreadyApplied, write_report
 from jobagent.run import SourceStatus
@@ -123,6 +125,24 @@ def test_every_report_starts_again_at_one(tmp_path: Path) -> None:
 
     assert second.match_numbers == {"a-2": 1}
     assert "## 1. Zweiter" in second.path.read_text(encoding="utf-8")
+
+
+def test_failed_write_leaves_no_half_report(tmp_path: Path) -> None:
+    # Ein einzelnes Surrogat liefert json.loads klaglos, UTF-8 kann es nicht schreiben.
+    broken = (_job_ad("a-1", "Kaputter Titel \ud83d"), _assessment(4))
+
+    with pytest.raises(UnicodeEncodeError):
+        write_report([broken], date(2026, 11, 5), output_dir=tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_report_skips_name_taken_by_a_folder(tmp_path: Path) -> None:
+    (tmp_path / "2026-11-05.md").mkdir()
+
+    written = write_report([], date(2026, 11, 5), output_dir=tmp_path)
+
+    assert written.path.name == "2026-11-05-2.md"
 
 
 def test_report_without_matches_has_no_match_numbers(tmp_path: Path) -> None:

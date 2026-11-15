@@ -5,7 +5,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
@@ -51,7 +51,7 @@ def write_report(
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
     Ohne Treffer wird eine kurze Notiz statt einer leeren Datei erzeugt.
-    Ein vorhandener Report wird nie ueberschrieben, siehe _free_path. Laesst sich der
+    Ein vorhandener Report wird nie ueberschrieben, siehe _open_new_report. Laesst sich der
     Report nicht schreiben, wirft `ReportError`.
     """
     header = (
@@ -86,33 +86,50 @@ def write_report(
 
 
 def _save(content: str, output_dir: Path, day: date) -> Path:
-    created: Path | None = None
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
-        path = _free_path(output_dir, day)
-        # "x": nie einen Report ueberschreiben, auch nicht den eines gleichzeitigen Laufs.
-        with path.open("x", encoding="utf-8") as file:
-            created = path
+        file, path = _open_new_report(output_dir, day)
+    except OSError as error:
+        raise _report_error(output_dir, error) from error
+    # Kein halb geschriebener Report bleibt liegen.
+    try:
+        with file:
             file.write(content)
     except OSError as error:
-        if created is not None:  # kein halb geschriebener Report bleibt liegen
-            with suppress(OSError):
-                created.unlink()
-        raise ReportError(
-            f"Report lässt sich nicht in {output_dir} schreiben: {error.strerror or error}"
-        ) from error
+        _discard(path)
+        raise _report_error(output_dir, error) from error
+    except BaseException:
+        _discard(path)
+        raise
     return path
 
 
-def _free_path(output_dir: Path, day: date) -> Path:
+def _discard(path: Path) -> None:
+    with suppress(OSError):
+        path.unlink()
+
+
+def _open_new_report(output_dir: Path, day: date) -> tuple[TextIO, Path]:
     # Gesehene Anzeigen kommen nie wieder, ein ueberschriebener Report waere
     # also endgueltig verloren. Weitere Laeufe am selben Tag bekommen -2, -3, ...
-    path = output_dir / f"{day.isoformat()}.md"
-    run_number = 2
-    while path.exists():
-        path = output_dir / f"{day.isoformat()}-{run_number}.md"
+    # "x" legt die Datei nur neu an, auch wenn ein gleichzeitiger Lauf denselben Namen will.
+    run_number = 1
+    while True:
+        suffix = "" if run_number == 1 else f"-{run_number}"
+        path = output_dir / f"{day.isoformat()}{suffix}.md"
         run_number += 1
-    return path
+        if path.exists():  # unter Windows meldet "x" einen Ordner nicht als vorhanden
+            continue
+        try:
+            return path.open("x", encoding="utf-8"), path
+        except FileExistsError:
+            continue
+
+
+def _report_error(output_dir: Path, error: OSError) -> ReportError:
+    return ReportError(
+        f"Report lässt sich nicht in {output_dir} schreiben: {error.strerror or error}"
+    )
 
 
 def _sources_block(sources: Sequence["SourceStatus"]) -> str:

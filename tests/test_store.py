@@ -7,7 +7,7 @@ mit einer eigenen Verbindung; alles andere laeuft ueber die Methoden von `Store`
 import ast
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -539,13 +539,18 @@ def test_transaction_forgets_everything_when_commit_fails(
         assert reopened.is_new("a-1") is True
 
 
+def _internal(self: object) -> None:
+    raise sqlite3.InternalError("interner Fehler")
+
+
+@pytest.mark.parametrize("failing_rollback", [_locked, _internal])
 def test_store_is_closed_when_rollback_fails_too(
-    db_path: Path, monkeypatch: pytest.MonkeyPatch
+    failing_rollback: Callable[[object], None], db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with Store(db_path) as store:
         with monkeypatch.context() as patch:
             patch.setattr(_Connection, "commit", _locked)
-            patch.setattr(_Connection, "rollback", _locked)
+            patch.setattr(_Connection, "rollback", failing_rollback)
             with pytest.raises(StoreError, match="locked"), store.transaction():
                 store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
 
