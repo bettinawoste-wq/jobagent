@@ -141,9 +141,18 @@ class _Connection:
                 raise
             raise StoreError(f"Datenbank {self._path} nicht nutzbar: {error}") from error
 
-    def execute(self, sql: str, parameters: tuple = ()) -> sqlite3.Cursor:
+    def execute(self, sql: str, parameters: tuple = ()) -> None:
         with self._errors():
-            return self._raw.execute(sql, parameters)
+            self._raw.execute(sql, parameters)
+
+    # Gelesen wird innerhalb von _errors, denn auch das Lesen der Zeilen kann scheitern.
+    def fetchone(self, sql: str, parameters: tuple = ()) -> tuple | None:
+        with self._errors():
+            return self._raw.execute(sql, parameters).fetchone()
+
+    def fetchall(self, sql: str, parameters: tuple = ()) -> list[tuple]:
+        with self._errors():
+            return self._raw.execute(sql, parameters).fetchall()
 
     def executemany(self, sql: str, parameters: list[tuple]) -> None:
         with self._errors():
@@ -196,24 +205,31 @@ class Store:
     def transaction(self) -> Iterator[None]:
         """Was die Methoden darin speichern, gilt gemeinsam am Ende oder bei Fehler gar nicht.
 
-        Fuer den Lauf: Anzeigen, Report und Treffernummern gehoeren zusammen.
+        Transaktionen lassen sich nicht schachteln. Scheitert auch das Zuruecksetzen, ist der
+        Store danach geschlossen, damit kein spaeterer Commit die halbe Transaktion festschreibt.
         """
+        if self._in_transaction:
+            raise RuntimeError("Transaktionen des Store lassen sich nicht schachteln")
         self._in_transaction = True
         try:
             yield
+            self._conn.commit()
         except BaseException:
-            self._in_transaction = False
-            self._conn.rollback()
+            # Auch nach gescheitertem Commit zuruecksetzen; der erste Fehler bleibt der gemeldete.
+            try:
+                self._conn.rollback()
+            except StoreError:
+                self._conn.close()
             raise
-        self._in_transaction = False
-        self._conn.commit()
+        finally:
+            self._in_transaction = False
 
     def _commit(self) -> None:
         if not self._in_transaction:
             self._conn.commit()
 
     def _add_missing_columns(self) -> None:
-        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(gesehene_anzeigen)")}
+        existing = {row[1] for row in self._conn.fetchall("PRAGMA table_info(gesehene_anzeigen)")}
         for name, column_type in _ADDED_COLUMNS.items():
             if name not in existing:
                 self._conn.execute(f"ALTER TABLE gesehene_anzeigen ADD COLUMN {name} {column_type}")
@@ -222,9 +238,7 @@ class Store:
 
     def is_new(self, job_ad_id: str) -> bool:
         """True, wenn die Anzeige noch nie gemerkt wurde."""
-        row = self._conn.execute(
-            "SELECT 1 FROM gesehene_anzeigen WHERE id = ?", (job_ad_id,)
-        ).fetchone()
+        row = self._conn.fetchone("SELECT 1 FROM gesehene_anzeigen WHERE id = ?", (job_ad_id,))
         return row is None
 
     def remember_job_ad(self, job_ad: JobAd, assessment: Assessment, seen_on: date) -> None:
@@ -259,23 +273,23 @@ class Store:
 
     def find_match(self, report_name: str, match_number: int) -> StoredMatch | None:
         """Sucht die Anzeige, die in einem Report unter einer Treffernummer steht."""
-        row = self._conn.execute(
+        row = self._conn.fetchone(
             "SELECT id, titel, firma FROM gesehene_anzeigen WHERE report = ? AND nummer = ?",
             (report_name, match_number),
-        ).fetchone()
+        )
         return StoredMatch(*row) if row else None
 
     # Bewerbungen
 
     def current_application(self, position_key: str) -> KnownApplication | None:
         """Die letzte nicht zurueckgezogene Bewerbung auf diese Stelle (fuer den Report)."""
-        row = self._conn.execute(
+        row = self._conn.fetchone(
             "SELECT b.status, b.beworben_am, g.beschreibung_hash "
             "FROM bewerbungen b LEFT JOIN gesehene_anzeigen g ON g.id = b.anzeige_id "
             "WHERE b.stelle = ? AND b.status != ? "
             "ORDER BY b.beworben_am DESC, b.id DESC LIMIT 1",
             (position_key, ApplicationStatus.WITHDRAWN),
-        ).fetchone()
+        )
         if row is None:
             return None
         return KnownApplication(row[0], date.fromisoformat(row[1]), row[2])
@@ -286,18 +300,16 @@ class Store:
         Fuer die Rueckmeldung: Eine erneute Bewerbung nach dem Zurueckziehen
         ueberschreibt die alte.
         """
-        row = self._conn.execute(
+        row = self._conn.fetchone(
             "SELECT id FROM bewerbungen WHERE stelle = ? "
             "ORDER BY beworben_am DESC, id DESC LIMIT 1",
             (position_key,),
-        ).fetchone()
+        )
         return row[0] if row else None
 
     def application_for_job_ad(self, job_ad_id: str) -> int | None:
         """ID der Bewerbung auf genau diese Anzeige, falls vorhanden."""
-        row = self._conn.execute(
-            "SELECT id FROM bewerbungen WHERE anzeige_id = ?", (job_ad_id,)
-        ).fetchone()
+        row = self._conn.fetchone("SELECT id FROM bewerbungen WHERE anzeige_id = ?", (job_ad_id,))
         return row[0] if row else None
 
     def create_application(
@@ -336,7 +348,7 @@ class Store:
         self, today: date, *, min_days: int, max_days: int
     ) -> list[FollowUpReminder]:
         """Bewerbungen ohne Antwort, deren Datum min_days bis max_days Tage zurueckliegt."""
-        rows = self._conn.execute(
+        rows = self._conn.fetchall(
             "SELECT firma, titel, beworben_am FROM bewerbungen "
             "WHERE status = ? AND beworben_am BETWEEN ? AND ? ORDER BY beworben_am, id",
             (
@@ -344,7 +356,7 @@ class Store:
                 (today - timedelta(days=max_days)).isoformat(),
                 (today - timedelta(days=min_days)).isoformat(),
             ),
-        ).fetchall()
+        )
         return [
             FollowUpReminder(company, title, date.fromisoformat(applied_on))
             for company, title, applied_on in rows
@@ -362,11 +374,11 @@ class Store:
 
     def open_feedback(self) -> list[Feedback]:
         """Alles Feedback, das in keinen Profil-Vorschlag eingeflossen ist, samt Bewertung."""
-        rows = self._conn.execute(
+        rows = self._conn.fetchall(
             "SELECT f.anzeige_id, g.titel, g.firma, g.score, g.bewertung, f.score, f.grund "
             "FROM feedback f JOIN gesehene_anzeigen g ON g.id = f.anzeige_id "
             "WHERE f.verarbeitet = 0 ORDER BY f.datum, f.anzeige_id"
-        ).fetchall()
+        )
         return [
             Feedback(
                 job_ad_id=job_ad_id,
@@ -382,9 +394,7 @@ class Store:
 
     def count_open_feedback(self) -> int:
         """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
-        (count,) = self._conn.execute(
-            "SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0"
-        ).fetchone()
+        (count,) = self._conn.fetchone("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
         return count
 
     def mark_feedback_processed(self, job_ad_ids: list[str]) -> None:

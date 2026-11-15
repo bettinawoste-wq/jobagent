@@ -25,6 +25,7 @@ from jobagent.store import (
     Store,
     StoredMatch,
     StoreError,
+    _Connection,
 )
 
 _SRC = Path(__file__).resolve().parent.parent / "src" / "jobagent"
@@ -517,6 +518,48 @@ def test_transaction_forgets_everything_when_it_fails(db_path: Path) -> None:
     with Store(db_path) as reopened:
         assert reopened.is_new("a-1") is True
         assert reopened.find_match("2026-11-05", 1) is None
+
+
+def _locked(self: object) -> None:
+    raise StoreError("Datenbank jobagent.db nicht nutzbar: database is locked")
+
+
+def test_transaction_forgets_everything_when_commit_fails(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with Store(db_path) as store:
+        with monkeypatch.context() as patch:
+            patch.setattr(_Connection, "commit", _locked)
+            with pytest.raises(StoreError), store.transaction():
+                store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+
+        store.save_feedback("a-2", 3, None, date(2026, 11, 5))  # committet wieder
+
+    with Store(db_path) as reopened:
+        assert reopened.is_new("a-1") is True
+
+
+def test_store_is_closed_when_rollback_fails_too(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with Store(db_path) as store:
+        with monkeypatch.context() as patch:
+            patch.setattr(_Connection, "commit", _locked)
+            patch.setattr(_Connection, "rollback", _locked)
+            with pytest.raises(StoreError, match="locked"), store.transaction():
+                store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+
+        # Ein spaeterer Commit darf die halbe Transaktion nicht doch noch festschreiben.
+        with pytest.raises(sqlite3.ProgrammingError):
+            store.save_feedback("a-2", 3, None, date(2026, 11, 5))
+
+    with Store(db_path) as reopened:
+        assert reopened.is_new("a-1") is True
+
+
+def test_transactions_do_not_nest(store: Store) -> None:
+    with store.transaction(), pytest.raises(RuntimeError), store.transaction():
+        pass
 
 
 def test_transaction_keeps_everything_when_it_succeeds(db_path: Path) -> None:
