@@ -175,12 +175,12 @@ def _already_applied(db: Store, matches: list[report.Match]) -> dict[str, report
     return result
 
 
-def _text_differs(new: str | None, at_application: str | None) -> report.TextDiffers:
+def _text_differs(new: str | None, at_application: str | None) -> report.TextComparison:
     if new is None or at_application is None:
-        return report.TextDiffers.NOT_COMPARABLE
+        return report.TextComparison.NOT_COMPARABLE
     if new == at_application:
-        return report.TextDiffers.IDENTICAL
-    return report.TextDiffers.DIFFERS
+        return report.TextComparison.IDENTICAL
+    return report.TextComparison.DIFFERS
 
 
 def _search_all(

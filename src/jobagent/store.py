@@ -179,7 +179,7 @@ class Store:
     """
 
     def __init__(self, path: str | Path) -> None:
-        """Oeffnet (und initialisiert oder migriert bei Bedarf) die Datenbank unter path.
+        """Öffnet (und initialisiert oder migriert bei Bedarf) die Datenbank unter path.
 
         Lässt sich die Datenbank nicht nutzen, wirft hier und jede Methode `StoreError`.
         """

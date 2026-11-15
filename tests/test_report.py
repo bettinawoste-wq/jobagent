@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from jobagent.job_ad import JobAd
-from jobagent.report import AlreadyApplied, SourceStatus, TextDiffers, write_report
+from jobagent.report import AlreadyApplied, SourceStatus, TextComparison, write_report
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
 
@@ -245,7 +245,7 @@ def test_without_matches_source_failure_is_still_reported(tmp_path: Path) -> Non
     assert "Keine neuen Treffer" in content
 
 
-_REJECTED = AlreadyApplied("absage", date(2026, 10, 1), TextDiffers.IDENTICAL)
+_REJECTED = AlreadyApplied("absage", date(2026, 10, 1), TextComparison.IDENTICAL)
 
 
 def test_already_applied_is_in_own_block_at_end(tmp_path: Path) -> None:

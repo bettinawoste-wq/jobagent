@@ -37,7 +37,7 @@ class WrittenReport:
     match_numbers: dict[str, int]  # Anzeigen-ID -> Treffernummer
 
 
-class TextDiffers(Enum):
+class TextComparison(Enum):
     """Textabweichung einer Anzeige gegenüber der Anzeige, auf die die Bewerbung ging."""
 
     IDENTICAL = auto()
@@ -45,10 +45,10 @@ class TextDiffers(Enum):
     NOT_COMPARABLE = auto()  # eine der beiden Anzeigen ohne Text
 
 
-_TEXT_DIFFERS = {
-    TextDiffers.IDENTICAL: "Text identisch",
-    TextDiffers.DIFFERS: "Text weicht von deiner Bewerbung ab",
-    TextDiffers.NOT_COMPARABLE: "Text nicht vergleichbar",
+_TEXT_COMPARISON = {
+    TextComparison.IDENTICAL: "Text identisch",
+    TextComparison.DIFFERS: "Text weicht von deiner Bewerbung ab",
+    TextComparison.NOT_COMPARABLE: "Text nicht vergleichbar",
 }
 
 
@@ -56,7 +56,7 @@ _TEXT_DIFFERS = {
 class AlreadyApplied:
     status: str
     applied_on: date
-    text_differs: TextDiffers
+    text_differs: TextComparison
 
 
 def write_report(
@@ -230,7 +230,7 @@ def _applied_line(
     return (
         f"{_line_start(number, job_ad)} – Score {assessment.score}/5 – "
         f"{application.status}, beworben am {application.applied_on:%d.%m.%Y} – "
-        f"{_TEXT_DIFFERS[application.text_differs]} – {job_ad.link}"
+        f"{_TEXT_COMPARISON[application.text_differs]} – {job_ad.link}"
     )
 
 

@@ -337,7 +337,8 @@ def _save_accepted(
     db: Store, profile_path: Path, previous: str, accepted: AcceptedSuggestion, now: datetime
 ) -> Path:
     # In einer Transaktion: Scheitert das Schreiben, bleibt das Feedback offen. Ein
-    # geschriebenes Suchprofil bleibt nur bei einem gescheiterten Commit mit offenem zurück.
+    # geschriebenes Suchprofil bleibt nur dann mit offenem Feedback zurück, wenn der Commit
+    # danach scheitert.
     with db.transaction():
         db.mark_feedback_processed(accepted.feedback_ids)
         return replace_search_profile(
