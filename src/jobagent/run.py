@@ -52,6 +52,21 @@ def run(
     """
     job_ads, source_status = _search_all(sources, config.keywords)
     new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile)
+    return _report_and_remember(
+        db, new_matches, source_status, unassessed, config, today, output_dir
+    )
+
+
+def _report_and_remember(
+    db: Store,
+    new_matches: list[report.Match],
+    source_status: list[SourceStatus],
+    unassessed: int,
+    config: Config,
+    today: date,
+    output_dir: Path,
+) -> Path:
+    """Schreibt den Report und merkt Treffer samt Treffernummern: alles oder nichts."""
     written: report.WrittenReport | None = None
     try:
         with db.transaction():
@@ -64,9 +79,21 @@ def run(
     except BaseException:
         # Ohne gemerkte Treffernummern liefen die Nummern dieses Reports ins Leere.
         if written is not None:
-            written.path.unlink(missing_ok=True)
+            _remove_report(written.path)
         raise
     return written.path
+
+
+def _remove_report(path: Path) -> None:
+    # Lässt er sich nicht löschen, bleibt der erste Fehler der gemeldete.
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning(
+            "Report ohne gemerkte Treffernummern ließ sich nicht löschen, bitte von Hand "
+            "löschen (report=%s)",
+            path,
+        )
 
 
 def _write_report(
@@ -103,7 +130,7 @@ def _new_matches(
 ) -> tuple[list[report.Match], int]:
     """Bewertet die neuen Anzeigen; gibt die Treffer und die Zahl der unbewerteten zurück.
 
-    Gemerkt werden die Treffer erst zusammen mit dem Report, siehe `run`.
+    Gemerkt werden die Treffer erst zusammen mit dem Report, siehe `_report_and_remember`.
     """
     matches: list[report.Match] = []
     unassessed = 0

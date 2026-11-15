@@ -168,6 +168,24 @@ def test_report_without_saved_match_numbers_is_removed(tmp_path: Path, output_di
     assert list(output_dir.iterdir()) == []
 
 
+def test_report_that_cannot_be_removed_is_named_in_log(
+    tmp_path: Path,
+    output_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def locked_by_editor(self: Path, missing_ok: bool = False) -> None:
+        raise PermissionError(13, "Zugriff verweigert", str(self))
+
+    with _StoreFailingOnMatchNumbers(tmp_path / "jobagent.db") as db:
+        monkeypatch.setattr(Path, "unlink", locked_by_editor)
+        with pytest.raises(StoreError):
+            _run(db, output_dir, FakeSource([_job_ad("a-1")]))
+
+    assert "2026-03-02.md" in caplog.text
+    assert "von Hand" in caplog.text
+
+
 def test_run_passes_all_keywords_to_each_source_at_once(db: Store, output_dir: Path) -> None:
     first, second = FakeSource(), FakeSource(name="Arbeitnow")
 

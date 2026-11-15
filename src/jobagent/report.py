@@ -1,6 +1,7 @@
 """Schreibt output/YYYY-MM-DD.md, sortiert nach Score."""
 
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -85,11 +86,18 @@ def write_report(
 
 
 def _save(content: str, output_dir: Path, day: date) -> Path:
+    created: Path | None = None
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
         path = _free_path(output_dir, day)
-        path.write_text(content, encoding="utf-8")
+        # "x": nie einen Report ueberschreiben, auch nicht den eines gleichzeitigen Laufs.
+        with path.open("x", encoding="utf-8") as file:
+            created = path
+            file.write(content)
     except OSError as error:
+        if created is not None:  # kein halb geschriebener Report bleibt liegen
+            with suppress(OSError):
+                created.unlink()
         raise ReportError(
             f"Report lässt sich nicht in {output_dir} schreiben: {error.strerror or error}"
         ) from error
