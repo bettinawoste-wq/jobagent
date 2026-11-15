@@ -488,6 +488,8 @@ def test_run_detects_application_to_same_job_ad_without_company(
 
     assert "## Bereits beworben" in content
     assert "Data Engineer (unbekannt, München) – Score 4/5 – beworben, beworben am" in content
+    # Den Text bei der Bewerbung kennt der Lauf nicht; er vergleicht ihn nicht mit sich selbst.
+    assert "– Text nicht vergleichbar –" in content
 
 
 def test_run_reports_identical_text(db: Store, output_dir: Path) -> None:

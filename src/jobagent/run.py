@@ -59,12 +59,15 @@ def _report_and_remember(
 ) -> Path:
     """Schreibt den Report und merkt Treffer samt Treffernummern: alles oder nichts."""
     written: report.WrittenReport | None = None
+    # Vor dem Merken: Sonst verglich eine Bewerbung auf genau diese Anzeige deren Text
+    # mit sich selbst statt mit dem Text zum Zeitpunkt der Bewerbung.
+    applications = _already_applied(db, new_matches)
     try:
         with db.transaction():
             for job_ad, assessment in new_matches:
                 db.remember_job_ad(job_ad, assessment, today)
             written = _write_report(
-                db, new_matches, source_status, unassessed, config, today, output_dir
+                db, new_matches, source_status, unassessed, applications, config, today, output_dir
             )
             db.save_match_numbers(written.path.stem, written.match_numbers)
     except BaseException:
@@ -92,6 +95,7 @@ def _write_report(
     new_matches: list[report.Match],
     source_status: list[SourceStatus],
     unassessed: int,
+    applications: dict[str, report.AlreadyApplied],
     config: Config,
     today: date,
     output_dir: Path,
@@ -103,7 +107,7 @@ def _write_report(
         sources=source_status,
         unassessed=unassessed,
         min_score=config.min_score,
-        applications=_already_applied(db, new_matches),
+        applications=applications,
         follow_ups=db.follow_up_reminders(
             today,
             min_days=config.follow_up_min_days,
