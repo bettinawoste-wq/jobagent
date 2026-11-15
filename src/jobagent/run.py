@@ -172,9 +172,9 @@ def _open_feedback(db: Store) -> int:
 def _already_applied(db: Store, matches: list[report.Match]) -> dict[str, report.AlreadyApplied]:
     result: dict[str, report.AlreadyApplied] = {}
     for job_ad, _ in matches:
-        if not job_ad.company:  # Nur der Titel reicht nicht, um eine Stelle zu erkennen.
-            continue
-        application = db.current_application(position_key(job_ad.company, job_ad.title))
+        # Nur der Titel reicht nicht, um eine Stelle zu erkennen; die Anzeige selbst schon.
+        key = position_key(job_ad.company, job_ad.title) if job_ad.company else None
+        application = db.current_application(key, job_ad_id=job_ad.id)
         if application is not None:
             result[job_ad.id] = report.AlreadyApplied(
                 application.status,

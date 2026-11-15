@@ -281,14 +281,20 @@ class Store:
 
     # Bewerbungen
 
-    def current_application(self, position_key: str) -> KnownApplication | None:
-        """Die letzte nicht zurueckgezogene Bewerbung auf diese Stelle (fuer den Report)."""
+    def current_application(
+        self, position_key: str | None, *, job_ad_id: str | None = None
+    ) -> KnownApplication | None:
+        """Die letzte nicht zurückgezogene Bewerbung auf diese Stelle (für den Report).
+
+        Mit `job_ad_id` zählt auch eine Bewerbung auf genau diese Anzeige, selbst ohne
+        `position_key`, etwa weil die Anzeige keine Firma nennt.
+        """
         row = self._conn.fetchone(
             "SELECT b.status, b.beworben_am, g.beschreibung_hash "
             "FROM bewerbungen b LEFT JOIN gesehene_anzeigen g ON g.id = b.anzeige_id "
-            "WHERE b.stelle = ? AND b.status != ? "
+            "WHERE (b.stelle = ? OR b.anzeige_id = ?) AND b.status != ? "
             "ORDER BY b.beworben_am DESC, b.id DESC LIMIT 1",
-            (position_key, ApplicationStatus.WITHDRAWN),
+            (position_key, job_ad_id, ApplicationStatus.WITHDRAWN),
         )
         if row is None:
             return None

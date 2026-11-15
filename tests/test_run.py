@@ -498,6 +498,19 @@ def test_run_job_ad_without_company_is_not_matched(db: Store, output_dir: Path) 
     assert "Bereits beworben" not in content
 
 
+def test_run_detects_application_to_same_job_ad_without_company(
+    db: Store, output_dir: Path
+) -> None:
+    without_company = replace(_position_job_ad("neu"), company=None)
+    application = NewApplication(position_key(None, "Data Engineer"), None, "Data Engineer", "neu")
+    db.create_application(application, ApplicationStatus.APPLIED, TODAY)
+
+    content = _run(db, output_dir, FakeSource([without_company]))
+
+    assert "## Bereits beworben" in content
+    assert "Data Engineer (unbekannt, München) – Score 4/5 – beworben, beworben am" in content
+
+
 def test_run_reports_identical_text(db: Store, output_dir: Path) -> None:
     _application_to(db, output_dir, _position_job_ad("alt", "Gleicher Text"))
 
