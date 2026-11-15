@@ -8,6 +8,7 @@ geöffnet und das Datum bestimmt. Die Logik dahinter (`change_application_for_ma
 
 import argparse
 import copy
+import logging
 import re
 import sys
 from collections.abc import Callable
@@ -17,7 +18,9 @@ from typing import Final, Literal
 
 from jobagent import store
 from jobagent.position import position_key
-from jobagent.store import ApplicationStatus, Store
+from jobagent.store import ApplicationStatus, Store, StoreError
+
+logger = logging.getLogger(__name__)
 
 _DB_PATH = Path("jobagent.db")
 
@@ -67,13 +70,17 @@ def main(
         parsed = _manual_parser().parse_args(arguments)
         execute = _manual_command
 
-    with Store(db_path) as db:
-        try:
+    try:
+        with Store(db_path) as db:
             print(execute(db, parsed, day))
             return 0
-        except FeedbackError as error:
-            print(f"Fehler: {error}", file=sys.stderr)
-            return 1
+    except StoreError as error:
+        logger.debug("Abgebrochen", exc_info=True)  # Traceback nur im Log, nicht auf der Konsole
+        print(f"Fehler: {error}", file=sys.stderr)
+        return 1
+    except FeedbackError as error:
+        print(f"Fehler: {error}", file=sys.stderr)
+        return 1
 
 
 class _HelpFormatter(argparse.HelpFormatter):

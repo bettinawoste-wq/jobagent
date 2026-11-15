@@ -5,6 +5,7 @@ Zusammenbau: Konfiguration und Suchprofil aus Dateien, Fake-Quellen und `FakeLan
 aber echtes SQLite und eine echte Report-Datei.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -130,6 +131,76 @@ def test_main_keeps_seen_job_ads_in_database_between_runs(
     assert len(model.requests) == 1
     assert second_run.name == "2026-03-02-2.md"
     assert "Keine neuen Treffer" in second_run.read_text(encoding="utf-8")
+
+
+def _broken_toml(folder: Path) -> None:
+    (folder / "config.toml").write_text('[suche]\nwas = ["offen', encoding="utf-8")
+
+
+def _misplaced_key(folder: Path) -> None:
+    (folder / "config.toml").write_text('was = ["Data"]\n', encoding="utf-8")
+
+
+def _no_config(folder: Path) -> None:
+    (folder / "config.toml").unlink()
+
+
+def _no_profile(folder: Path) -> None:
+    (folder / "profile.md").unlink()
+
+
+def _database_is_folder(folder: Path) -> None:
+    (folder / "jobagent.db").mkdir()
+
+
+def _output_is_file(folder: Path) -> None:
+    (folder / "output").write_text("kein Ordner", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("breakage", "message"),
+    [
+        (_broken_toml, "Fehler: config.toml ist kein gültiges TOML"),
+        (_misplaced_key, "Fehler: config.toml ist nicht richtig gegliedert"),
+        (_no_config, "Fehler: config.toml nicht gefunden"),
+        (_no_profile, "Fehler: Suchprofil profile.md nicht gefunden"),
+        (_database_is_folder, "Fehler: Datenbank jobagent.db nicht nutzbar"),
+        (_output_is_file, "Fehler: Report lässt sich nicht in output schreiben"),
+    ],
+)
+def test_cli_aborts_with_message_and_exit_code_1(
+    breakage: Callable[[Path], None],
+    message: str,
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    breakage(tmp_path)
+    caplog.set_level(logging.DEBUG)
+
+    exit_code = main.cli([])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert err.startswith(message)
+    assert "Traceback" not in err
+    [logged] = [record for record in caplog.records if record.getMessage() == "Abgebrochen"]
+    assert logged.exc_info  # der Traceback steht nur im Log
+
+
+def test_cli_returns_exit_code_0_after_run(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert main.cli([]) == 0
 
 
 def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:

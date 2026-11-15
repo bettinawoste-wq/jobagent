@@ -24,6 +24,7 @@ from jobagent.store import (
     NewApplication,
     Store,
     StoredMatch,
+    StoreError,
 )
 
 _SRC = Path(__file__).resolve().parent.parent / "src" / "jobagent"
@@ -295,7 +296,7 @@ def test_store_closes_connection_when_schema_cannot_be_created(
 
     monkeypatch.setattr(sqlite3, "connect", recording_connect)
 
-    with pytest.raises(sqlite3.DatabaseError):
+    with pytest.raises(StoreError):
         Store(db_path)
 
     [connection] = opened
@@ -303,6 +304,22 @@ def test_store_closes_connection_when_schema_cannot_be_created(
         connection.execute("SELECT 1")
     # Unter Windows sperrt eine offene Verbindung die Datei; sie muss sich loeschen lassen.
     db_path.unlink()
+
+
+def test_store_names_database_that_is_no_sqlite_file(db_path: Path) -> None:
+    db_path.write_bytes(b"keine SQLite-Datenbank, nur Text " * 100)
+
+    with pytest.raises(StoreError, match=r"Datenbank .*jobagent\.db") as error:
+        Store(db_path)
+
+    assert "file is not a database" in str(error.value)
+
+
+def test_store_names_database_that_cannot_be_opened(tmp_path: Path) -> None:
+    with pytest.raises(StoreError, match="Datenbank") as error:
+        Store(tmp_path)  # ein Ordner, keine Datei
+
+    assert str(tmp_path) in str(error.value)
 
 
 def test_multiple_job_ads_are_tracked_independently(store: Store) -> None:
@@ -486,3 +503,26 @@ def test_only_the_store_module_knows_sqlite() -> None:
                 importers.append(path.relative_to(_SRC).as_posix())
 
     assert importers == ["store.py"]
+
+
+def test_transaction_forgets_everything_when_it_fails(db_path: Path) -> None:
+    with Store(db_path) as store:
+        with pytest.raises(RuntimeError), store.transaction():
+            store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+            store.save_match_numbers("2026-11-05", {"a-1": 1})
+            raise RuntimeError("Report nicht geschrieben")
+
+        assert store.is_new("a-1") is True
+
+    with Store(db_path) as reopened:
+        assert reopened.is_new("a-1") is True
+        assert reopened.find_match("2026-11-05", 1) is None
+
+
+def test_transaction_keeps_everything_when_it_succeeds(db_path: Path) -> None:
+    with Store(db_path) as store, store.transaction():
+        store.remember_job_ad(_example_job_ad("a-1"), _assessment(), date(2026, 11, 5))
+        store.save_match_numbers("2026-11-05", {"a-1": 1})
+
+    with Store(db_path) as reopened:
+        assert reopened.find_match("2026-11-05", 1).id == "a-1"

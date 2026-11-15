@@ -47,10 +47,38 @@ def run(
 
     Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `search_profile`.
     In `db` merkt sich der Lauf die bewerteten Anzeigen und die Treffernummern des Reports.
+    Scheitert der Report (`ReportError`) oder das Merken (`StoreError`), merkt er sich
+    nichts und laesst keinen Report liegen: Die Treffer kommen im naechsten Lauf wieder.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
-    new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile, today)
-    written = report.write_report(
+    new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile)
+    written: report.WrittenReport | None = None
+    try:
+        with db.transaction():
+            for job_ad, assessment in new_matches:
+                db.remember_job_ad(job_ad, assessment, today)
+            written = _write_report(
+                db, new_matches, source_status, unassessed, config, today, output_dir
+            )
+            db.save_match_numbers(written.path.stem, written.match_numbers)
+    except BaseException:
+        # Ohne gemerkte Treffernummern liefen die Nummern dieses Reports ins Leere.
+        if written is not None:
+            written.path.unlink(missing_ok=True)
+        raise
+    return written.path
+
+
+def _write_report(
+    db: Store,
+    new_matches: list[report.Match],
+    source_status: list[SourceStatus],
+    unassessed: int,
+    config: Config,
+    today: date,
+    output_dir: Path,
+) -> report.WrittenReport:
+    return report.write_report(
         new_matches,
         today,
         output_dir,
@@ -65,8 +93,6 @@ def run(
         ),
         open_feedback=_open_feedback(db),
     )
-    db.save_match_numbers(written.path.stem, written.match_numbers)
-    return written.path
 
 
 def _new_matches(
@@ -74,9 +100,11 @@ def _new_matches(
     job_ads: list[JobAd],
     language_model: LanguageModel,
     search_profile: str,
-    today: date,
 ) -> tuple[list[report.Match], int]:
-    """Bewertet die neuen Anzeigen; gibt die Treffer und die Zahl der unbewerteten zurück."""
+    """Bewertet die neuen Anzeigen; gibt die Treffer und die Zahl der unbewerteten zurück.
+
+    Gemerkt werden die Treffer erst zusammen mit dem Report, siehe `run`.
+    """
     matches: list[report.Match] = []
     unassessed = 0
 
@@ -92,7 +120,6 @@ def _new_matches(
             unassessed += 1
             continue
 
-        db.remember_job_ad(job_ad, assessment, today)
         matches.append((job_ad, assessment))
 
     return matches, unassessed

@@ -16,14 +16,17 @@ from pathlib import Path
 import httpx
 
 from jobagent import demo, report
-from jobagent.config import Config, load_config
+from jobagent.config import Config, ConfigError, load_config
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel
+from jobagent.report import ReportError
 from jobagent.run import run
 from jobagent.sources import Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
 from jobagent.sources.watchlist import WatchlistSource
-from jobagent.store import Store
+from jobagent.store import Store, StoreError
+
+logger = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path("config.toml")
 _PROFILE_PATH = Path("profile.md")
@@ -51,7 +54,7 @@ def main(
         sources = default_sources(config)
     if language_model is None:
         language_model = AnthropicLanguageModel(_ASSESSMENT_MODEL)
-    search_profile = profile_path.read_text(encoding="utf-8")
+    search_profile = _read_search_profile(profile_path)
 
     with Store(db_path) as db:
         return run(
@@ -63,6 +66,25 @@ def main(
             today=date.today(),
             output_dir=output_dir,
         )
+
+
+class SearchProfileError(Exception):
+    """Das Suchprofil fehlt oder ist nicht lesbar; die Meldung nennt die Datei."""
+
+
+def _read_search_profile(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise SearchProfileError(
+            f"Suchprofil {path} nicht gefunden. Vorlage: profile.example.md"
+        ) from None
+    except (OSError, UnicodeDecodeError) as error:
+        raise SearchProfileError(f"Suchprofil {path} nicht lesbar: {error}") from error
+
+
+# Fehler, die nicht eine Quelle oder Anzeige betreffen, sondern den ganzen Lauf abbrechen.
+_ABORTS = (ConfigError, SearchProfileError, StoreError, ReportError)
 
 
 def default_sources(
@@ -103,8 +125,11 @@ def demo_run(output_dir: Path | None = None) -> str:
         return path.read_text(encoding="utf-8")
 
 
-def cli(argv: list[str] | None = None) -> None:
-    """Kommandozeile: ein echter Lauf oder mit `--demo` ein Demo-Lauf."""
+def cli(argv: list[str] | None = None) -> int:
+    """Kommandozeile: ein echter Lauf oder mit `--demo` ein Demo-Lauf; gibt den Exit-Code zurück.
+
+    Bricht der ganze Lauf ab, steht eine Meldung auf stderr und der Traceback nur im Log.
+    """
     parser = argparse.ArgumentParser(prog="python -m jobagent.main")
     parser.add_argument(
         "--demo",
@@ -124,10 +149,17 @@ def cli(argv: list[str] | None = None) -> None:
         parser.error("--ausgabe gibt es nur zusammen mit --demo")
 
     logging.basicConfig(level=logging.INFO)
-    if args.demo:
-        _write_utf8(demo_run(args.output))
-    else:
-        main()
+    try:
+        if args.demo:
+            _write_utf8(demo_run(args.output))
+        else:
+            main()
+    except _ABORTS as error:
+        # DEBUG, damit der Traceback nicht neben der Meldung auf der Konsole steht.
+        logger.debug("Abgebrochen", exc_info=True)
+        print(f"Fehler: {error}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _write_utf8(text: str) -> None:
@@ -138,4 +170,4 @@ def _write_utf8(text: str) -> None:
 
 
 if __name__ == "__main__":
-    cli()
+    raise SystemExit(cli())

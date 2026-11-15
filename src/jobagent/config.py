@@ -23,7 +23,7 @@ class Config:
 
 
 class ConfigError(Exception):
-    """Ein Schluessel in `config.toml` steht nicht an seinem Platz oder in falscher Form."""
+    """`config.toml` fehlt, ist kaputt, oder ein Schluessel steht nicht an seinem Platz."""
 
 
 # Die einzige Stelle, an der die deutschen Schluessel aus `config.toml` uebersetzt werden:
@@ -48,10 +48,10 @@ def load_config(path: Path) -> Config:
 
     Steht ein bekannter Schluessel oben in der Datei wie im alten flachen Format oder in einem
     anderen bekannten Abschnitt, bricht das Laden mit `ConfigError` ab und nennt seinen Platz.
-    Unbekannte Abschnitte und Schluessel werden nicht geprueft.
+    Unbekannte Abschnitte und Schluessel werden nicht geprueft. Fehlt die Datei, ist sie
+    nicht lesbar oder kein gueltiges TOML, wirft das Laden ebenfalls `ConfigError`.
     """
-    with path.open("rb") as file:
-        raw = tomllib.load(file)
+    raw = _read_toml(path)
     _reject_misplaced(raw)
     values = {
         english: raw[section][german]
@@ -61,6 +61,18 @@ def load_config(path: Path) -> Config:
     if "companies" in values:
         values["companies"] = [_to_company(entry) for entry in values["companies"]]
     return Config(**values)
+
+
+def _read_toml(path: Path) -> dict:
+    try:
+        with path.open("rb") as file:
+            return tomllib.load(file)
+    except FileNotFoundError:
+        raise ConfigError(f"{path} nicht gefunden.") from None
+    except OSError as error:
+        raise ConfigError(f"{path} nicht lesbar: {error.strerror or error}") from error
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(f"{path} ist kein gültiges TOML: {error}") from error
 
 
 def _reject_misplaced(raw: dict) -> None:

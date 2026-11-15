@@ -14,10 +14,11 @@ from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError
 from jobagent.position import position_key
+from jobagent.report import ReportError
 from jobagent.run import run
 from jobagent.score import Assessment
 from jobagent.sources import SearchResult, Source
-from jobagent.store import ApplicationStatus, NewApplication, Store
+from jobagent.store import ApplicationStatus, NewApplication, Store, StoreError
 from tests.fakes import FakeLanguageModel
 
 TODAY = date(2026, 3, 2)
@@ -139,6 +140,32 @@ def test_run_writes_report_dated_today_into_output_dir(db: Store, output_dir: Pa
     )
 
     assert path == output_dir / "2026-03-02.md"
+
+
+def test_failed_report_loses_no_matches(db: Store, tmp_path: Path) -> None:
+    blocked = tmp_path / "keinordner"
+    blocked.write_text("eine Datei, wo der Report-Ordner hin soll", encoding="utf-8")
+    source = FakeSource([_job_ad("a-1")])
+
+    with pytest.raises(ReportError, match="keinordner"):
+        _run(db, blocked, source)
+
+    assert db.is_new("a-1")
+    assert "Stelle a-1" in _run(db, tmp_path / "output", source)
+
+
+class _StoreFailingOnMatchNumbers(Store):
+    def save_match_numbers(self, report_name: str, match_numbers: dict[str, int]) -> None:
+        raise StoreError("Datenbank jobagent.db nicht nutzbar: database is locked")
+
+
+def test_report_without_saved_match_numbers_is_removed(tmp_path: Path, output_dir: Path) -> None:
+    with _StoreFailingOnMatchNumbers(tmp_path / "jobagent.db") as db:
+        with pytest.raises(StoreError):
+            _run(db, output_dir, FakeSource([_job_ad("a-1")]))
+
+        assert db.is_new("a-1")
+    assert list(output_dir.iterdir()) == []
 
 
 def test_run_passes_all_keywords_to_each_source_at_once(db: Store, output_dir: Path) -> None:

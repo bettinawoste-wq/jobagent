@@ -330,6 +330,19 @@ def test_main_reports_error_with_exit_code_1(db_path: Path, capsys: pytest.Captu
     assert "--firma" in error
 
 
+def test_main_aborts_with_message_when_database_is_unusable(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    folder = tmp_path / "jobagent.db"
+    folder.mkdir()
+
+    assert _main(folder, _REPORT, "1", "beworben") == 1
+
+    error = capsys.readouterr().err
+    assert error.startswith(f"Fehler: Datenbank {folder} nicht nutzbar")
+    assert "Traceback" not in error
+
+
 def test_report_may_be_given_with_file_extension(db_path: Path) -> None:
     assert _main(db_path, f"{_REPORT}.md", "2", "beworben") == 0
 

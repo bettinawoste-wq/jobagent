@@ -7,6 +7,8 @@ Migration weiter funktioniert. Uebersetzt wird nur hier, in den SQL-Texten.
 import hashlib
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
@@ -110,6 +112,55 @@ class FollowUpReminder:
     applied_on: date
 
 
+class StoreError(Exception):
+    """Die Datenbank laesst sich nicht nutzen, z.B. gesperrt oder kaputt.
+
+    Die Meldung ist fuer die Nutzerin und nennt die Datenbank.
+    """
+
+
+class _Connection:
+    """Die SQLite-Verbindung des Store; ihre Betriebsfehler kommen als `StoreError` an."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = path
+        with self._errors():
+            self._raw = sqlite3.connect(path)
+
+    @contextmanager
+    def _errors(self) -> Iterator[None]:
+        try:
+            yield
+        except sqlite3.DatabaseError as error:
+            # Nur Fehler der Datei und des Betriebs (gesperrt, nicht zu oeffnen, keine
+            # Datenbank). Programmierfehler wie eine geschlossene Verbindung oder eine
+            # verletzte Bedingung bleiben, was sie sind.
+            if not (
+                isinstance(error, sqlite3.OperationalError) or type(error) is sqlite3.DatabaseError
+            ):
+                raise
+            raise StoreError(f"Datenbank {self._path} nicht nutzbar: {error}") from error
+
+    def execute(self, sql: str, parameters: tuple = ()) -> sqlite3.Cursor:
+        with self._errors():
+            return self._raw.execute(sql, parameters)
+
+    def executemany(self, sql: str, parameters: list[tuple]) -> None:
+        with self._errors():
+            self._raw.executemany(sql, parameters)
+
+    def commit(self) -> None:
+        with self._errors():
+            self._raw.commit()
+
+    def rollback(self) -> None:
+        with self._errors():
+            self._raw.rollback()
+
+    def close(self) -> None:
+        self._raw.close()
+
+
 class Store:
     """Die Datenbank als Context-Manager: haelt ihre Verbindung selbst und schliesst sie.
 
@@ -119,8 +170,12 @@ class Store:
     """
 
     def __init__(self, path: str | Path) -> None:
-        """Oeffnet (und initialisiert oder migriert bei Bedarf) die Datenbank unter path."""
-        self._conn = sqlite3.connect(path)
+        """Oeffnet (und initialisiert oder migriert bei Bedarf) die Datenbank unter path.
+
+        Laesst sich die Datenbank nicht nutzen, wirft hier und jede Methode `StoreError`.
+        """
+        self._conn = _Connection(path)
+        self._in_transaction = False
         try:
             self._conn.execute(_SCHEMA_SEEN)
             self._conn.execute(_SCHEMA_APPLICATIONS)
@@ -136,6 +191,26 @@ class Store:
 
     def __exit__(self, *_: object) -> None:
         self._conn.close()
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Was die Methoden darin speichern, gilt gemeinsam am Ende oder bei Fehler gar nicht.
+
+        Fuer den Lauf: Anzeigen, Report und Treffernummern gehoeren zusammen.
+        """
+        self._in_transaction = True
+        try:
+            yield
+        except BaseException:
+            self._in_transaction = False
+            self._conn.rollback()
+            raise
+        self._in_transaction = False
+        self._conn.commit()
+
+    def _commit(self) -> None:
+        if not self._in_transaction:
+            self._conn.commit()
 
     def _add_missing_columns(self) -> None:
         existing = {row[1] for row in self._conn.execute("PRAGMA table_info(gesehene_anzeigen)")}
@@ -172,7 +247,7 @@ class Store:
                 _assessment_as_json(assessment),
             ),
         )
-        self._conn.commit()
+        self._commit()
 
     def save_match_numbers(self, report_name: str, match_numbers: dict[str, int]) -> None:
         """Haelt fest, unter welcher Treffernummer eine Anzeige in welchem Report steht."""
@@ -180,7 +255,7 @@ class Store:
             "UPDATE gesehene_anzeigen SET report = ?, nummer = ? WHERE id = ?",
             [(report_name, number, job_ad_id) for job_ad_id, number in match_numbers.items()],
         )
-        self._conn.commit()
+        self._commit()
 
     def find_match(self, report_name: str, match_number: int) -> StoredMatch | None:
         """Sucht die Anzeige, die in einem Report unter einer Treffernummer steht."""
@@ -240,7 +315,7 @@ class Store:
                 applied_on.isoformat(),
             ),
         )
-        self._conn.commit()
+        self._commit()
 
     def update_application(
         self, application_id: int, status: ApplicationStatus, applied_on: date | None
@@ -251,11 +326,11 @@ class Store:
             "WHERE id = ?",
             (status, applied_on.isoformat() if applied_on else None, application_id),
         )
-        self._conn.commit()
+        self._commit()
 
     def delete_application(self, application_id: int) -> None:
         self._conn.execute("DELETE FROM bewerbungen WHERE id = ?", (application_id,))
-        self._conn.commit()
+        self._commit()
 
     def follow_up_reminders(
         self, today: date, *, min_days: int, max_days: int
@@ -283,7 +358,7 @@ class Store:
             "INSERT OR REPLACE INTO feedback (anzeige_id, score, grund, datum) VALUES (?, ?, ?, ?)",
             (job_ad_id, score, reason, given_on.isoformat()),
         )
-        self._conn.commit()
+        self._commit()
 
     def open_feedback(self) -> list[Feedback]:
         """Alles Feedback, das in keinen Profil-Vorschlag eingeflossen ist, samt Bewertung."""
@@ -317,7 +392,7 @@ class Store:
             "UPDATE feedback SET verarbeitet = 1 WHERE anzeige_id = ?",
             [(job_ad_id,) for job_ad_id in job_ad_ids],
         )
-        self._conn.commit()
+        self._commit()
 
 
 def description_hash(description: str | None) -> str | None:

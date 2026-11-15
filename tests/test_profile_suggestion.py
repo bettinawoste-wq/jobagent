@@ -405,6 +405,23 @@ def test_missing_profile_is_error(
     assert "profile.md nicht gefunden" in capsys.readouterr().err
 
 
+def test_main_aborts_with_message_when_database_is_unusable(
+    tmp_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    folder = tmp_path / "jobagent.db"
+    folder.mkdir()
+    model = FakeLanguageModel(_suggestion())
+
+    exit_code = profile_suggestion.main(
+        db_path=folder, profile_path=profile_path, language_model=model, now=_NOW
+    )
+
+    assert exit_code == 1
+    error = capsys.readouterr().err
+    assert error.startswith(f"Fehler: Datenbank {folder} nicht nutzbar")
+    assert "Traceback" not in error
+
+
 class _RecordingClient:
     """Nachgebauter Anthropic-Client, der die Anfrage festhält und dann scheitert."""
 

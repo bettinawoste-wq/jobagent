@@ -18,7 +18,7 @@ import anthropic
 
 from jobagent import store
 from jobagent.language_model import AnthropicLanguageModel, LanguageModel, LanguageModelError
-from jobagent.store import Store
+from jobagent.store import Store, StoreError
 
 logger = logging.getLogger(__name__)
 
@@ -306,15 +306,20 @@ def main(
     if language_model is None:
         language_model = suggestion_language_model()
 
-    with Store(db_path) as db:
-        return suggest_and_decide(
-            db=db,
-            search_profile=search_profile,
-            profile_path=profile_path,
-            language_model=language_model,
-            ask=ask,
-            now=now or datetime.now(),
-        )
+    try:
+        with Store(db_path) as db:
+            return suggest_and_decide(
+                db=db,
+                search_profile=search_profile,
+                profile_path=profile_path,
+                language_model=language_model,
+                ask=ask,
+                now=now or datetime.now(),
+            )
+    except StoreError as error:
+        logger.debug("Abgebrochen", exc_info=True)  # Traceback nur im Log, nicht auf der Konsole
+        print(f"Fehler: {error}", file=sys.stderr)
+        return 1
 
 
 def suggestion_language_model(*, client: anthropic.Anthropic | None = None) -> LanguageModel:

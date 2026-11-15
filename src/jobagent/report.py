@@ -19,6 +19,10 @@ DEFAULT_MIN_SCORE = 3
 Match = tuple[JobAd, Assessment]
 
 
+class ReportError(Exception):
+    """Der Report laesst sich nicht schreiben; die Meldung nennt den Report-Ordner."""
+
+
 @dataclass(frozen=True, slots=True)
 class WrittenReport:
     path: Path
@@ -46,10 +50,9 @@ def write_report(
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
     Ohne Treffer wird eine kurze Notiz statt einer leeren Datei erzeugt.
-    Ein vorhandener Report wird nie ueberschrieben, siehe _free_path.
+    Ein vorhandener Report wird nie ueberschrieben, siehe _free_path. Laesst sich der
+    Report nicht schreiben, wirft `ReportError`.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = _free_path(output_dir, day)
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
         f"{_sources_block(sources)}{_unassessed_line(unassessed)}"
@@ -58,7 +61,7 @@ def write_report(
     )
 
     if not matches:
-        path.write_text(f"{header}Keine neuen Treffer heute.\n", encoding="utf-8")
+        path = _save(f"{header}Keine neuen Treffer heute.\n", output_dir, day)
         return WrittenReport(path, {})
 
     ranked = sorted(matches, key=lambda match: match[1].score, reverse=True)
@@ -77,9 +80,20 @@ def write_report(
     if applied:
         parts.append(_applied_block(numbered[len(open_matches) :], applications))
 
-    content = header + "\n".join(parts)
-    path.write_text(content, encoding="utf-8")
+    path = _save(header + "\n".join(parts), output_dir, day)
     return WrittenReport(path, {job_ad.id: number for number, (job_ad, _) in numbered})
+
+
+def _save(content: str, output_dir: Path, day: date) -> Path:
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path = _free_path(output_dir, day)
+        path.write_text(content, encoding="utf-8")
+    except OSError as error:
+        raise ReportError(
+            f"Report lässt sich nicht in {output_dir} schreiben: {error.strerror or error}"
+        ) from error
+    return path
 
 
 def _free_path(output_dir: Path, day: date) -> Path:
