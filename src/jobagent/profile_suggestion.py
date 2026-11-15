@@ -19,7 +19,7 @@ import anthropic
 
 from jobagent import store
 from jobagent.language_model import AnthropicJsonLanguageModel, LanguageModel, LanguageModelError
-from jobagent.logs import setup_logging
+from jobagent.logs import abort, setup_logging
 from jobagent.search_profile import (
     SearchProfileError,
     read_search_profile,
@@ -330,9 +330,7 @@ def main(
                 print(f"Suchprofil geändert, Sicherung: {backup.name}")
             return decision.exit_code
     except (SearchProfileError, StoreError) as error:
-        logger.debug("Abgebrochen", exc_info=True)  # Traceback nur im Log, nicht auf der Konsole
-        print(f"Fehler: {error}", file=sys.stderr)
-        return 1
+        return abort(logger, error)
 
 
 def _save_accepted(

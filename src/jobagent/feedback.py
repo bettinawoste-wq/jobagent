@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Final, Literal, get_args
 
 from jobagent import store
-from jobagent.logs import setup_logging
+from jobagent.logs import abort, setup_logging
 from jobagent.position import position_key
 from jobagent.store import ApplicationStatus, Store, StoreError
 
@@ -78,10 +78,8 @@ def main(
             print(execute(db, parsed, day))
             return 0
     except StoreError as error:
-        logger.debug("Abgebrochen", exc_info=True)  # Traceback nur im Log, nicht auf der Konsole
-        print(f"Fehler: {error}", file=sys.stderr)
-        return 1
-    except FeedbackError as error:
+        return abort(logger, error)
+    except FeedbackError as error:  # eine Eingabe, kein Abbruch: ohne Traceback
         print(f"Fehler: {error}", file=sys.stderr)
         return 1
 

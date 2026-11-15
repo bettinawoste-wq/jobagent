@@ -34,6 +34,17 @@ def setup_logging() -> None:
         logging.getLogger(name).setLevel(logging.DEBUG)
 
 
+def abort(logger: logging.Logger, error: Exception) -> int:
+    """Meldet den Abbruch eines ganzen Kommandos und gibt den Exit-Code 1 zurück.
+
+    Auf stderr steht nur "Fehler: <Meldung>". Den Traceback loggt `logger` auf DEBUG, damit
+    er nicht neben der Meldung auf der Konsole steht; eine Log-Datei des Laufs schreibt ihn mit.
+    """
+    logger.debug("Abgebrochen", exc_info=error)
+    print(f"Fehler: {error}", file=sys.stderr)
+    return 1
+
+
 class RunLog(logging.Handler):
     """Sammelt das Log eines Laufs ab DEBUG, bis feststeht, wie die Log-Datei heißt.
 

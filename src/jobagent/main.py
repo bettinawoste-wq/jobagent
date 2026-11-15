@@ -18,7 +18,7 @@ import httpx
 from jobagent import demo, report
 from jobagent.config import Config, ConfigError, load_config
 from jobagent.language_model import AnthropicToolLanguageModel, LanguageModel
-from jobagent.logs import RunLog, setup_logging
+from jobagent.logs import RunLog, abort, setup_logging
 from jobagent.report import ReportError
 from jobagent.run import run
 from jobagent.search_profile import SearchProfileError, read_search_profile
@@ -141,7 +141,7 @@ def cli(argv: list[str] | None = None) -> int:
         try:
             _write_utf8(demo_run(args.output))
         except _ABORTS as error:
-            return _abort(error)
+            return abort(logger, error)
         return 0
 
     return _real_run()
@@ -156,7 +156,7 @@ def _real_run() -> int:
             try:
                 report_path = main()
             except _ABORTS as error:
-                return _abort(error)
+                return abort(logger, error)
             except BaseException:
                 logger.debug("Unerwartet abgebrochen", exc_info=True)
                 raise
@@ -168,14 +168,6 @@ def _real_run() -> int:
         else:
             run_log.save(report_path.with_suffix(".log"))
     return 0
-
-
-def _abort(error: Exception) -> int:
-    # DEBUG, damit der Traceback nicht neben der Meldung auf der Konsole steht; die
-    # Log-Datei eines Laufs schreibt ihn mit.
-    logger.debug("Abgebrochen", exc_info=True)
-    print(f"Fehler: {error}", file=sys.stderr)
-    return 1
 
 
 def _write_utf8(text: str) -> None:
