@@ -221,7 +221,13 @@ def save_feedback_for_match(
     reason: str | None,
     today: date,
 ) -> str:
-    """Speichert den eigenen Score zu einem Treffer; das Feedback gilt wieder als offen."""
+    """Speichert den eigenen Score zu einem Treffer; das Feedback gilt wieder als offen.
+
+    Gibt die Meldung für die Nutzerin zurück; wirft `FeedbackError`, wenn der Score nicht
+    auf der Skala von 1 bis 5 liegt oder der Treffer nicht gefunden wird.
+    """
+    if score not in range(1, 6):
+        raise FeedbackError(f"Der Score liegt zwischen 1 und 5, bekam: {score}")
     match = _find_match(db, report_name, match_number)
     db.save_feedback(match.id, score, reason, today)
     return f"Feedback gespeichert: {match.title} bekommt von dir Score {score}"
