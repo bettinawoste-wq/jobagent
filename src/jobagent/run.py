@@ -6,7 +6,6 @@ noch Umgebung. Zusammengebaut wird er in `jobagent.main`.
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModel
 from jobagent.position import position_key
+from jobagent.report import SourceStatus
 from jobagent.score import Assessment, score_job_ad
 from jobagent.sources import SearchResult, Source
 from jobagent.store import Store, description_hash
@@ -22,15 +22,6 @@ from jobagent.store import Store, description_hash
 logger = logging.getLogger(__name__)
 
 _PROFILE_SUGGESTION_MIN_FEEDBACK = 5
-
-
-@dataclass(frozen=True, slots=True)
-class SourceStatus:
-    """Was eine Quelle in diesem Lauf geliefert hat; steht im Quellenstatus des Reports."""
-
-    name: str
-    count: int
-    errors: list[str] = field(default_factory=list)
 
 
 def run(

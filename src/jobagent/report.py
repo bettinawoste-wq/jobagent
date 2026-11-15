@@ -2,23 +2,29 @@
 
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum, auto
 from pathlib import Path
-from typing import TYPE_CHECKING, TextIO
+from typing import TextIO
 
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
 
-if TYPE_CHECKING:  # run importiert report; nur der Typ wird gebraucht
-    from jobagent.run import SourceStatus
-
 OUTPUT_DIR = Path("output")
 DEFAULT_MIN_SCORE = 3
 
 Match = tuple[JobAd, Assessment]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceStatus:
+    """Was eine Quelle in diesem Lauf geliefert hat; steht im Quellenstatus des Reports."""
+
+    name: str
+    count: int
+    errors: list[str] = field(default_factory=list)
 
 
 class ReportError(Exception):
@@ -57,7 +63,7 @@ def write_report(
     matches: list[Match],
     day: date,
     output_dir: Path = OUTPUT_DIR,
-    sources: Sequence["SourceStatus"] = (),
+    sources: Sequence[SourceStatus] = (),
     min_score: int = DEFAULT_MIN_SCORE,
     applications: Mapping[str, AlreadyApplied] | None = None,
     follow_ups: Sequence[FollowUpReminder] = (),
@@ -148,14 +154,14 @@ def _report_error(output_dir: Path, error: OSError) -> ReportError:
     )
 
 
-def _sources_block(sources: Sequence["SourceStatus"]) -> str:
+def _sources_block(sources: Sequence[SourceStatus]) -> str:
     if not sources:
         return ""
     lines = "\n".join(_source_line(source) for source in sources)
     return f"## Quellen\n{lines}\n\n"
 
 
-def _source_line(source: "SourceStatus") -> str:
+def _source_line(source: SourceStatus) -> str:
     count = "1 Anzeige" if source.count == 1 else f"{source.count} Anzeigen"
     if not source.errors:
         return f"- {source.name}: {count}"

@@ -6,8 +6,7 @@ from pathlib import Path
 import pytest
 
 from jobagent.job_ad import JobAd
-from jobagent.report import AlreadyApplied, TextDiffers, write_report
-from jobagent.run import SourceStatus
+from jobagent.report import AlreadyApplied, SourceStatus, TextDiffers, write_report
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
 
