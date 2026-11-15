@@ -3,9 +3,10 @@
 from datetime import date, timedelta
 from pathlib import Path
 
+import pytest
+
 from jobagent.job_ad import JobAd
-from jobagent.main import SourceStatus
-from jobagent.report import AlreadyApplied, write_report
+from jobagent.report import AlreadyApplied, SourceStatus, TextComparison, write_report
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
 
@@ -125,6 +126,25 @@ def test_every_report_starts_again_at_one(tmp_path: Path) -> None:
     assert "## 1. Zweiter" in second.path.read_text(encoding="utf-8")
 
 
+def test_failed_write_leaves_no_half_report(tmp_path: Path) -> None:
+    # Ein einzelnes Surrogat liefert json.loads klaglos, UTF-8 kann es nicht schreiben.
+    # Die Anzeige bereinigt es selbst, das Kurzfazit des Sprachmodells nicht.
+    broken = (_job_ad("a-1", "Titel"), _assessment(4, "Kaputtes Kurzfazit \ud83d"))
+
+    with pytest.raises(UnicodeEncodeError):
+        write_report([broken], date(2026, 11, 5), output_dir=tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_report_skips_name_taken_by_a_folder(tmp_path: Path) -> None:
+    (tmp_path / "2026-11-05.md").mkdir()
+
+    written = write_report([], date(2026, 11, 5), output_dir=tmp_path)
+
+    assert written.path.name == "2026-11-05-2.md"
+
+
 def test_report_without_matches_has_no_match_numbers(tmp_path: Path) -> None:
     written = write_report([], date(2026, 11, 5), output_dir=tmp_path)
 
@@ -225,7 +245,7 @@ def test_without_matches_source_failure_is_still_reported(tmp_path: Path) -> Non
     assert "Keine neuen Treffer" in content
 
 
-_REJECTED = AlreadyApplied("absage", date(2026, 10, 1), "Text identisch")
+_REJECTED = AlreadyApplied("absage", date(2026, 10, 1), TextComparison.IDENTICAL)
 
 
 def test_already_applied_is_in_own_block_at_end(tmp_path: Path) -> None:

@@ -108,9 +108,17 @@ Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
     report.py ──►  output/YYYY-MM-DD.md (sortiert nach Score)
 ```
 
-Jeder Schritt ist defensiv: Schlägt eine einzelne Anzeige fehl (API-Fehler,
-ungültige LLM-Antwort), wird das geloggt und die Anzeige beim nächsten Lauf
-erneut versucht — der Gesamtlauf bricht nie ab.
+Den Ablauf führt `run.py` aus; was er braucht (Quellen, Sprachmodell,
+Suchprofil, Datenbank, Konfiguration, Datum), baut `main.py` zusammen. Das
+Sprachmodell ist eine eigene Schnittstelle (`language_model.py`), hinter der
+je ein Anthropic-Adapter für Bewertung und Profil-Vorschlag steckt, in Tests
+und im Demo-Lauf ein Ersatz.
+
+Jeder Schritt ist defensiv: Fällt eine Quelle aus, steht das im Quellenstatus
+des Reports. Scheitert die Bewertung einer Anzeige (API-Fehler, ungültige
+Antwort des Sprachmodells), wird das geloggt. Der Report zählt die Anzeige dann
+als unbewertet, und der nächste Lauf versucht es erneut, sofern eine Quelle sie
+noch liefert. Der Gesamtlauf bricht daran nicht ab.
 
 ## Stack
 
@@ -140,9 +148,31 @@ API-Key setzen (niemals im Code/Repo):
 [Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "dein-key", "User")
 ```
 
-Suchparameter in `config.toml` anpassen (Ort, Umkreis, Zeitfenster,
-Suchbegriffe, optional `[[firmen]]` für eine Watchlist konkreter
-Greenhouse-/Lever-Jobboards).
+Suchparameter in `config.toml` anpassen. Die Datei ist in Abschnitte geteilt:
+
+```toml
+[suche]                      # was für alle Quellen, wo/veroeffentlichtseit ohne Watchlist
+was = ["Data Scientist", "IT Consultant"]
+wo = "München"
+veroeffentlichtseit = 7      # Tage
+
+[bundesagentur]
+umkreis = 25                 # km
+
+[[watchlist.firmen]]         # optional, je Firma ein Eintrag
+name = "GitLab"
+ats = "greenhouse"           # oder "lever"
+slug = "gitlab"
+
+[report]
+mindest_score = 3
+nachfassen_ab_tag = 14
+nachfassen_bis_tag = 28
+```
+
+Fehlende Werte behalten ihren Standard. Das alte flache Format ohne
+Abschnitte wird nicht mehr gelesen; der Lauf nennt dann den neuen Platz
+jedes alten Schlüssels.
 
 ## Verwenden
 
@@ -154,7 +184,7 @@ Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
 `output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
 Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht je
 Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
-Treffer unter `mindest_score` (`config.toml`, Standard 3) erscheinen nur
+Treffer unter `mindest_score` (`[report]` in `config.toml`, Standard 3) erscheinen nur
 einzeilig am Ende.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
 
@@ -180,7 +210,7 @@ uv run python -m jobagent.feedback beworben --firma "Firma X" --titel "Data Engi
 ```
 
 Steht eine Bewerbung auf `beworben` und liegt 14 bis 28 Tage zurück
-(`nachfassen_ab_tag`, `nachfassen_bis_tag` in `config.toml`), erinnert der
+(`nachfassen_ab_tag`, `nachfassen_bis_tag` unter `[report]` in `config.toml`), erinnert der
 Report ans Nachhaken. Danach verschwindet der Hinweis, der Status bleibt.
 
 Erscheint eine Stelle erneut, auf die du dich beworben hast, steht sie im
@@ -210,7 +240,10 @@ uv run ruff check . && uv run ruff format .
 ## Automatisierung
 
 Lässt sich z. B. per Windows Task Scheduler (`Register-ScheduledTask`) oder
-cron an bestimmten Wochentagen morgens automatisch starten.
+cron an bestimmten Wochentagen morgens automatisch starten. Das Log eines Laufs
+bleibt dabei erhalten: Es liegt neben dem Report und heißt wie er
+(`output/YYYY-MM-DD.log`). Bricht ein Lauf ganz ab, gibt es keinen Report; sein Log
+samt Traceback landet dann in `output/abgebrochen.log`.
 
 ## Hinweis zur Entstehung
 

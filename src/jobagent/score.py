@@ -1,40 +1,33 @@
-"""Bewertung einer Anzeige gegen profile.md via Anthropic API (Modell Haiku)."""
+"""Bewertung einer Anzeige gegen profile.md über den Seam Sprachmodell."""
 
 import logging
 from dataclasses import dataclass
 
-import anthropic
-
 from jobagent.job_ad import JobAd
+from jobagent.language_model import LanguageModel, LanguageModelError
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "claude-haiku-4-5-20251001"
-_MAX_TOKENS = 1024
-_TOOL_NAME = "bewertung_abgeben"
-
-_TOOL_SCHEMA = {
-    "name": _TOOL_NAME,
+_SCHEMA = {
+    "title": "bewertung_abgeben",
     "description": "Gibt die Bewertung einer Stellenanzeige gegen das Suchprofil zurueck.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "score": {"type": "integer", "minimum": 1, "maximum": 5},
-            "passt": {"type": "array", "items": {"type": "string"}},
-            "passt_nicht": {"type": "array", "items": {"type": "string"}},
-            "luecken": {"type": "array", "items": {"type": "string"}},
-            "kurzfazit": {
-                "type": "string",
-                "description": "Maximal ein kurzer Satz, keine Aufzaehlung von Gruenden.",
-            },
+    "type": "object",
+    "properties": {
+        "score": {"type": "integer", "minimum": 1, "maximum": 5},
+        "passt": {"type": "array", "items": {"type": "string"}},
+        "passt_nicht": {"type": "array", "items": {"type": "string"}},
+        "luecken": {"type": "array", "items": {"type": "string"}},
+        "kurzfazit": {
+            "type": "string",
+            "description": "Maximal ein kurzer Satz, keine Aufzaehlung von Gruenden.",
         },
-        "required": ["score", "passt", "passt_nicht", "luecken", "kurzfazit"],
     },
+    "required": ["score", "passt", "passt_nicht", "luecken", "kurzfazit"],
 }
 
 _SYSTEM_PROMPT = (
     "Du bewertest Stellenanzeigen gegen das Suchprofil einer Bewerberin. "
-    f"Antworte ausschliesslich ueber das Werkzeug {_TOOL_NAME}. "
+    f"Antworte ausschliesslich ueber das Werkzeug {_SCHEMA['title']}. "
     "Score-Skala: 5 = sehr gute Passung, sofort bewerben; 4 = gute Passung, "
     "kleine Luecken; 3 = machbar, aber deutliche Luecken oder Abstriche; "
     "2 = eher nein; 1 = passt nicht. "
@@ -47,8 +40,9 @@ _SYSTEM_PROMPT = (
 )
 
 
-# Deutsche Schluessel einer Bewertung je Feld von Assessment: So sehen sie
-# die Modelle (Haiku-Antwort, Sonnet-Payload) und die DB-Spalte bewertung.
+# Deutsche Schlüssel einer Bewertung je Feld von Assessment: So sehen sie
+# die Sprachmodelle (Antwort der Bewertung, Payload des Profil-Vorschlags) und die
+# DB-Spalte bewertung.
 ASSESSMENT_KEYS = {
     "fits": "passt",
     "misfits": "passt_nicht",
@@ -66,48 +60,45 @@ class Assessment:
     summary: str
 
     def as_model_data(self) -> dict[str, object]:
-        """Die Bewertung ohne Score unter den deutschen Schluesseln."""
+        """Die Bewertung ohne Score unter den deutschen Schlüsseln."""
         return {key: getattr(self, field) for field, key in ASSESSMENT_KEYS.items()}
+
+    def as_model_answer(self) -> dict[str, object]:
+        """Die Bewertung so, wie das Sprachmodell sie antwortet: Score und deutsche Schlüssel."""
+        return {"score": self.score, **self.as_model_data()}
 
     @classmethod
     def from_model_data(cls, score: int, data: dict) -> "Assessment":
-        """Gegenstueck zu as_model_data; fehlende Schluessel werfen KeyError."""
+        """Gegenstück zu as_model_data; fehlende Schlüssel werfen KeyError."""
         return cls(score=score, **{field: data[key] for field, key in ASSESSMENT_KEYS.items()})
 
 
 def score_job_ad(
     job_ad: JobAd,
-    profile: str,
-    *,
-    client: anthropic.Anthropic | None = None,
+    search_profile: str,
+    language_model: LanguageModel,
 ) -> Assessment | None:
-    """Bewertet eine Anzeige gegen das Suchprofil mittels Claude Haiku.
+    """Bewertet eine Anzeige gegen das Suchprofil.
 
-    Gibt None zurueck und loggt, wenn die Anthropic-API nicht erreichbar ist
-    oder eine ungueltige Antwort liefert, statt den Lauf abzubrechen.
+    Gibt None zurück und loggt, wenn das Sprachmodell scheitert oder eine ungültige
+    Antwort liefert, statt den Lauf abzubrechen; die Anzeige bleibt dann unbewertet.
     """
-    active_client = client or anthropic.Anthropic()
-
-    user_text = f"Suchprofil:\n{profile}\n\nStellenanzeige:\n{_job_ad_as_text(job_ad)}"
+    user_text = f"Suchprofil:\n{search_profile}\n\nStellenanzeige:\n{job_ad_as_text(job_ad)}"
     try:
-        response = active_client.messages.create(
-            model=_MODEL,
-            max_tokens=_MAX_TOKENS,
-            system=_SYSTEM_PROMPT,
-            tools=[_TOOL_SCHEMA],
-            tool_choice={"type": "tool", "name": _TOOL_NAME},
-            messages=[{"role": "user", "content": user_text}],
-        )
-    except (anthropic.AnthropicError, TypeError):
-        # TypeError: die SDK wirft dies statt eines AnthropicError, wenn z.B.
-        # kein ANTHROPIC_API_KEY gesetzt ist (Validierung beim Request-Aufbau).
-        logger.exception("Anthropic-API-Anfrage fehlgeschlagen (anzeige=%r)", job_ad.id)
+        data = language_model.ask(_SYSTEM_PROMPT, user_text, _SCHEMA)
+    except LanguageModelError:
+        logger.exception("Bewertung beim Sprachmodell fehlgeschlagen (anzeige=%r)", job_ad.id)
         return None
 
-    return _to_assessment(response, job_ad.id)
+    try:
+        return _validate(data)
+    except (KeyError, TypeError, ValueError):
+        logger.exception("Ungültige Bewertungsantwort (anzeige=%r): %r", job_ad.id, data)
+        return None
 
 
-def _job_ad_as_text(job_ad: JobAd) -> str:
+def job_ad_as_text(job_ad: JobAd) -> str:
+    """Die Anzeige so, wie das Sprachmodell sie am Ende der Anfrage liest."""
     lines = [
         f"Titel: {job_ad.title}",
         f"Firma: {job_ad.company or 'unbekannt'}",
@@ -118,23 +109,10 @@ def _job_ad_as_text(job_ad: JobAd) -> str:
     return "\n".join(lines)
 
 
-def _to_assessment(response: anthropic.types.Message, job_ad_id: str) -> Assessment | None:
-    tool_use = next((block for block in response.content if block.type == "tool_use"), None)
-    if tool_use is None:
-        logger.error("Keine Tool-Antwort von Claude erhalten (anzeige=%r)", job_ad_id)
-        return None
-
-    try:
-        return _validate(tool_use.input)
-    except (KeyError, TypeError, ValueError):
-        logger.exception("Ungueltige Bewertungsantwort (anzeige=%r): %r", job_ad_id, tool_use.input)
-        return None
-
-
 def _validate(data: dict) -> Assessment:
     score = int(data["score"])
     if not 1 <= score <= 5:
-        raise ValueError(f"score ausserhalb 1-5: {score}")
+        raise ValueError(f"score außerhalb 1-5: {score}")
 
     assessment = Assessment.from_model_data(score, data)
     return Assessment(
@@ -150,7 +128,7 @@ def _as_string_list(value: object) -> list[str]:
     # Claude liefert dieses Feld manchmal als einzelnen String statt als
     # JSON-Array, obwohl das Tool-Schema ein Array vorgibt. Statt die ganze
     # Bewertung zu verwerfen, wird der String als Ein-Elemente-Liste
-    # uebernommen - kein Datenverlust, nur weniger granular dargestellt.
+    # übernommen - kein Datenverlust, nur weniger granular dargestellt.
     if isinstance(value, str):
         return [value]
     if not isinstance(value, list):

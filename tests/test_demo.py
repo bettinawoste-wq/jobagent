@@ -11,7 +11,10 @@ from pathlib import Path
 import httpx
 import pytest
 
-from jobagent import main, score
+from jobagent import demo, main
+from jobagent.job_ad import JobAd
+from jobagent.language_model import AnthropicLanguageModel
+from jobagent.score import score_job_ad
 
 
 @pytest.fixture
@@ -27,13 +30,46 @@ def empty_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         raise AssertionError("Demo-Lauf darf kein Modell fragen")
 
     monkeypatch.setattr(httpx.Client, "send", no_network)
-    monkeypatch.setattr(score, "score_job_ad", no_model)
+    monkeypatch.setattr(AnthropicLanguageModel, "ask", no_model)
     return tmp_path
 
 
 def _demo_run(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
     main.cli(["--demo", *argv])
     return capsys.readouterr().out
+
+
+def test_demo_run_assesses_every_job_ad_via_demo_language_model(
+    empty_project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    answered: list[dict] = []
+    ask = demo.DemoLanguageModel.ask
+
+    def recording_ask(self: demo.DemoLanguageModel, system: str, text: str, schema: dict) -> dict:
+        answer = ask(self, system, text, schema)
+        answered.append(answer)
+        return answer
+
+    monkeypatch.setattr(demo.DemoLanguageModel, "ask", recording_ask)
+
+    _demo_run(capsys)
+
+    assert len(answered) == len(demo.ASSESSMENTS)
+
+
+def test_demo_language_model_answers_pass_the_assessment_check() -> None:
+    model = demo.DemoLanguageModel()
+
+    for source in demo.sources():
+        for job_ad in source.search(demo.CONFIG.keywords).job_ads:
+            assessment = score_job_ad(job_ad, demo.SEARCH_PROFILE, model)
+            assert assessment == demo.ASSESSMENTS[job_ad.id]
+
+
+def test_demo_language_model_has_no_answer_for_unknown_job_ad() -> None:
+    unknown = JobAd("x-1", "Unbekannte Stelle", "Niemand GmbH", None, "https://example.com/x")
+
+    assert score_job_ad(unknown, demo.SEARCH_PROFILE, demo.DemoLanguageModel()) is None
 
 
 def test_demo_run_prints_report_without_creating_anything(

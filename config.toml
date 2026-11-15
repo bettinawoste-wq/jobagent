@@ -1,8 +1,21 @@
-# Suchparameter fuer die Jobsuche-API der Bundesagentur fuer Arbeit.
+# Suche: was gilt fuer alle Quellen, wo und veroeffentlichtseit nur fuer
+# Bundesagentur und Arbeitnow (die Watchlist filtert nur nach was).
+[suche]
+# Ein Suchlauf pro Begriff, Ergebnisse werden ueber refnr dedupliziert.
+was = [
+    "Full-Stack-Entwickler",
+    "IT Consultant",
+    "Embedded Entwickler",
+    "Data Scientist",
+]
 wo = "München"
-umkreis = 30
 veroeffentlichtseit = 1
 
+# Nur fuer die Jobsuche-API der Bundesagentur fuer Arbeit.
+[bundesagentur]
+umkreis = 30
+
+[report]
 # Treffer unter diesem Score erscheinen im Report nur noch als eine Zeile.
 mindest_score = 3
 
@@ -11,26 +24,18 @@ mindest_score = 3
 nachfassen_ab_tag = 14
 nachfassen_bis_tag = 28
 
-# Ein Suchlauf pro Begriff, Ergebnisse werden ueber refnr dedupliziert.
-was = [
-    "Full-Stack-Entwickler",
-    "IT Consultant",
-    "Embedded Entwickler",
-    "Data Scientist",
-]
-
 # Watchlist: konkrete Firmen, deren eigenes Jobboard (Greenhouse/Lever)
 # zusaetzlich durchsucht wird. slug ist der Board-Token (Greenhouse) bzw.
 # Firmen-Slug (Lever) - meist aus der URL der oeffentlichen Karriereseite
 # ablesbar, z.B. https://job-boards.greenhouse.io/<slug> oder
 # https://jobs.lever.co/<slug>. Unten zwei funktionierende Beispiele -
-# durch echte Zielfirmen ersetzen oder die Liste leer lassen ([]).
-[[firmen]]
+# durch echte Zielfirmen ersetzen oder die Eintraege weglassen.
+[[watchlist.firmen]]
 name = "GitLab"
 ats = "greenhouse"
 slug = "gitlab"
 
-[[firmen]]
+[[watchlist.firmen]]
 name = "Lever Demo"
 ats = "lever"
 slug = "leverdemo"

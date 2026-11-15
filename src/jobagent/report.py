@@ -1,17 +1,16 @@
 """Schreibt output/YYYY-MM-DD.md, sortiert nach Score."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from contextlib import suppress
+from dataclasses import dataclass, field
 from datetime import date
+from enum import Enum, auto
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TextIO
 
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
 from jobagent.store import FollowUpReminder
-
-if TYPE_CHECKING:  # main importiert report; nur der Typ wird gebraucht
-    from jobagent.main import SourceStatus
 
 OUTPUT_DIR = Path("output")
 DEFAULT_MIN_SCORE = 3
@@ -20,43 +19,72 @@ Match = tuple[JobAd, Assessment]
 
 
 @dataclass(frozen=True, slots=True)
+class SourceStatus:
+    """Was eine Quelle in diesem Lauf geliefert hat; steht im Quellenstatus des Reports."""
+
+    name: str
+    count: int
+    errors: list[str] = field(default_factory=list)
+
+
+class ReportError(Exception):
+    """Der Report lässt sich nicht schreiben; die Meldung nennt den Report-Ordner."""
+
+
+@dataclass(frozen=True, slots=True)
 class WrittenReport:
     path: Path
     match_numbers: dict[str, int]  # Anzeigen-ID -> Treffernummer
+
+
+class TextComparison(Enum):
+    """Textabweichung einer Anzeige gegenüber der Anzeige, auf die die Bewerbung ging."""
+
+    IDENTICAL = auto()
+    DIFFERS = auto()
+    NOT_COMPARABLE = auto()  # eine der beiden Anzeigen ohne Text
+
+
+_TEXT_COMPARISON = {
+    TextComparison.IDENTICAL: "Text identisch",
+    TextComparison.DIFFERS: "Text weicht von deiner Bewerbung ab",
+    TextComparison.NOT_COMPARABLE: "Text nicht vergleichbar",
+}
 
 
 @dataclass(frozen=True, slots=True)
 class AlreadyApplied:
     status: str
     applied_on: date
-    text_comparison: str
+    text_differs: TextComparison
 
 
 def write_report(
     matches: list[Match],
     day: date,
     output_dir: Path = OUTPUT_DIR,
-    sources: Sequence["SourceStatus"] = (),
+    sources: Sequence[SourceStatus] = (),
     min_score: int = DEFAULT_MIN_SCORE,
     applications: Mapping[str, AlreadyApplied] | None = None,
     follow_ups: Sequence[FollowUpReminder] = (),
     open_feedback: int = 0,
+    unassessed: int = 0,
 ) -> WrittenReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
     Ohne Treffer wird eine kurze Notiz statt einer leeren Datei erzeugt.
-    Ein vorhandener Report wird nie ueberschrieben, siehe _free_path.
+    Ein vorhandener Report wird nie überschrieben, siehe _open_new_report. Lässt sich der
+    Report nicht schreiben, wirft `ReportError`.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = _free_path(output_dir, day)
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
-        f"{_sources_block(sources)}{_follow_up_block(follow_ups, day)}"
+        f"{_sources_block(sources)}{_unassessed_line(unassessed)}"
+        f"{_follow_up_block(follow_ups, day)}"
         f"{_profile_hint(open_feedback)}"
     )
 
     if not matches:
-        path.write_text(f"{header}Keine neuen Treffer heute.\n", encoding="utf-8")
+        path = _save(f"{header}Keine neuen Treffer heute.\n", output_dir, day)
         return WrittenReport(path, {})
 
     ranked = sorted(matches, key=lambda match: match[1].score, reverse=True)
@@ -75,34 +103,76 @@ def write_report(
     if applied:
         parts.append(_applied_block(numbered[len(open_matches) :], applications))
 
-    content = header + "\n".join(parts)
-    path.write_text(content, encoding="utf-8")
+    path = _save(header + "\n".join(parts), output_dir, day)
     return WrittenReport(path, {job_ad.id: number for number, (job_ad, _) in numbered})
 
 
-def _free_path(output_dir: Path, day: date) -> Path:
-    # Gesehene Anzeigen kommen nie wieder, ein ueberschriebener Report waere
-    # also endgueltig verloren. Weitere Laeufe am selben Tag bekommen -2, -3, ...
-    path = output_dir / f"{day.isoformat()}.md"
-    run_number = 2
-    while path.exists():
-        path = output_dir / f"{day.isoformat()}-{run_number}.md"
-        run_number += 1
+def _save(content: str, output_dir: Path, day: date) -> Path:
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        file, path = _open_new_report(output_dir, day)
+    except OSError as error:
+        raise _report_error(output_dir, error) from error
+    # Kein halb geschriebener Report bleibt liegen.
+    try:
+        with file:
+            file.write(content)
+    except OSError as error:
+        _discard(path)
+        raise _report_error(output_dir, error) from error
+    except BaseException:
+        _discard(path)
+        raise
     return path
 
 
-def _sources_block(sources: Sequence["SourceStatus"]) -> str:
+def _discard(path: Path) -> None:
+    with suppress(OSError):
+        path.unlink()
+
+
+def _open_new_report(output_dir: Path, day: date) -> tuple[TextIO, Path]:
+    # Gesehene Anzeigen kommen nie wieder, ein überschriebener Report wäre
+    # also endgültig verloren. Weitere Läufe am selben Tag bekommen -2, -3, ...
+    # "x" legt die Datei nur neu an, auch wenn ein gleichzeitiger Lauf denselben Namen will.
+    run_number = 1
+    while True:
+        suffix = "" if run_number == 1 else f"-{run_number}"
+        path = output_dir / f"{day.isoformat()}{suffix}.md"
+        run_number += 1
+        if path.exists():  # unter Windows meldet "x" einen Ordner nicht als vorhanden
+            continue
+        try:
+            return path.open("x", encoding="utf-8"), path
+        except FileExistsError:
+            continue
+
+
+def _report_error(output_dir: Path, error: OSError) -> ReportError:
+    return ReportError(
+        f"Report lässt sich nicht in {output_dir} schreiben: {error.strerror or error}"
+    )
+
+
+def _sources_block(sources: Sequence[SourceStatus]) -> str:
     if not sources:
         return ""
     lines = "\n".join(_source_line(source) for source in sources)
     return f"## Quellen\n{lines}\n\n"
 
 
-def _source_line(source: "SourceStatus") -> str:
+def _source_line(source: SourceStatus) -> str:
     count = "1 Anzeige" if source.count == 1 else f"{source.count} Anzeigen"
     if not source.errors:
         return f"- {source.name}: {count}"
     return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
+
+
+def _unassessed_line(unassessed: int) -> str:
+    if not unassessed:
+        return ""
+    count = "1 unbewertete Anzeige" if unassessed == 1 else f"{unassessed} unbewertete Anzeigen"
+    return f"{count} – der nächste Lauf versucht es erneut.\n\n"
 
 
 def _profile_hint(open_feedback: int) -> str:
@@ -160,7 +230,7 @@ def _applied_line(
     return (
         f"{_line_start(number, job_ad)} – Score {assessment.score}/5 – "
         f"{application.status}, beworben am {application.applied_on:%d.%m.%Y} – "
-        f"{application.text_comparison} – {job_ad.link}"
+        f"{_TEXT_COMPARISON[application.text_differs]} – {job_ad.link}"
     )
 
 

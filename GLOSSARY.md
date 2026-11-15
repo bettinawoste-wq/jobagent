@@ -27,12 +27,12 @@ _Im Code_: `Source`; Eigennamen bleiben erhalten: `BundesagenturSource`, `Arbeit
 _Avoid_: Portal, Feed
 
 **Suchbegriff**:
-Ein Stichwort, nach dem in den Quellen gesucht wird; in `config.toml` als `was`.
+Ein Stichwort, nach dem in den Quellen gesucht wird; in `config.toml` als `was` im Abschnitt `[suche]`.
 _Im Code_: `keywords`
 _Avoid_: Query, Filter
 
 **Ort**:
-Der Ort, um den herum gesucht wird; in `config.toml` als `wo`.
+Der Ort, um den herum gesucht wird; in `config.toml` als `wo` im Abschnitt `[suche]`.
 _Im Code_: `location`
 _Avoid_: Region, Standort
 
@@ -43,10 +43,20 @@ Die eigene Beschreibung von gesuchten Rollen, Stärken, Lücken und Ausschlüsse
 _Im Code_: `SearchProfile`
 _Avoid_: Profil, Lebenslauf
 
+**Sprachmodell**:
+Das Modell, das eine Anzeige bewertet oder einen Profil-Vorschlag ableitet; für beide Aufgaben kann es ein anderes sein.
+_Im Code_: `LanguageModel`; im Demo-Lauf `DemoLanguageModel`
+_Avoid_: LLM, Provider, KI
+
 **Bewertung**:
-Das Urteil des Modells zu einer Anzeige, bestehend aus Score, Passendem, Unpassendem, Lücken und Kurzfazit.
+Das Urteil des Sprachmodells zu einer Anzeige, bestehend aus Score, Passendem, Unpassendem, Lücken und Kurzfazit.
 _Im Code_: `Assessment`
-_Avoid_: Rating, Analyse
+_Avoid_: Rating, Analyse, Analyzer, Scoring
+
+**Unbewertete Anzeige**:
+Eine neue Anzeige, deren Bewertung in einem Lauf gescheitert ist; sie gilt als ungesehen und wird im nächsten Lauf erneut bewertet, sofern eine Quelle sie dann noch liefert.
+_Im Code_: `unassessed`
+_Avoid_: übersprungen, fehlerhaft
 
 **Score**:
 Die Passung einer Anzeige zum Suchprofil auf einer Skala von 1 bis 5; Bewerbungen und andere Umstände verändern ihn nicht.
@@ -57,7 +67,7 @@ _Avoid_: Rang, Punkte
 
 **Lauf**:
 Ein Durchgang aus Suchen, Bewerten und Report-Schreiben, der genau einen Report erzeugt.
-_Im Code_: `Run`
+_Im Code_: `run`
 _Avoid_: Durchlauf, Testlauf
 
 **Demo-Lauf**:

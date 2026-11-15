@@ -56,7 +56,7 @@ def _normalized_title(title: str) -> str:
 
 def _normalized_company(company: str) -> str:
     words = _words(_REGISTERED_ASSOCIATION.sub(" ", company))
-    # Mindestens ein Wort bleibt, falls die Firma tatsaechlich so heisst.
+    # Mindestens ein Wort bleibt, falls die Firma tatsächlich so heißt.
     while len(words) > 1 and words[-1] in _LEGAL_FORMS:
         words.pop()
     return " ".join(words)

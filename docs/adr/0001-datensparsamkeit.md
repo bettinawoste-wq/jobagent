@@ -27,4 +27,5 @@ Eine Textabweichung wird über den Hash erkannt: Vor dem Hashen wird Leerraum ve
 - Schon ein einzelnes geändertes Wort gilt als Textabweichung. Ob eine Abweichung inhaltlich wichtig ist, muss man selbst in der Anzeige nachlesen.
 - Eine gespeicherte Anzeige lässt sich später nicht neu bewerten, etwa nach einer Änderung am Suchprofil, weil der Text dafür fehlt. Dafür müsste die Anzeige erneut von der Quelle geholt werden.
 - Datenbanken aus Version 0.2.0 bekommen die neuen Spalten beim Öffnen ergänzt. Für alte Zeilen bleiben sie leer, ihr Text ist also „nicht vergleichbar“.
+- Seit Version 0.6.0 gibt es eine zweite dauerhafte Ablage: Jeder Lauf schreibt sein Log als Datei neben den Report (`output/`). Darin stehen IDs, URLs, Firmennamen und Fehlertexte, aber keine Anzeigen-Volltexte. Deshalb loggen fremde Bibliotheken nur ab INFO: Das SDK von Anthropic würde auf DEBUG ganze Anfragen samt Beschreibung schreiben.
 - Die Bewertung des Modells wird mitgespeichert, weil der Profil-Vorschlag sie neben dem Feedback braucht. Sie ist eine kurze, vom Modell formulierte Einschätzung, keine Kopie der Anzeige.

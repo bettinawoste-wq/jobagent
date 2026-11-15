@@ -1,9 +1,14 @@
-"""Leitet aus Feedback Aenderungen am Suchprofil ab, die erst nach Bestaetigung gelten."""
+"""Leitet aus Feedback Änderungen am Suchprofil ab, die erst nach Bestätigung gelten.
+
+`main` ist Kommandozeile und Zusammenbau: Nur dort werden das Suchprofil gelesen und nach
+Zustimmung samt Sicherung geschrieben, der Store geöffnet, das Sprachmodell gebaut und die
+Uhrzeit bestimmt. Die Logik dahinter (`suggest_and_decide`) bekommt Store, Suchprofil und
+Sprachmodell übergeben und liefert die Entscheidung (`Decision`).
+"""
 
 import difflib
 import json
 import logging
-import sqlite3
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,19 +18,20 @@ from pathlib import Path
 import anthropic
 
 from jobagent import store
+from jobagent.language_model import AnthropicJsonLanguageModel, LanguageModel, LanguageModelError
+from jobagent.logs import abort, setup_logging
+from jobagent.search_profile import (
+    SearchProfileError,
+    read_search_profile,
+    replace_search_profile,
+)
+from jobagent.store import Store, StoreError
 
 logger = logging.getLogger(__name__)
 
-_DB_PATH = Path("jobagent.db")
-_PROFILE_PATH = Path("profile.md")
-
-_MODEL = "claude-sonnet-5-5"
-_MAX_TOKENS = 16000
-_FALLBACK_BETA = "server-side-fallback-2026-07-01"
-
-# Schema und Prompt gehen an das Modell und bleiben deutsch; die Uebersetzung
+# Schema und Prompt gehen an das Modell und bleiben deutsch; die Übersetzung
 # in die englischen Namen passiert nur in _to_suggestion und _as_model_data
-# (die Bewertung selbst uebersetzt Assessment.as_model_data).
+# (die Bewertung selbst übersetzt Assessment.as_model_data).
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -82,41 +88,28 @@ class ProfileSuggestion:
 
 
 def create_suggestion(
-    profile: str,
+    search_profile: str,
     feedback: list[store.Feedback],
-    *,
-    client: anthropic.Anthropic | None = None,
+    language_model: LanguageModel,
 ) -> ProfileSuggestion | None:
-    """Fragt das Modell nach Aenderungen; None, wenn keine brauchbare Antwort kommt."""
-    active_client = client or anthropic.Anthropic()
+    """Fragt das Sprachmodell nach Änderungen; None, wenn keine brauchbare Antwort kommt."""
     data = json.dumps(
         [_as_model_data(entry) for entry in feedback],
         ensure_ascii=False,
         indent=2,
     )
+    text = f"Suchprofil:\n{search_profile}\n\nRueckmeldungen:\n{data}"
     try:
-        response = active_client.beta.messages.create(
-            model=_MODEL,
-            max_tokens=_MAX_TOKENS,
-            betas=[_FALLBACK_BETA],
-            fallbacks="default",
-            system=_SYSTEM_PROMPT,
-            output_config={"format": {"type": "json_schema", "schema": _RESPONSE_SCHEMA}},
-            messages=[
-                {"role": "user", "content": f"Suchprofil:\n{profile}\n\nRueckmeldungen:\n{data}"}
-            ],
-        )
-    except (anthropic.AnthropicError, TypeError):
-        # TypeError: die SDK wirft dies statt eines AnthropicError, wenn z.B.
-        # kein ANTHROPIC_API_KEY gesetzt ist (siehe score.py).
-        logger.exception("Anthropic-API-Anfrage fuer den Profil-Vorschlag fehlgeschlagen")
+        answer = language_model.ask(_SYSTEM_PROMPT, text, _RESPONSE_SCHEMA)
+    except LanguageModelError:
+        logger.exception("Sprachmodell für den Profil-Vorschlag fehlgeschlagen")
         return None
 
-    return _to_suggestion(response)
+    return _to_suggestion(answer)
 
 
 def _as_model_data(feedback: store.Feedback) -> dict:
-    # Die Schluessel sind Teil des Prompts und bleiben deutsch, siehe _SYSTEM_PROMPT.
+    # Die Schlüssel sind Teil des Prompts und bleiben deutsch, siehe _SYSTEM_PROMPT.
     assessment = feedback.assessment
     assessment_data = assessment.as_model_data() if assessment is not None else {}
     return {
@@ -130,37 +123,51 @@ def _as_model_data(feedback: store.Feedback) -> dict:
     }
 
 
-def _to_suggestion(response: object) -> ProfileSuggestion | None:
-    if response.stop_reason != "end_turn":
-        logger.error("Profil-Vorschlag unvollstaendig (stop_reason=%r)", response.stop_reason)
+def _to_suggestion(data: dict) -> ProfileSuggestion | None:
+    # Das Sprachmodell prüft nur die Pflichtschlüssel; die Typen prüft erst diese Stelle.
+    # Streng bei den Änderungen, damit z.B. ein `alt`, das kein Text ist, nicht erst in
+    # apply_changes scheitert. Nachsichtig bei den Modellfehlern, die nur angezeigt werden.
+    changes = data["aenderungen"]
+    if not (isinstance(changes, list) and all(_is_change(entry) for entry in changes)):
+        logger.error("Ungültiger Profil-Vorschlag: %r", data)
         return None
-
-    text = next((block.text for block in response.content if block.type == "text"), None)
-    if text is None:
-        logger.error("Profil-Vorschlag enthaelt keinen Text")
-        return None
-
-    try:
-        data = json.loads(text)
-        return ProfileSuggestion(
-            changes=[
-                ProfileChange(old=entry["alt"], new=entry["neu"], reason=entry["grund"])
-                for entry in data["aenderungen"]
-            ],
-            model_errors=[str(entry) for entry in data["modellfehler"]],
-        )
-    except (KeyError, TypeError, ValueError):
-        logger.exception("Ungueltiger Profil-Vorschlag: %r", text)
-        return None
+    model_errors = _as_texts(data["modellfehler"])
+    if model_errors is None:
+        logger.warning("Modellfehler im Profil-Vorschlag unlesbar, ignoriert: %r", data)
+        model_errors = []
+    return ProfileSuggestion(
+        changes=[
+            ProfileChange(old=entry["alt"], new=entry["neu"], reason=entry["grund"])
+            for entry in changes
+        ],
+        model_errors=model_errors,
+    )
 
 
-def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list[ProfileChange]]:
-    """Wendet Ersetzungen an und liefert den neuen Text plus die unbrauchbaren Aenderungen.
+def _is_change(entry: object) -> bool:
+    return isinstance(entry, dict) and all(
+        isinstance(entry.get(key), str) for key in ("alt", "neu", "grund")
+    )
 
-    Eine Aenderung gilt nur, wenn ihr Auszug genau einmal vorkommt. So kann das
-    Modell nichts unbemerkt weglassen oder an der falschen Stelle aendern.
+
+def _as_texts(value: object) -> list[str] | None:
+    # Ein einzelner Text gilt als ein Eintrag, statt zeichenweise ausgegeben zu werden.
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(entry) for entry in value]
+    return None
+
+
+def apply_changes(
+    search_profile: str, changes: list[ProfileChange]
+) -> tuple[str, list[ProfileChange]]:
+    """Wendet Ersetzungen an und liefert den neuen Text plus die unbrauchbaren Änderungen.
+
+    Eine Änderung gilt nur, wenn ihr Auszug genau einmal vorkommt. So kann das
+    Modell nichts unbemerkt weglassen oder an der falschen Stelle ändern.
     """
-    text = profile
+    text = search_profile
     skipped: list[ProfileChange] = []
     for change in changes:
         if change.old and text.count(change.old) == 1:
@@ -170,96 +177,85 @@ def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list
     return text, skipped
 
 
-def main(
+@dataclass(frozen=True, slots=True)
+class AcceptedSuggestion:
+    """Ein Profil-Vorschlag, dem die Nutzerin zugestimmt hat, noch nicht gespeichert.
+
+    Das Speichern macht der Zusammenbau und markiert erst danach das Feedback
+    `feedback_ids` als verarbeitet.
+    """
+
+    new_search_profile: str
+    feedback_ids: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class Decision:
+    """Wie ein Profil-Vorschlag ausging; `accepted` nur, wenn die Nutzerin zugestimmt hat."""
+
+    exit_code: int
+    accepted: AcceptedSuggestion | None = None
+
+
+def suggest_and_decide(
     *,
-    db_path: Path = _DB_PATH,
-    profile_path: Path = _PROFILE_PATH,
-    client: anthropic.Anthropic | None = None,
-    ask: Callable[[str], str] = input,
-    now: datetime | None = None,
-) -> int:
-    """Erstellt einen Vorschlag, zeigt ihn an und fragt nach der Entscheidung."""
-    if not profile_path.exists():
-        print(f"Fehler: {profile_path} nicht gefunden.", file=sys.stderr)
-        return 1
-
-    conn = store.connect(db_path)
-    try:
-        return _suggest_and_decide(conn, profile_path, client, ask, now or datetime.now())
-    finally:
-        conn.close()
-
-
-def _suggest_and_decide(
-    conn: sqlite3.Connection,
-    profile_path: Path,
-    client: anthropic.Anthropic | None,
+    db: Store,
+    search_profile: str,
+    profile_name: str,
+    language_model: LanguageModel,
     ask: Callable[[str], str],
-    now: datetime,
-) -> int:
-    feedback = store.open_feedback(conn)
+) -> Decision:
+    """Erstellt einen Profil-Vorschlag zum offenen Feedback, zeigt ihn an und lässt entscheiden.
+
+    `profile_name` ist der Dateiname des Suchprofils für die Anzeige der Änderungen. Lehnt
+    die Nutzerin ab oder ist keine Änderung nötig, gilt das Feedback hier schon als
+    verarbeitet; stimmt sie zu, siehe `Decision`.
+    """
+    feedback = db.open_feedback()
     if not feedback:
         print("Es gibt kein unverarbeitetes Feedback.")
-        return 0
+        return Decision(0)
 
-    profile = profile_path.read_text(encoding="utf-8")
-    suggestion = create_suggestion(profile, feedback, client=client)
+    suggestion = create_suggestion(search_profile, feedback, language_model)
     if suggestion is None:
         print("Fehler: Kein brauchbarer Vorschlag, es wurde nichts geändert.", file=sys.stderr)
-        return 1
+        return Decision(1)
 
     ids = [entry.job_ad_id for entry in feedback]
-    new_profile, skipped = apply_changes(profile, suggestion.changes)
+    new_search_profile, skipped = apply_changes(search_profile, suggestion.changes)
     _show_model_errors(suggestion.model_errors)
     for change in skipped:
         print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
 
     if not suggestion.changes:
-        store.mark_feedback_processed(conn, ids)
+        db.mark_feedback_processed(ids)
         print("Keine Änderung am Suchprofil nötig.")
-        return 0
+        return Decision(0)
 
-    if new_profile == profile:
+    if new_search_profile == search_profile:
         print("Fehler: Keine Änderung ließ sich anwenden, Feedback bleibt offen.", file=sys.stderr)
-        return 1
+        return Decision(1)
 
-    _show_changes(profile, new_profile, suggestion.changes, skipped, profile_path.name)
-    return _decide(conn, profile_path, profile, new_profile, ids, ask, now)
+    _show_changes(search_profile, new_search_profile, suggestion.changes, skipped, profile_name)
+    return _decide(db, new_search_profile, ids, ask)
 
 
 def _decide(
-    conn: sqlite3.Connection,
-    profile_path: Path,
-    profile: str,
-    new_profile: str,
-    ids: list[str],
-    ask: Callable[[str], str],
-    now: datetime,
-) -> int:
+    db: Store, new_search_profile: str, ids: list[str], ask: Callable[[str], str]
+) -> Decision:
     try:
         answer = ask("Übernehmen? [j]a, [n]ein, [a]bbrechen: ").strip().lower()
     except EOFError:
         answer = ""
 
     if answer in ("j", "ja"):
-        backup = _back_up(profile_path, profile, now)
-        profile_path.write_text(new_profile, encoding="utf-8")
-        store.mark_feedback_processed(conn, ids)
-        print(f"Suchprofil geändert, Sicherung: {backup.name}")
-    elif answer in ("n", "nein"):
-        store.mark_feedback_processed(conn, ids)
+        return Decision(0, AcceptedSuggestion(new_search_profile, ids))
+    if answer in ("n", "nein"):
+        db.mark_feedback_processed(ids)
         print("Vorschlag abgelehnt, Suchprofil unverändert.")
     else:
         print("Abgebrochen, nichts geändert. Das Feedback bleibt offen.")
-    return 0
-
-
-def _back_up(profile_path: Path, profile: str, now: datetime) -> Path:
-    name = f"{profile_path.stem}.sicherung-{now:%Y-%m-%d-%H%M%S}{profile_path.suffix}"
-    backup = profile_path.with_name(name)
-    with backup.open("x", encoding="utf-8") as file:  # "x": nie ueberschreiben
-        file.write(profile)
-    return backup
+    return Decision(0)
 
 
 def _show_model_errors(model_errors: list[str]) -> None:
@@ -271,8 +267,8 @@ def _show_model_errors(model_errors: list[str]) -> None:
 
 
 def _show_changes(
-    profile: str,
-    new_profile: str,
+    search_profile: str,
+    new_search_profile: str,
     changes: list[ProfileChange],
     skipped: list[ProfileChange],
     file_name: str,
@@ -283,14 +279,80 @@ def _show_changes(
             print(f"  - {change.reason}")
     print()
     diff = difflib.unified_diff(
-        profile.splitlines(),
-        new_profile.splitlines(),
+        search_profile.splitlines(),
+        new_search_profile.splitlines(),
         f"{file_name} (bisher)",
         f"{file_name} (neu)",
         lineterm="",
     )
     print("\n".join(diff))
     print()
+
+
+# Kommandozeile und Zusammenbau
+
+_DB_PATH = Path("jobagent.db")
+_PROFILE_PATH = Path("profile.md")
+# Sonnet mit Nachdenken und großem Antwortbudget (ADR 0004)
+_SUGGESTION_MODEL = "claude-sonnet-5-5"
+_SUGGESTION_MAX_TOKENS = 16000
+
+
+def main(
+    *,
+    db_path: Path = _DB_PATH,
+    profile_path: Path = _PROFILE_PATH,
+    language_model: LanguageModel | None = None,
+    ask: Callable[[str], str] = input,
+    now: datetime | None = None,
+) -> int:
+    """Baut den Profil-Vorschlag zusammen, führt ihn aus und gibt den Exit-Code zurück.
+
+    Ohne `language_model` fragt der Profil-Vorschlag Sonnet von Anthropic.
+    """
+    setup_logging()
+    try:
+        search_profile = read_search_profile(profile_path)
+        if language_model is None:
+            language_model = suggestion_language_model()
+        with Store(db_path) as db:
+            decision = suggest_and_decide(
+                db=db,
+                search_profile=search_profile,
+                profile_name=profile_path.name,
+                language_model=language_model,
+                ask=ask,
+            )
+            if decision.accepted is not None:
+                backup = _save_accepted(
+                    db, profile_path, search_profile, decision.accepted, now or datetime.now()
+                )
+                print(f"Suchprofil geändert, Sicherung: {backup}")
+            return decision.exit_code
+    except (SearchProfileError, StoreError) as error:
+        return abort(logger, error)
+
+
+def _save_accepted(
+    db: Store, profile_path: Path, previous: str, accepted: AcceptedSuggestion, now: datetime
+) -> Path:
+    # In einer Transaktion: Scheitert das Schreiben, bleibt das Feedback offen. Ein
+    # geschriebenes Suchprofil bleibt nur dann mit offenem Feedback zurück, wenn der Commit
+    # danach scheitert.
+    with db.transaction():
+        db.mark_feedback_processed(accepted.feedback_ids)
+        return replace_search_profile(
+            profile_path, accepted.new_search_profile, previous=previous, now=now
+        )
+
+
+def suggestion_language_model(*, client: anthropic.Anthropic | None = None) -> LanguageModel:
+    """Das Sprachmodell für den Profil-Vorschlag: Sonnet, das vor der JSON-Antwort nachdenkt."""
+    return AnthropicJsonLanguageModel(
+        _SUGGESTION_MODEL,
+        max_tokens=_SUGGESTION_MAX_TOKENS,
+        client=client,
+    )
 
 
 if __name__ == "__main__":
