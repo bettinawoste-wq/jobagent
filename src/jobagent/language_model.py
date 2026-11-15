@@ -8,6 +8,8 @@ import anthropic
 from anthropic.types import Message
 from anthropic.types.beta import BetaMessage
 
+from jobagent.text import encodable, encodable_data
+
 _MAX_TOKENS = 1024
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _TOOL_NAME = "antwort_abgeben"
@@ -165,11 +167,12 @@ def with_required_keys(schema: dict, data: dict) -> dict:
 
     Sie bleibt bewusst grob: Feinere Regeln (Wertebereiche, Typen einzelner Felder)
     prüft, wer fragt, weil nur er weiß, was er davon nachsichtig behandelt (die
-    Bewertung nimmt z.B. einen String statt einer Liste).
+    Bewertung nimmt z.B. einen String statt einer Liste). Einzelne Surrogate in Texten
+    der Antwort werden zu "?", damit jeder Aufrufer sie schreiben kann.
     """
     if not isinstance(data, dict):
         raise LanguageModelError(f"Antwort ist kein Objekt: {data!r}")
     missing = [key for key in schema.get("required", []) if key not in data]
     if missing:
         raise LanguageModelError(f"Antwort ohne Pflichtschlüssel {missing}: {data!r}")
-    return data
+    return {encodable(key): encodable_data(value) for key, value in data.items()}

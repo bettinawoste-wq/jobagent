@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, fields
 
+from jobagent.text import encodable
+
 
 @dataclass(frozen=True, slots=True)
 class JobAd:
@@ -20,8 +22,3 @@ class JobAd:
             value = getattr(self, field.name)
             if isinstance(value, str):
                 object.__setattr__(self, field.name, encodable(value))
-
-
-def encodable(text: str) -> str:
-    """Der Text mit "?" statt einzelner Surrogate, damit er sich als UTF-8 schreiben lässt."""
-    return text.encode("utf-8", "replace").decode("utf-8")

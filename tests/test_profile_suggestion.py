@@ -250,6 +250,20 @@ def test_suggestion_is_parsed() -> None:
     assert suggestion.model_errors == ["KPMG falsch gelesen"]
 
 
+def test_suggestion_replaces_lone_surrogates() -> None:
+    # Ein halbes Emoji ließe Anzeige und Speichern des Suchprofils scheitern.
+    change = {"alt": "- Zeitarbeit", "neu": "- Zeitarbeit \ud83d", "grund": "g \udc00"}
+    model = FakeLanguageModel(_suggestion([change], model_errors=["KPMG \ud83d"]))
+
+    suggestion = create_suggestion(_PROFILE, [_feedback()], model)
+
+    assert suggestion is not None
+    assert suggestion.changes == [
+        ProfileChange(old="- Zeitarbeit", new="- Zeitarbeit ?", reason="g ?")
+    ]
+    assert suggestion.model_errors == ["KPMG ?"]
+
+
 @pytest.mark.parametrize(
     "answer",
     [

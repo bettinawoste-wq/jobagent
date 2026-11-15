@@ -210,6 +210,13 @@ def _ask_json_model(result: object) -> dict:
     return model.ask("System", "Text", _SCHEMA)
 
 
+def test_json_answer_replaces_lone_surrogates() -> None:
+    # json.loads macht aus "\ud83d" ein einzelnes Surrogat, das UTF-8 nicht schreiben kann.
+    answer = _thought_and_text('{"score": 4, "kurzfazit": "Passt \\ud83d", "x": [["a \\udc00"]]}')
+
+    assert _ask_json_model(answer) == {"score": 4, "kurzfazit": "Passt ?", "x": [["a ?"]]}
+
+
 def test_json_answer_after_thinking_returns_its_data() -> None:
     assert _ask_json_model(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}')) == {
         "score": 4,
