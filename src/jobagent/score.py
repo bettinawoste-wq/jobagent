@@ -75,7 +75,7 @@ class Assessment:
 
 def score_job_ad(
     job_ad: JobAd,
-    profile: str,
+    search_profile: str,
     language_model: LanguageModel,
 ) -> Assessment | None:
     """Bewertet eine Anzeige gegen das Suchprofil.
@@ -83,7 +83,7 @@ def score_job_ad(
     Gibt None zurueck und loggt, wenn das Sprachmodell scheitert oder eine ungueltige
     Antwort liefert, statt den Lauf abzubrechen; die Anzeige bleibt dann unbewertet.
     """
-    user_text = f"Suchprofil:\n{profile}\n\nStellenanzeige:\n{job_ad_as_text(job_ad)}"
+    user_text = f"Suchprofil:\n{search_profile}\n\nStellenanzeige:\n{job_ad_as_text(job_ad)}"
     try:
         data = language_model.ask(_SYSTEM_PROMPT, user_text, _SCHEMA)
     except LanguageModelError:

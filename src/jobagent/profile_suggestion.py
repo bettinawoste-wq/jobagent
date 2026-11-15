@@ -88,7 +88,7 @@ class ProfileSuggestion:
 
 
 def create_suggestion(
-    profile: str,
+    search_profile: str,
     feedback: list[store.Feedback],
     language_model: LanguageModel,
 ) -> ProfileSuggestion | None:
@@ -98,7 +98,7 @@ def create_suggestion(
         ensure_ascii=False,
         indent=2,
     )
-    text = f"Suchprofil:\n{profile}\n\nRueckmeldungen:\n{data}"
+    text = f"Suchprofil:\n{search_profile}\n\nRueckmeldungen:\n{data}"
     try:
         answer = language_model.ask(_SYSTEM_PROMPT, text, _RESPONSE_SCHEMA)
     except LanguageModelError:
@@ -159,13 +159,15 @@ def _as_texts(value: object) -> list[str] | None:
     return None
 
 
-def apply_changes(profile: str, changes: list[ProfileChange]) -> tuple[str, list[ProfileChange]]:
+def apply_changes(
+    search_profile: str, changes: list[ProfileChange]
+) -> tuple[str, list[ProfileChange]]:
     """Wendet Ersetzungen an und liefert den neuen Text plus die unbrauchbaren Aenderungen.
 
     Eine Aenderung gilt nur, wenn ihr Auszug genau einmal vorkommt. So kann das
     Modell nichts unbemerkt weglassen oder an der falschen Stelle aendern.
     """
-    text = profile
+    text = search_profile
     skipped: list[ProfileChange] = []
     for change in changes:
         if change.old and text.count(change.old) == 1:
@@ -203,8 +205,7 @@ def suggest_and_decide(
     language_model: LanguageModel,
     ask: Callable[[str], str],
 ) -> Decision:
-    """Erstellt einen Profil-Vorschlag zum offenen Feedback, zeigt ihn an und fragt nach der
-    Entscheidung.
+    """Erstellt einen Profil-Vorschlag zum offenen Feedback, zeigt ihn an und lässt entscheiden.
 
     `profile_name` ist der Dateiname des Suchprofils für die Anzeige der Änderungen. Lehnt
     die Nutzerin ab oder ist keine Änderung nötig, gilt das Feedback hier schon als
@@ -221,7 +222,7 @@ def suggest_and_decide(
         return Decision(1)
 
     ids = [entry.job_ad_id for entry in feedback]
-    new_profile, skipped = apply_changes(search_profile, suggestion.changes)
+    new_search_profile, skipped = apply_changes(search_profile, suggestion.changes)
     _show_model_errors(suggestion.model_errors)
     for change in skipped:
         print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
@@ -231,22 +232,24 @@ def suggest_and_decide(
         print("Keine Änderung am Suchprofil nötig.")
         return Decision(0)
 
-    if new_profile == search_profile:
+    if new_search_profile == search_profile:
         print("Fehler: Keine Änderung ließ sich anwenden, Feedback bleibt offen.", file=sys.stderr)
         return Decision(1)
 
-    _show_changes(search_profile, new_profile, suggestion.changes, skipped, profile_name)
-    return _decide(db, new_profile, ids, ask)
+    _show_changes(search_profile, new_search_profile, suggestion.changes, skipped, profile_name)
+    return _decide(db, new_search_profile, ids, ask)
 
 
-def _decide(db: Store, new_profile: str, ids: list[str], ask: Callable[[str], str]) -> Decision:
+def _decide(
+    db: Store, new_search_profile: str, ids: list[str], ask: Callable[[str], str]
+) -> Decision:
     try:
         answer = ask("Übernehmen? [j]a, [n]ein, [a]bbrechen: ").strip().lower()
     except EOFError:
         answer = ""
 
     if answer in ("j", "ja"):
-        return Decision(0, AcceptedSuggestion(new_profile, ids))
+        return Decision(0, AcceptedSuggestion(new_search_profile, ids))
     if answer in ("n", "nein"):
         db.mark_feedback_processed(ids)
         print("Vorschlag abgelehnt, Suchprofil unverändert.")
@@ -264,8 +267,8 @@ def _show_model_errors(model_errors: list[str]) -> None:
 
 
 def _show_changes(
-    profile: str,
-    new_profile: str,
+    search_profile: str,
+    new_search_profile: str,
     changes: list[ProfileChange],
     skipped: list[ProfileChange],
     file_name: str,
@@ -276,8 +279,8 @@ def _show_changes(
             print(f"  - {change.reason}")
     print()
     diff = difflib.unified_diff(
-        profile.splitlines(),
-        new_profile.splitlines(),
+        search_profile.splitlines(),
+        new_search_profile.splitlines(),
         f"{file_name} (bisher)",
         f"{file_name} (neu)",
         lineterm="",
