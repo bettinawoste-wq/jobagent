@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date
+from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
@@ -30,11 +31,26 @@ class WrittenReport:
     match_numbers: dict[str, int]  # Anzeigen-ID -> Treffernummer
 
 
+class TextDiffers(Enum):
+    """Textabweichung einer Anzeige gegenüber der Anzeige, auf die die Bewerbung ging."""
+
+    IDENTICAL = auto()
+    DIFFERS = auto()
+    NOT_COMPARABLE = auto()  # eine der beiden Anzeigen ohne Text
+
+
+_TEXT_DIFFERS = {
+    TextDiffers.IDENTICAL: "Text identisch",
+    TextDiffers.DIFFERS: "Text weicht von deiner Bewerbung ab",
+    TextDiffers.NOT_COMPARABLE: "Text nicht vergleichbar",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class AlreadyApplied:
     status: str
     applied_on: date
-    text_comparison: str
+    text_differs: TextDiffers
 
 
 def write_report(
@@ -208,7 +224,7 @@ def _applied_line(
     return (
         f"{_line_start(number, job_ad)} – Score {assessment.score}/5 – "
         f"{application.status}, beworben am {application.applied_on:%d.%m.%Y} – "
-        f"{application.text_comparison} – {job_ad.link}"
+        f"{_TEXT_DIFFERS[application.text_differs]} – {job_ad.link}"
     )
 
 

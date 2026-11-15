@@ -184,10 +184,12 @@ def _already_applied(db: Store, matches: list[report.Match]) -> dict[str, report
     return result
 
 
-def _text_differs(new: str | None, at_application: str | None) -> str:
+def _text_differs(new: str | None, at_application: str | None) -> report.TextDiffers:
     if new is None or at_application is None:
-        return "Text nicht vergleichbar"
-    return "Text identisch" if new == at_application else "Text weicht von deiner Bewerbung ab"
+        return report.TextDiffers.NOT_COMPARABLE
+    if new == at_application:
+        return report.TextDiffers.IDENTICAL
+    return report.TextDiffers.DIFFERS
 
 
 def _search_all(
