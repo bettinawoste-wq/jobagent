@@ -5,8 +5,11 @@ Text, eine feste Uhrzeit und die Antwort der Nutzerin übergeben. Über die Komm
 `main` gehen nur die Tests des Zusammenbaus.
 """
 
+import errno
 import importlib.util
 import json
+import os
+import stat
 from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
@@ -454,16 +457,95 @@ def test_main_aborts_when_backup_cannot_be_written(
     _assert_aborted_unchanged(exit_code, db_path, profile_path, capsys)
 
 
-def test_main_aborts_when_profile_cannot_be_written(
-    db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+def test_main_aborts_when_profile_cannot_be_replaced(
+    db_path: Path,
+    profile_path: Path,
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Das neue Suchprofil entsteht erst daneben und ersetzt profile.md dann in einem Schritt;
-    # scheitert schon das, bleibt profile.md unangetastet statt halb geschrieben.
-    (profile_path.parent / "profile.md.neu").mkdir()
+    # Etwa unter Windows, wenn ein Editor profile.md gesperrt hält.
+    def locked(self: Path, target: Path) -> Path:
+        raise PermissionError(errno.EACCES, "Zugriff verweigert")
+
+    monkeypatch.setattr(Path, "replace", locked)
 
     exit_code = _accept_in_main(db_path, profile_path)
 
     _assert_aborted_unchanged(exit_code, db_path, profile_path, capsys)
+    assert sorted(path.name for path in profile_path.parent.iterdir()) == [
+        "jobagent.db",
+        "profile.md",
+    ]
+
+
+def test_main_aborts_when_new_profile_cannot_be_written(
+    db_path: Path,
+    profile_path: Path,
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Das neue Suchprofil entsteht erst daneben und ersetzt profile.md dann in einem Schritt;
+    # scheitert schon das Schreiben, bleibt profile.md ganz und nichts Halbes liegt herum.
+    fsync = os.fsync
+    calls = []
+
+    def disk_fails_on_new_profile(fd: int) -> None:
+        calls.append(fd)
+        if len(calls) == 2:  # erst die Sicherung, dann das neue Suchprofil
+            raise OSError(errno.EIO, "Ein-/Ausgabefehler")
+        fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", disk_fails_on_new_profile)
+
+    exit_code = _accept_in_main(db_path, profile_path)
+
+    _assert_aborted_unchanged(exit_code, db_path, profile_path, capsys)
+    assert sorted(path.name for path in profile_path.parent.iterdir()) == [
+        "jobagent.db",
+        "profile.md",
+    ]
+
+
+@pytest.mark.skipif(os.name != "nt" and os.geteuid() == 0, reason="root darf alles schreiben")
+def test_main_keeps_write_protected_profile(
+    db_path: Path, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    profile_path.chmod(stat.S_IREAD)
+    try:
+        exit_code = _accept_in_main(db_path, profile_path)
+        mode = profile_path.stat().st_mode
+    finally:
+        profile_path.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+    assert not mode & stat.S_IWRITE
+    assert _backups(profile_path) == []
+    _assert_aborted_unchanged(exit_code, db_path, profile_path, capsys)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows kennt nur den Schreibschutz als Recht")
+def test_main_keeps_mode_of_profile(db_path: Path, profile_path: Path) -> None:
+    profile_path.chmod(0o640)  # anders als 0o600, das mkstemp ohnehin vergibt
+
+    assert _accept_in_main(db_path, profile_path) == 0
+
+    assert stat.S_IMODE(profile_path.stat().st_mode) == 0o640
+
+
+def test_main_writes_through_symlinked_profile(
+    tmp_path: Path, db_path: Path, profile_path: Path
+) -> None:
+    link = tmp_path / "verknuepft" / "profile.md"
+    link.parent.mkdir()
+    try:
+        link.symlink_to(profile_path)
+    except OSError:
+        pytest.skip("Symlinks sind hier nicht erlaubt")
+
+    assert _accept_in_main(db_path, link) == 0
+
+    assert link.is_symlink()
+    assert "Beratungsfirmen" in profile_path.read_text(encoding="utf-8")
+    assert len(_backups(profile_path)) == 1  # neben der Datei, nicht neben der Verknüpfung
 
 
 def test_main_shows_log_on_console(

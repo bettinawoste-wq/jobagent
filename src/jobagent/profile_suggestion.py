@@ -327,7 +327,7 @@ def main(
                 backup = _save_accepted(
                     db, profile_path, search_profile, decision.accepted, now or datetime.now()
                 )
-                print(f"Suchprofil geändert, Sicherung: {backup.name}")
+                print(f"Suchprofil geändert, Sicherung: {backup}")
             return decision.exit_code
     except (SearchProfileError, StoreError) as error:
         return abort(logger, error)

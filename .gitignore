@@ -11,8 +11,8 @@ output/
 *.db
 .env
 profile.md
-profile.sicherung-*.md
-profile.md.neu
+*.md.*.neu
+*.sicherung-*.md
 # Log-Datei älterer Versionen; heute liegen die Logs in output/
 run.log
 
