@@ -1,11 +1,11 @@
-"""Demo-Set fuer den Demo-Lauf: erfundene Anzeigen, vorgefertigte Bewertungen, Demo-Konfiguration.
+"""Demo-Set für den Demo-Lauf: erfundene Anzeigen, vorgefertigte Bewertungen, Demo-Konfiguration.
 
-Alles hier ist synthetisch und oeffentlich: nur erkennbar erfundene Firmen, Links auf
-example.com. Die Bewertungen sind so geschrieben, als kaemen sie vom Modell gegen das
+Alles hier ist synthetisch und öffentlich: nur erkennbar erfundene Firmen, Links auf
+example.com. Die Bewertungen sind so geschrieben, als kämen sie vom Modell gegen das
 Demo-Suchprofil `SEARCH_PROFILE`, einen Auszug aus `profile.example.md`. Das
-Demo-Sprachmodell gibt sie als Antworten zurueck, damit sie dieselbe Pruefung durchlaufen
+Demo-Sprachmodell gibt sie als Antworten zurück, damit sie dieselbe Prüfung durchlaufen
 wie echte Antworten. Ein Demo-Lauf holt nichts aus dem Netz, fragt kein echtes
-Sprachmodell und liest oder speichert nichts Persoenliches.
+Sprachmodell und liest oder speichert nichts Persönliches.
 """
 
 from datetime import date, timedelta
@@ -46,7 +46,7 @@ def _job_ad(id_: str, title: str, company: str, location: str, description: str)
     return JobAd(id_, title, company, location, f"{_LINK}{id_}", description)
 
 
-# Je Quelle: Suchbegriff -> Anzeigen, die diese Demo-Quelle dafuer "findet".
+# Je Quelle: Suchbegriff -> Anzeigen, die diese Demo-Quelle dafür "findet".
 _BUNDESAGENTUR = {
     "Full-Stack-Entwickler": [
         _job_ad(
@@ -263,7 +263,7 @@ def create_applications(db: Store, today: date) -> None:
         today - timedelta(days=18),
     )
 
-    # Bewerbung auf eine fruehere Anzeige derselben Stelle: Die neue Anzeige von Arbeitnow
+    # Bewerbung auf eine frühere Anzeige derselben Stelle: Die neue Anzeige von Arbeitnow
     # (demo-an-1) schreibt Firma und Titel anders und hat einen anderen Text.
     applied_on = today - timedelta(days=35)
     db.remember_job_ad(_EARLIER_JOB_AD, ASSESSMENTS["demo-an-1"], applied_on)

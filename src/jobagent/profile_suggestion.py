@@ -1,4 +1,4 @@
-"""Leitet aus Feedback Aenderungen am Suchprofil ab, die erst nach Bestaetigung gelten.
+"""Leitet aus Feedback Änderungen am Suchprofil ab, die erst nach Bestätigung gelten.
 
 `main` ist Kommandozeile und Zusammenbau: Nur dort werden das Suchprofil gelesen und nach
 Zustimmung samt Sicherung geschrieben, der Store geöffnet, das Sprachmodell gebaut und die
@@ -29,9 +29,9 @@ from jobagent.store import Store, StoreError
 
 logger = logging.getLogger(__name__)
 
-# Schema und Prompt gehen an das Modell und bleiben deutsch; die Uebersetzung
+# Schema und Prompt gehen an das Modell und bleiben deutsch; die Übersetzung
 # in die englischen Namen passiert nur in _to_suggestion und _as_model_data
-# (die Bewertung selbst uebersetzt Assessment.as_model_data).
+# (die Bewertung selbst übersetzt Assessment.as_model_data).
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -92,7 +92,7 @@ def create_suggestion(
     feedback: list[store.Feedback],
     language_model: LanguageModel,
 ) -> ProfileSuggestion | None:
-    """Fragt das Sprachmodell nach Aenderungen; None, wenn keine brauchbare Antwort kommt."""
+    """Fragt das Sprachmodell nach Änderungen; None, wenn keine brauchbare Antwort kommt."""
     data = json.dumps(
         [_as_model_data(entry) for entry in feedback],
         ensure_ascii=False,
@@ -102,14 +102,14 @@ def create_suggestion(
     try:
         answer = language_model.ask(_SYSTEM_PROMPT, text, _RESPONSE_SCHEMA)
     except LanguageModelError:
-        logger.exception("Sprachmodell fuer den Profil-Vorschlag fehlgeschlagen")
+        logger.exception("Sprachmodell für den Profil-Vorschlag fehlgeschlagen")
         return None
 
     return _to_suggestion(answer)
 
 
 def _as_model_data(feedback: store.Feedback) -> dict:
-    # Die Schluessel sind Teil des Prompts und bleiben deutsch, siehe _SYSTEM_PROMPT.
+    # Die Schlüssel sind Teil des Prompts und bleiben deutsch, siehe _SYSTEM_PROMPT.
     assessment = feedback.assessment
     assessment_data = assessment.as_model_data() if assessment is not None else {}
     return {
@@ -129,7 +129,7 @@ def _to_suggestion(data: dict) -> ProfileSuggestion | None:
     # apply_changes scheitert. Nachsichtig bei den Modellfehlern, die nur angezeigt werden.
     changes = data["aenderungen"]
     if not (isinstance(changes, list) and all(_is_change(entry) for entry in changes)):
-        logger.error("Ungueltiger Profil-Vorschlag: %r", data)
+        logger.error("Ungültiger Profil-Vorschlag: %r", data)
         return None
     model_errors = _as_texts(data["modellfehler"])
     if model_errors is None:
@@ -162,10 +162,10 @@ def _as_texts(value: object) -> list[str] | None:
 def apply_changes(
     search_profile: str, changes: list[ProfileChange]
 ) -> tuple[str, list[ProfileChange]]:
-    """Wendet Ersetzungen an und liefert den neuen Text plus die unbrauchbaren Aenderungen.
+    """Wendet Ersetzungen an und liefert den neuen Text plus die unbrauchbaren Änderungen.
 
-    Eine Aenderung gilt nur, wenn ihr Auszug genau einmal vorkommt. So kann das
-    Modell nichts unbemerkt weglassen oder an der falschen Stelle aendern.
+    Eine Änderung gilt nur, wenn ihr Auszug genau einmal vorkommt. So kann das
+    Modell nichts unbemerkt weglassen oder an der falschen Stelle ändern.
     """
     text = search_profile
     skipped: list[ProfileChange] = []

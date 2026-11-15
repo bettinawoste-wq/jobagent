@@ -82,7 +82,7 @@ def test_score_job_ad_returns_none_on_invalid_response(
         assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(invalid_data))
 
     assert assessment is None
-    assert "Ungueltige Bewertungsantwort" in caplog.text
+    assert "Ungültige Bewertungsantwort" in caplog.text
 
 
 def test_score_job_ad_returns_none_without_required_key(caplog: pytest.LogCaptureFixture) -> None:

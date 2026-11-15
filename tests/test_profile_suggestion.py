@@ -463,7 +463,7 @@ def test_main_shows_log_on_console(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR:jobagent.profile_suggestion:Sprachmodell fuer den Profil-Vorschlag" in error
+    assert "ERROR:jobagent.profile_suggestion:Sprachmodell für den Profil-Vorschlag" in error
 
 
 def test_missing_profile_is_error(

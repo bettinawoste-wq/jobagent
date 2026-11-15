@@ -48,7 +48,7 @@ Beispiele:
 
 
 class FeedbackError(Exception):
-    """Ein Aufruf, der sich nicht ausfuehren laesst; die Meldung ist fuer die Nutzerin."""
+    """Ein Aufruf, der sich nicht ausführen lässt; die Meldung ist für die Nutzerin."""
 
 
 # Kommandozeile und Zusammenbau
@@ -60,7 +60,7 @@ def main(
     db_path: Path = _DB_PATH,
     today: date | None = None,
 ) -> int:
-    """Fuehrt eine Rueckmeldung aus und gibt den Exit-Code zurueck."""
+    """Führt eine Rückmeldung aus und gibt den Exit-Code zurück."""
     setup_logging()
     arguments = sys.argv[1:] if argv is None else argv
     day = today or date.today()
@@ -86,7 +86,7 @@ def main(
 
 
 class _HelpFormatter(argparse.HelpFormatter):
-    # Die Auswahl-Position traegt metavar "aktion", damit Fehlermeldungen den
+    # Die Auswahl-Position trägt metavar "aktion", damit Fehlermeldungen den
     # deutschen Namen nennen; in der Hilfe soll trotzdem die Auswahl stehen.
     def _metavar_formatter(
         self, action: argparse.Action, default_metavar: str

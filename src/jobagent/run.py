@@ -48,7 +48,7 @@ def run(
     Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `search_profile`.
     In `db` merkt sich der Lauf die bewerteten Anzeigen und die Treffernummern des Reports.
     Scheitert der Report (`ReportError`) oder das Merken (`StoreError`), merkt er sich
-    nichts und laesst keinen Report liegen: Die Treffer kommen im naechsten Lauf wieder.
+    nichts und lässt keinen Report liegen: Die Treffer kommen im nächsten Lauf wieder.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
     new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile)
@@ -208,8 +208,8 @@ def _search_all(
 
 
 def _safe_search(source: Source, keywords: list[str]) -> SearchResult:
-    # Bekannte Netzwerk- und API-Fehler behandelt die Quelle selbst. Dieses Netz faengt
-    # z.B. ein geaendertes Antwortformat ab: Eine Quelle darf den Lauf nie abbrechen.
+    # Bekannte Netzwerk- und API-Fehler behandelt die Quelle selbst. Dieses Netz fängt
+    # z.B. ein geändertes Antwortformat ab: Eine Quelle darf den Lauf nie abbrechen.
     try:
         return source.search(keywords)
     except Exception:

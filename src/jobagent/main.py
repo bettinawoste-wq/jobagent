@@ -94,8 +94,8 @@ def default_sources(
 def demo_run(output_dir: Path | None = None) -> str:
     """Baut einen Demo-Lauf aus den Demo-Teilen zusammen und liefert den Report-Text.
 
-    Datenbank und Report liegen in einem temporaeren Ordner, der danach verschwindet;
-    nur mit `output_dir` bleibt der Report zusaetzlich dort als Datei liegen.
+    Datenbank und Report liegen in einem temporären Ordner, der danach verschwindet;
+    nur mit `output_dir` bleibt der Report zusätzlich dort als Datei liegen.
     """
     today = date.today()
     with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:

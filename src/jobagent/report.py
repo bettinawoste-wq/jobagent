@@ -21,7 +21,7 @@ Match = tuple[JobAd, Assessment]
 
 
 class ReportError(Exception):
-    """Der Report laesst sich nicht schreiben; die Meldung nennt den Report-Ordner."""
+    """Der Report lässt sich nicht schreiben; die Meldung nennt den Report-Ordner."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +51,7 @@ def write_report(
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
     Ohne Treffer wird eine kurze Notiz statt einer leeren Datei erzeugt.
-    Ein vorhandener Report wird nie ueberschrieben, siehe _open_new_report. Laesst sich der
+    Ein vorhandener Report wird nie überschrieben, siehe _open_new_report. Lässt sich der
     Report nicht schreiben, wirft `ReportError`.
     """
     header = (
@@ -110,8 +110,8 @@ def _discard(path: Path) -> None:
 
 
 def _open_new_report(output_dir: Path, day: date) -> tuple[TextIO, Path]:
-    # Gesehene Anzeigen kommen nie wieder, ein ueberschriebener Report waere
-    # also endgueltig verloren. Weitere Laeufe am selben Tag bekommen -2, -3, ...
+    # Gesehene Anzeigen kommen nie wieder, ein überschriebener Report wäre
+    # also endgültig verloren. Weitere Läufe am selben Tag bekommen -2, -3, ...
     # "x" legt die Datei nur neu an, auch wenn ein gleichzeitiger Lauf denselben Namen will.
     run_number = 1
     while True:

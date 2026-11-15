@@ -1,7 +1,7 @@
-"""SQLite-Speicher: merkt sich gesehene Anzeigen fuer Dedupe und Rueckmeldungen.
+"""SQLite-Speicher: merkt sich gesehene Anzeigen für Dedupe und Rückmeldungen.
 
 Tabellen und Spalten tragen deutsche Namen, damit eine vorhandene jobagent.db ohne
-Migration weiter funktioniert. Uebersetzt wird nur hier, in den SQL-Texten.
+Migration weiter funktioniert. Übersetzt wird nur hier, in den SQL-Texten.
 """
 
 import hashlib
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 )
 """
 
-# Seit 0.3.0. Bestehende Datenbanken bekommen die Spalten beim Oeffnen ergaenzt,
+# Seit 0.3.0. Bestehende Datenbanken bekommen die Spalten beim Öffnen ergänzt,
 # ihre Zeilen bleiben dort leer.
 _ADDED_COLUMNS = {
     "report": "TEXT",
@@ -113,9 +113,9 @@ class FollowUpReminder:
 
 
 class StoreError(Exception):
-    """Die Datenbank laesst sich nicht nutzen, z.B. gesperrt oder kaputt.
+    """Die Datenbank lässt sich nicht nutzen, z.B. gesperrt oder kaputt.
 
-    Die Meldung ist fuer die Nutzerin und nennt die Datenbank.
+    Die Meldung ist für die Nutzerin und nennt die Datenbank.
     """
 
 
@@ -132,7 +132,7 @@ class _Connection:
         try:
             yield
         except sqlite3.DatabaseError as error:
-            # Nur Fehler der Datei und des Betriebs (gesperrt, nicht zu oeffnen, keine
+            # Nur Fehler der Datei und des Betriebs (gesperrt, nicht zu öffnen, keine
             # Datenbank). Programmierfehler wie eine geschlossene Verbindung oder eine
             # verletzte Bedingung bleiben, was sie sind.
             if not (
@@ -171,17 +171,17 @@ class _Connection:
 
 
 class Store:
-    """Die Datenbank als Context-Manager: haelt ihre Verbindung selbst und schliesst sie.
+    """Die Datenbank als Context-Manager: hält ihre Verbindung selbst und schließt sie.
 
-    Die Methoden heissen nach den fachlichen Fragen von Lauf, Rueckmeldung und
-    Profil-Vorschlag, nicht nach SQL. Im Anwendungscode kennt ausserhalb dieser Klasse
+    Die Methoden heißen nach den fachlichen Fragen von Lauf, Rückmeldung und
+    Profil-Vorschlag, nicht nach SQL. Im Anwendungscode kennt außerhalb dieser Klasse
     niemand SQL oder die Verbindung; nur Tests lesen die Datenbank zur Kontrolle direkt.
     """
 
     def __init__(self, path: str | Path) -> None:
         """Oeffnet (und initialisiert oder migriert bei Bedarf) die Datenbank unter path.
 
-        Laesst sich die Datenbank nicht nutzen, wirft hier und jede Methode `StoreError`.
+        Lässt sich die Datenbank nicht nutzen, wirft hier und jede Methode `StoreError`.
         """
         self._conn = _Connection(path)
         self._in_transaction = False
@@ -205,8 +205,8 @@ class Store:
     def transaction(self) -> Iterator[None]:
         """Was die Methoden darin speichern, gilt gemeinsam am Ende oder bei Fehler gar nicht.
 
-        Transaktionen lassen sich nicht schachteln. Scheitert auch das Zuruecksetzen, ist der
-        Store danach geschlossen, damit kein spaeterer Commit die halbe Transaktion festschreibt.
+        Transaktionen lassen sich nicht schachteln. Scheitert auch das Zurücksetzen, ist der
+        Store danach geschlossen, damit kein späterer Commit die halbe Transaktion festschreibt.
         """
         if self._in_transaction:
             raise RuntimeError("Transaktionen des Store lassen sich nicht schachteln")
@@ -215,7 +215,7 @@ class Store:
             yield
             self._conn.commit()
         except BaseException:
-            # Auch nach gescheitertem Commit zuruecksetzen; der erste Fehler bleibt der gemeldete.
+            # Auch nach gescheitertem Commit zurücksetzen; der erste Fehler bleibt der gemeldete.
             try:
                 self._conn.rollback()
             except Exception:  # welcher Fehler auch immer: nichts darf mehr committen
@@ -264,7 +264,7 @@ class Store:
         self._commit()
 
     def save_match_numbers(self, report_name: str, match_numbers: dict[str, int]) -> None:
-        """Haelt fest, unter welcher Treffernummer eine Anzeige in welchem Report steht."""
+        """Hält fest, unter welcher Treffernummer eine Anzeige in welchem Report steht."""
         self._conn.executemany(
             "UPDATE gesehene_anzeigen SET report = ?, nummer = ? WHERE id = ?",
             [(report_name, number, job_ad_id) for job_ad_id, number in match_numbers.items()],
@@ -301,10 +301,10 @@ class Store:
         return KnownApplication(row[0], date.fromisoformat(row[1]), row[2])
 
     def latest_application_id(self, position_key: str) -> int | None:
-        """ID der letzten Bewerbung auf diese Stelle, auch einer zurueckgezogenen.
+        """ID der letzten Bewerbung auf diese Stelle, auch einer zurückgezogenen.
 
-        Fuer die Rueckmeldung: Eine erneute Bewerbung nach dem Zurueckziehen
-        ueberschreibt die alte.
+        Für die Rückmeldung: Eine erneute Bewerbung nach dem Zurückziehen
+        überschreibt die alte.
         """
         row = self._conn.fetchone(
             "SELECT id FROM bewerbungen WHERE stelle = ? "
@@ -338,7 +338,7 @@ class Store:
     def update_application(
         self, application_id: int, status: ApplicationStatus, applied_on: date | None
     ) -> None:
-        """Setzt den Status; das Bewerbungsdatum aendert sich nur, wenn eines angegeben ist."""
+        """Setzt den Status; das Bewerbungsdatum ändert sich nur, wenn eines angegeben ist."""
         self._conn.execute(
             "UPDATE bewerbungen SET status = ?, beworben_am = COALESCE(?, beworben_am) "
             "WHERE id = ?",
@@ -353,7 +353,7 @@ class Store:
     def follow_up_reminders(
         self, today: date, *, min_days: int, max_days: int
     ) -> list[FollowUpReminder]:
-        """Bewerbungen ohne Antwort, deren Datum min_days bis max_days Tage zurueckliegt."""
+        """Bewerbungen ohne Antwort, deren Datum min_days bis max_days Tage zurückliegt."""
         rows = self._conn.fetchall(
             "SELECT firma, titel, beworben_am FROM bewerbungen "
             "WHERE status = ? AND beworben_am BETWEEN ? AND ? ORDER BY beworben_am, id",
@@ -414,15 +414,15 @@ class Store:
 def description_hash(description: str | None) -> str | None:
     """Fingerabdruck einer Beschreibung; None, wenn es keinen Text gibt."""
     # Leerraum vereinheitlichen, damit reine Formatierung nicht als
-    # Textabweichung zaehlt.
+    # Textabweichung zählt.
     normalized = " ".join((description or "").split())
     if not normalized:
         return None
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-# Die Spalte bewertung nutzt dieselben deutschen Schluessel wie die Modelle
-# (ADR 0005), daher dieselbe Uebersetzung aus score.ASSESSMENT_KEYS.
+# Die Spalte bewertung nutzt dieselben deutschen Schlüssel wie die Modelle
+# (ADR 0005), daher dieselbe Übersetzung aus score.ASSESSMENT_KEYS.
 def _assessment_as_json(assessment: Assessment) -> str:
     return json.dumps(assessment.as_model_data(), ensure_ascii=False)
 

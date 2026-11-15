@@ -10,7 +10,7 @@ from jobagent.sources.watchlist import WatchlistCompany
 
 @dataclass(frozen=True)
 class Config:
-    """Konfiguration eines Laufs; in `config.toml` stehen die Schluessel deutsch."""
+    """Konfiguration eines Laufs; in `config.toml` stehen die Schlüssel deutsch."""
 
     keywords: list[str] = field(default_factory=list)
     location: str | None = None
@@ -23,11 +23,11 @@ class Config:
 
 
 class ConfigError(Exception):
-    """`config.toml` fehlt, ist kaputt, oder ein Schluessel steht nicht an seinem Platz."""
+    """`config.toml` fehlt, ist kaputt, oder ein Schlüssel steht nicht an seinem Platz."""
 
 
-# Die einzige Stelle, an der die deutschen Schluessel aus `config.toml` uebersetzt werden:
-# (Abschnitt, Schluessel) -> Feld von `Config`.
+# Die einzige Stelle, an der die deutschen Schlüssel aus `config.toml` übersetzt werden:
+# (Abschnitt, Schlüssel) -> Feld von `Config`.
 _TOML_KEYS = {
     ("suche", "was"): "keywords",
     ("suche", "wo"): "location",
@@ -38,18 +38,18 @@ _TOML_KEYS = {
     ("report", "nachfassen_ab_tag"): "follow_up_min_days",
     ("report", "nachfassen_bis_tag"): "follow_up_max_days",
 }
-# Abschnitt, in den ein deutscher Schluessel gehoert.
+# Abschnitt, in den ein deutscher Schlüssel gehört.
 _HOME = {german: section for section, german in _TOML_KEYS}
 _SECTIONS = set(_HOME.values())
 
 
 def load_config(path: Path) -> Config:
-    """Liest `config.toml`; fehlende Abschnitte und Schluessel behalten ihren Standardwert.
+    """Liest `config.toml`; fehlende Abschnitte und Schlüssel behalten ihren Standardwert.
 
-    Steht ein bekannter Schluessel oben in der Datei wie im alten flachen Format oder in einem
+    Steht ein bekannter Schlüssel oben in der Datei wie im alten flachen Format oder in einem
     anderen bekannten Abschnitt, bricht das Laden mit `ConfigError` ab und nennt seinen Platz.
-    Unbekannte Abschnitte und Schluessel werden nicht geprueft. Fehlt die Datei, ist sie
-    nicht lesbar oder kein gueltiges TOML, wirft das Laden ebenfalls `ConfigError`.
+    Unbekannte Abschnitte und Schlüssel werden nicht geprüft. Fehlt die Datei, ist sie
+    nicht lesbar oder kein gültiges TOML, wirft das Laden ebenfalls `ConfigError`.
     """
     raw = _read_toml(path)
     _reject_misplaced(raw, path)
@@ -112,7 +112,7 @@ def _place(section: str, german: str) -> str:
 
 
 def _written(section: str, german: str, value: object) -> str:
-    # So, wie der Schluessel in der Datei steht.
+    # So, wie der Schlüssel in der Datei steht.
     if value and _is_list_of_tables(value):
         return f"[[{section}.{german}]]"
     return f"[{section}] {german}"

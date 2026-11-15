@@ -40,7 +40,7 @@ _SYSTEM_PROMPT = (
 )
 
 
-# Deutsche Schluessel einer Bewertung je Feld von Assessment: So sehen sie
+# Deutsche Schlüssel einer Bewertung je Feld von Assessment: So sehen sie
 # die Sprachmodelle (Antwort der Bewertung, Payload des Profil-Vorschlags) und die
 # DB-Spalte bewertung.
 ASSESSMENT_KEYS = {
@@ -60,16 +60,16 @@ class Assessment:
     summary: str
 
     def as_model_data(self) -> dict[str, object]:
-        """Die Bewertung ohne Score unter den deutschen Schluesseln."""
+        """Die Bewertung ohne Score unter den deutschen Schlüsseln."""
         return {key: getattr(self, field) for field, key in ASSESSMENT_KEYS.items()}
 
     def as_model_answer(self) -> dict[str, object]:
-        """Die Bewertung so, wie das Sprachmodell sie antwortet: Score und deutsche Schluessel."""
+        """Die Bewertung so, wie das Sprachmodell sie antwortet: Score und deutsche Schlüssel."""
         return {"score": self.score, **self.as_model_data()}
 
     @classmethod
     def from_model_data(cls, score: int, data: dict) -> "Assessment":
-        """Gegenstueck zu as_model_data; fehlende Schluessel werfen KeyError."""
+        """Gegenstück zu as_model_data; fehlende Schlüssel werfen KeyError."""
         return cls(score=score, **{field: data[key] for field, key in ASSESSMENT_KEYS.items()})
 
 
@@ -80,7 +80,7 @@ def score_job_ad(
 ) -> Assessment | None:
     """Bewertet eine Anzeige gegen das Suchprofil.
 
-    Gibt None zurueck und loggt, wenn das Sprachmodell scheitert oder eine ungueltige
+    Gibt None zurück und loggt, wenn das Sprachmodell scheitert oder eine ungültige
     Antwort liefert, statt den Lauf abzubrechen; die Anzeige bleibt dann unbewertet.
     """
     user_text = f"Suchprofil:\n{search_profile}\n\nStellenanzeige:\n{job_ad_as_text(job_ad)}"
@@ -93,7 +93,7 @@ def score_job_ad(
     try:
         return _validate(data)
     except (KeyError, TypeError, ValueError):
-        logger.exception("Ungueltige Bewertungsantwort (anzeige=%r): %r", job_ad.id, data)
+        logger.exception("Ungültige Bewertungsantwort (anzeige=%r): %r", job_ad.id, data)
         return None
 
 
@@ -112,7 +112,7 @@ def job_ad_as_text(job_ad: JobAd) -> str:
 def _validate(data: dict) -> Assessment:
     score = int(data["score"])
     if not 1 <= score <= 5:
-        raise ValueError(f"score ausserhalb 1-5: {score}")
+        raise ValueError(f"score außerhalb 1-5: {score}")
 
     assessment = Assessment.from_model_data(score, data)
     return Assessment(
@@ -128,7 +128,7 @@ def _as_string_list(value: object) -> list[str]:
     # Claude liefert dieses Feld manchmal als einzelnen String statt als
     # JSON-Array, obwohl das Tool-Schema ein Array vorgibt. Statt die ganze
     # Bewertung zu verwerfen, wird der String als Ein-Elemente-Liste
-    # uebernommen - kein Datenverlust, nur weniger granular dargestellt.
+    # übernommen - kein Datenverlust, nur weniger granular dargestellt.
     if isinstance(value, str):
         return [value]
     if not isinstance(value, list):
