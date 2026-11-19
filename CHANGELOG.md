@@ -1,0 +1,159 @@
+# Changelog
+
+Alle nennenswerten Änderungen am Job-Agenten, nach Versionen gegliedert und
+angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Die
+Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x): eine neue Quelle
+oder Funktion hebt die Minor-, reine Fehlerbehebungen heben die Patch-Version.
+Nummern wie (#12) verweisen auf die Issues im Repo.
+
+## Unveröffentlicht
+
+### Neu
+- `CHANGELOG.md` beschreibt die Versionen ab 0.2.0; jedes Ticket trägt seine
+  Änderung hier unter „Unveröffentlicht“ ein (#35)
+
+## 0.6.0 – 2026-11-15
+
+### Neu
+- Unbewertete Anzeigen: Scheitert eine Bewertung, zählt der Report die Anzeige
+  als unbewertet, und der nächste Lauf versucht es erneut (#29)
+- Log-Datei pro Lauf neben dem Report (`output/YYYY-MM-DD.log`), ohne
+  Anzeigen-Volltexte; ein abgebrochener Lauf schreibt `output/abgebrochen.log`
+  (#32)
+- Demo-Sprachmodell, über das der Demo-Lauf denselben Weg der Bewertung nimmt
+  wie ein echter Lauf (#25)
+
+### Geändert
+- Bewertung und Profil-Vorschlag sprechen nur noch mit dem Seam
+  `LanguageModel`; Haiku und Sonnet werden beim Zusammenbau gewählt (#23, #24)
+- Speicherung als Klasse `Store` mit fachlichen Fragen statt freier
+  SQL-Funktionen; Report und Merken gelingen zusammen oder gar nicht (#26, #27)
+- Der Lauf ist `run()` und bekommt alles übergeben; Lauf, Rückmeldung und
+  Profil-Vorschlag bauen sich in der Kommandozeile zusammen (#28, #30)
+- Alle drei Kommandos brechen mit klarer Meldung und Exit-Code 1 ab statt mit
+  einem Traceback (#31)
+- `config.toml` ist in die Abschnitte `[suche]`, `[bundesagentur]`,
+  `[watchlist]` und `[report]` geteilt; das alte flache Format wird nicht mehr
+  gelesen, die Meldung nennt den neuen Platz jedes alten Schlüssels (#33)
+- Wegweiser in `CLAUDE.md` und die ADRs auf den Stand nach dem Umbau gebracht
+  (#34)
+
+### Behoben
+- Ein Report, der beim Schreiben scheitert, bleibt nicht halb liegen, und
+  gleichzeitige Läufe überschreiben sich nicht gegenseitig (#31)
+- Store-Transaktionen und Lesefehler hinterlassen keine Teilzustände mehr (#31)
+- `config.toml` und `profile.md` werden auch mit BOM gelesen, Kodierungsfehler
+  klar gemeldet (#31)
+- Ein bekannter Schlüssel im falschen Abschnitt der Konfiguration fällt nicht
+  mehr still auf den Standardwert zurück (#33)
+- Die Rückmeldung prüft die Score-Skala auch ohne Kommandozeile; ein
+  unbrauchbares Feld `modellfehler` verwirft nicht mehr den ganzen
+  Profil-Vorschlag (#30)
+- Die Log-Datei ist auch bei Absturz und mit `python -m` vollständig (#32)
+- `profile.md` wird in einem Schritt ersetzt und bleibt bei vollem Datenträger,
+  Verknüpfung, Schreibschutz oder Abbruch heil
+- Einzelne Surrogate (halbe Emojis) in Anzeigen und Modellantworten brechen
+  Merken, Report und Profil-Vorschlag nicht mehr ab
+- Eine Bewerbung auf dieselbe Anzeige wird auch ohne Firma erkannt und nicht
+  mehr mit dem gerade gemerkten Text verglichen
+
+## 0.5.1 – 2026-11-12
+
+### Neu
+- Ein Test erkennt deutsche Bezeichner im Code automatisch (#17)
+- Vertragstest: Keine Quelle wirft bei kaputten Antworten (#18)
+- Der Demo-Report ist als Golden-File gegen ungewollte Änderungen gesichert
+  (#19)
+- Ablauf für Sitzungen in eigenen Worktrees unter `docs/agents/` (#20, #22)
+
+### Geändert
+- Die Details der Quellen stehen in `docs/quellen.md` statt in `CLAUDE.md`
+- Zeilenenden im Repo per `.gitattributes` auf LF festgelegt
+
+### Behoben
+- Quellen prüfen die Feldtypen jeder Anzeige: Ein Pflichtfeld mit falschem Typ
+  kostet nur diesen Eintrag, ein optionales Feld wird zu `None`, statt die
+  ganze Antwort ungültig zu machen (#21)
+
+## 0.5.0 – 2026-11-12
+
+### Neu
+- ADR 0005: englische Bezeichner im Code, deutsche Fachsprache für alles, was
+  Menschen lesen (#7)
+
+### Geändert
+- Bezeichner im ganzen Code englisch nach der Spalte „Im Code“ im Glossar; das
+  DB-Schema bleibt deutsch (#8, #9, #10, #11)
+- Das Kommando für den Profil-Vorschlag heißt jetzt
+  `python -m jobagent.profile_suggestion` (#11)
+- Quellen sind Adapter am Seam `Source`, zuerst die Bundesagentur (#12)
+- Arbeitnow blättert pro Lauf einmal über höchstens 10 Seiten und filtert die
+  Suchbegriffe lokal, statt das Paging für jeden Suchbegriff zu wiederholen
+  (#13)
+- Die Firmen-Watchlist ist ein eigener Adapter mit Greenhouse- und Lever-Board
+  (#14)
+- Alter Quellen-Code entfernt, der Quellenstatus entsteht beim Lauf (#15)
+
+### Behoben
+- Verformte Felder einer API-Antwort melden die Quelle als ungültige Antwort,
+  statt den Lauf ins Sicherheitsnetz zu werfen; das Sicherheitsnetz nennt die
+  Suchbegriffe im Fehler (#12, #14)
+
+## 0.4.0 – 2026-11-11
+
+### Neu
+- CI mit Lint, Formatprüfung und Tests (#1)
+- Vier ADRs zu den bewussten Entscheidungen: Datensparsamkeit, nur erlaubte
+  Quellen, der Mensch entscheidet, Modellwahl Haiku/Sonnet (#3)
+- Demo-Lauf `python -m jobagent.main --demo` ohne API-Key, Konfiguration und
+  Netz (#4)
+
+### Geändert
+- Quellen, Bewertung und Konfiguration sind im Lauf austauschbar (#2)
+- README als Schaufenster mit Demo-Lauf und Entscheidungen, dazu die
+  Repo-Beschreibung (#5, #6)
+
+## 0.3.0 – 2026-11-08
+
+### Neu
+- Treffer sind je Report durchnummeriert; gespeichert werden dazu die
+  Bewertung und ein Hash der Beschreibung
+- Quellenstatus im Report: je Quelle die Zahl der Anzeigen und ob sie
+  ausgefallen ist
+- Rückmeldung per `python -m jobagent.feedback`: Bewerbungen mit Status und
+  eigene Scores zu einem Treffer erfassen
+- Block „Bereits beworben“ für Stellen, auf die schon eine Bewerbung läuft,
+  mit Hinweis auf Textabweichungen
+- Nachfass-Hinweis für unbeantwortete Bewerbungen
+- Profil-Vorschlag: Sonnet leitet aus dem Feedback Änderungen am Suchprofil
+  ab, die erst nach Bestätigung übernommen werden
+- Glossar der Fachbegriffe
+
+### Geändert
+- Treffer unter dem Mindest-Score erscheinen nur einzeilig am Ende des Reports
+
+### Behoben
+- Ein weiterer Lauf am selben Tag überschreibt den vorhandenen Report nicht
+  mehr, sondern schreibt `YYYY-MM-DD-2.md` usw.
+
+## 0.2.0 – 2026-11-07
+
+Erste Version mit Tag.
+
+### Neu
+- Drei Quellen: Bundesagentur für Arbeit, Arbeitnow und eine
+  Firmen-Watchlist über Greenhouse und Lever
+- Dedupe über SQLite: Schon gesehene Anzeigen kommen nicht wieder
+- Bewertung jeder neuen Anzeige durch Claude Haiku gegen `profile.md`, als
+  strikt strukturierte Antwort
+- Markdown-Report `output/YYYY-MM-DD.md`, sortiert nach Score
+- README
+
+### Geändert
+- `kurzfazit` auf einen kurzen Satz begrenzt
+
+### Behoben
+- Die Bundesagentur-Quelle liest das echte Schema der Jobsuche-API statt des
+  abweichend dokumentierten
+- Liefert das Modell `passt`, `passt_nicht` oder `luecken` als Text statt als
+  Liste, geht der Treffer nicht mehr verloren

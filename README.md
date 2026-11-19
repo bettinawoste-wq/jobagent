@@ -245,6 +245,11 @@ bleibt dabei erhalten: Es liegt neben dem Report und heißt wie er
 (`output/YYYY-MM-DD.log`). Bricht ein Lauf ganz ab, gibt es keinen Report; sein Log
 samt Traceback landet dann in `output/abgebrochen.log`.
 
+## Änderungen
+
+Was sich von Version zu Version geändert hat, steht im
+[`CHANGELOG.md`](CHANGELOG.md).
+
 ## Hinweis zur Entstehung
 
 Dieses Projekt ist iterativ mit [Claude Code](https://claude.com/claude-code)

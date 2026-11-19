@@ -23,6 +23,7 @@ Liegt der Integrations-Branch woanders, geht `git checkout -B <eigener-branch> <
 ## 3. Committen
 - Es gelten die Regeln in `CLAUDE.md`: Betreff deutsch, im Imperativ, mit echten Umlauten. Der Text erklärt das Warum. Dazu `Refs #<n>` und am Ende `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Gib auch Merge-Commits einen deutschen Text: `git merge <integrations-branch> -m "Merge <integrations-branch>: <worum es geht>"`.
+- Trag deine Änderung in `CHANGELOG.md` unter „Unveröffentlicht“ ein, im selben Commit wie die Änderung: eine Zeile unter „Neu“, „Geändert“ oder „Behoben“ (fehlende Unterüberschrift anlegen), aus Sicht der Leserin formuliert und mit der Ticket-Nummer, z. B. `(#35)`. So ist die nächste Version schon beschrieben, wenn sie fertig ist.
 - Die Version hebst du nicht an. Das macht die Sitzung, die integriert, wenn die zusammenhängende Arbeit fertig ist.
 
 ## 4. Vor dem Bericht
