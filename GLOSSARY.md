@@ -36,6 +36,11 @@ Der Ort, um den herum gesucht wird; in `config.toml` als `wo` im Abschnitt `[suc
 _Im Code_: `location`
 _Avoid_: Region, Standort
 
+**Suchzeitraum**:
+Die Zahl der zurückliegenden Tage, aus denen ein Lauf Anzeigen von den Quellen holt; er reicht bis zum Tag des letzten vollständigen Laufs zurück, höchstens so weit wie `veroeffentlichtseit` im Abschnitt `[suche]`.
+_Im Code_: `search_window`
+_Avoid_: Zeitfenster, Zeitraum, veroeffentlichtseit
+
 ## Bewertung
 
 **Suchprofil**:
@@ -69,6 +74,11 @@ _Avoid_: Rang, Punkte
 Ein Durchgang aus Suchen, Bewerten und Report-Schreiben, der genau einen Report erzeugt.
 _Im Code_: `run`
 _Avoid_: Durchlauf, Testlauf
+
+**Vollständiger Lauf**:
+Ein Lauf, in dem jede Quelle fehlerfrei geliefert hat und keine Anzeige unbewertet blieb; ab seinem Tag rechnet der Suchzeitraum des nächsten Laufs.
+_Im Code_: `complete_run`
+_Avoid_: erfolgreicher Lauf, letzter Lauf
 
 **Demo-Lauf**:
 Ein Lauf mit erfundenen Anzeigen und vorgefertigten Bewertungen, der nichts aus dem Netz holt und nichts Persönliches liest oder speichert.
