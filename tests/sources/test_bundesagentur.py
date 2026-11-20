@@ -309,6 +309,26 @@ def test_search_pages_through_all_results_of_a_keyword() -> None:
     assert [r.url.params["page"] for r in requests] == ["1", "2"]
 
 
+def test_search_follows_the_total_count_when_the_api_sends_smaller_pages() -> None:
+    # Hält sich die API nicht an `size`, ist eine kürzere Seite noch nicht die letzte.
+    entries = [_numbered_entry(number) for number in range(1, 61)]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != _SEARCH_PATH:
+            return httpx.Response(200, json={})
+        requests.append(request)
+        page = int(request.url.params["page"])
+        body = {"ergebnisliste": entries[(page - 1) * 25 : page * 25], "maxErgebnisse": 60}
+        return httpx.Response(200, json=body)
+
+    result = _source(handler).search(["Data Science"])
+
+    assert len(result.job_ads) == 60
+    assert result.errors == []
+    assert len(requests) == 3
+
+
 def test_search_stops_at_a_short_page_without_total_count() -> None:
     requests: list[httpx.Request] = []
 

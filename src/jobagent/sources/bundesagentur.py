@@ -94,9 +94,7 @@ class BundesagenturSource:
             job_ads.extend(result.converted.job_ads)
             errors.extend(result.converted.errors(keyword))
             fetched += result.entries
-            if result.entries < _PAGE_SIZE or (
-                result.total is not None and fetched >= result.total
-            ):
+            if _last_page(result, fetched):
                 break
         else:
             errors.append(f"{keyword}: {truncated_reason(_MAX_PAGES)}")
@@ -140,6 +138,20 @@ class _Page:
     converted: ConvertedEntries
     entries: int
     total: int | None
+
+
+def _last_page(page: _Page, fetched: int) -> bool:
+    """Ob nach dieser Seite nichts mehr kommt; `fetched` zählt die Einträge bis hier.
+
+    Nennt die API die Gesamtzahl, zählt nur sie: Hält sie sich nicht an `size`, ist eine
+    kürzere Seite noch nicht die letzte. Eine leere Seite beendet das Blättern immer.
+    Ohne Gesamtzahl ist eine nicht volle Seite die letzte.
+    """
+    if page.entries == 0:
+        return True
+    if page.total is not None:
+        return fetched >= page.total
+    return page.entries < _PAGE_SIZE
 
 
 def _count_or_none(value: object) -> int | None:

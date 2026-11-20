@@ -23,7 +23,7 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
   - Ort (`wo` unter `[suche]`)
   - Umkreis (`umkreis` unter `[bundesagentur]`, nur diese Quelle nutzt ihn)
   - Alter der Anzeige (`veroeffentlichtseit` der API) aus dem Suchzeitraum, siehe `GLOSSARY.md`; `veroeffentlichtseit` unter `[suche]` ist nur dessen Startwert und Höchstwert
-- Blättern laut Doku: `page` (ab 1) und `size`; die Antwort nennt die Gesamtzahl in `maxErgebnisse` (Doku: Text, Beispielantwort: Zahl). Je Suchbegriff blättert die Quelle mit 50 Ergebnissen je Seite, bis alle da sind oder eine Seite nicht voll ist, höchstens 5 Seiten. Bleiben danach Ergebnisse übrig, meldet sie „Ergebnisse abgeschnitten nach 5 Seiten“ als Fehler; der Lauf zählt dann nicht als vollständig. Die Grenze ist maßvoll gewählt, weil jede gefundene Anzeige noch einen Detail-Call kostet.
+- Blättern laut Doku: `page` (ab 1) und `size`; die Antwort nennt die Gesamtzahl in `maxErgebnisse` (Doku: Text, Beispielantwort: Zahl). Je Suchbegriff blättert die Quelle mit 50 Ergebnissen je Seite, bis so viele da sind, wie `maxErgebnisse` nennt, oder eine Seite leer ist; ohne `maxErgebnisse` endet sie an der ersten nicht vollen Seite. Höchstens 5 Seiten. Bleiben danach Ergebnisse übrig, meldet sie „Ergebnisse abgeschnitten nach 5 Seiten“ als Fehler; der Lauf zählt dann nicht als vollständig. Die Grenze ist maßvoll gewählt, weil jede gefundene Anzeige noch einen Detail-Call kostet.
 - Die Beschreibung kommt per Detail-Call, einmal je Anzeige.
 - Die ID ist die rohe `referenznummer`.
 
