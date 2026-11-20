@@ -47,7 +47,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 
 ## Leitplanken
 Begründungen stehen in den ADRs, hier nur die harten Grenzen:
-- Gespeichert werden nur ID, Titel, Firma, Link, Score, Datum, Report, Treffernummer, Hash der Beschreibung und die Bewertung; Anzeigen-Volltexte bleiben flüchtig, auch im Log eines Laufs (ADR 0001)
+- Gespeichert werden nur ID, Titel, Firma, Link, Score, Datum, Report, Treffernummer, Hash der Beschreibung und die Bewertung, dazu Datum und Report-Name jedes vollständigen Laufs; Anzeigen-Volltexte bleiben flüchtig, auch im Log eines Laufs (ADR 0001)
 - Anzeigen kommen nur über öffentliche Schnittstellen; LinkedIn, Xing und Indeed bleiben außen vor (ADR 0002)
 - Der Agent liefert nur Vorschläge: Bewerbungen und Nachrichten schickt die Nutzerin selbst, den Bewerbungsstatus setzt nur sie, `profile.md` ändert sich erst nach ihrer ausdrücklichen Bestätigung (ADR 0003)
 

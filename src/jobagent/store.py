@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS feedback (
 )
 """
 
+# Seit 0.7.0: Datum und Report-Name jedes vollständigen Laufs (Glossar), für den Suchzeitraum.
+_SCHEMA_COMPLETE_RUNS = """
+CREATE TABLE IF NOT EXISTS vollstaendige_laeufe (
+    datum TEXT NOT NULL,
+    report TEXT NOT NULL
+)
+"""
+
 # Seit 0.3.0. Bestehende Datenbanken bekommen die Spalten beim Öffnen ergänzt,
 # ihre Zeilen bleiben dort leer.
 _ADDED_COLUMNS = {
@@ -189,6 +197,7 @@ class Store:
             self._conn.execute(_SCHEMA_SEEN)
             self._conn.execute(_SCHEMA_APPLICATIONS)
             self._conn.execute(_SCHEMA_FEEDBACK)
+            self._conn.execute(_SCHEMA_COMPLETE_RUNS)
             self._add_missing_columns()
             self._conn.commit()
         except BaseException:
@@ -278,6 +287,22 @@ class Store:
             (report_name, match_number),
         )
         return StoredMatch(*row) if row else None
+
+    # Vollständige Läufe
+
+    def remember_complete_run(self, day: date, report_name: str) -> None:
+        """Merkt einen vollständigen Lauf; ab seinem Tag rechnet der nächste Suchzeitraum."""
+        self._conn.execute(
+            "INSERT INTO vollstaendige_laeufe (datum, report) VALUES (?, ?)",
+            (day.isoformat(), report_name),
+        )
+        self._commit()
+
+    def last_complete_run(self) -> date | None:
+        """Tag des letzten vollständigen Laufs; None, wenn es noch keinen gab."""
+        # MAX liefert immer genau eine Zeile, ohne vollständigen Lauf mit NULL.
+        (day,) = cast(tuple, self._conn.fetchone("SELECT MAX(datum) FROM vollstaendige_laeufe"))
+        return date.fromisoformat(day) if day else None
 
     # Bewerbungen
 

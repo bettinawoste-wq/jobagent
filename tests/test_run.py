@@ -17,6 +17,7 @@ from jobagent.position import position_key
 from jobagent.report import ReportError
 from jobagent.run import run
 from jobagent.score import Assessment
+from jobagent.search_window import SearchWindow
 from jobagent.sources import SearchResult, Source
 from jobagent.store import ApplicationStatus, NewApplication, Store, StoreError
 from tests.fakes import FakeLanguageModel, FakeSource, assessment_answer, fake_job_ad
@@ -26,6 +27,8 @@ TODAY = date(2026, 3, 2)
 _CONFIG = Config(keywords=["Softwareentwickler"])
 
 _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
+
+_WINDOW = SearchWindow(7, since=None, capped=False)
 
 
 @pytest.fixture
@@ -46,6 +49,7 @@ def _run(
     model: LanguageModel | None = None,
     config: Config = _CONFIG,
     today: date = TODAY,
+    window: SearchWindow = _WINDOW,
 ) -> str:
     """Lauf mit Fake-Quellen; ohne `model` bewertet ein Sprachmodell jede Anzeige mit 4.
 
@@ -59,6 +63,7 @@ def _run(
         config=config,
         today=today,
         output_dir=output_dir,
+        search_window=window,
     )
     return path.read_text(encoding="utf-8")
 
@@ -108,6 +113,7 @@ def test_run_writes_report_dated_today_into_output_dir(db: Store, output_dir: Pa
         config=_CONFIG,
         today=TODAY,
         output_dir=output_dir,
+        search_window=_WINDOW,
     )
 
     assert path == output_dir / "2026-03-02.md"
@@ -310,6 +316,7 @@ def test_run_reports_unassessed_job_ads_under_source_status(db: Store, output_di
 
     assert content.startswith(
         "# Stellenvorschläge 2026-03-02\n\n"
+        "Suchzeitraum: 7 Tage (erster Lauf)\n\n"
         "## Quellen\n- Bundesagentur für Arbeit: 4 Anzeigen\n\n"
         "3 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n\n"
     )
@@ -626,3 +633,68 @@ def test_run_processed_feedback_does_not_count(db: Store, output_dir: Path) -> N
     db.mark_feedback_processed(["f-0"])
 
     assert "Profil-Vorschlag" not in _run(db, output_dir, FakeSource())
+
+
+# Vollständige Läufe und Suchzeitraum
+
+
+def test_complete_run_is_remembered(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1")]))
+
+    assert db.last_complete_run() == TODAY
+
+
+def test_complete_run_without_matches_is_remembered(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource())
+
+    assert db.last_complete_run() == TODAY
+
+
+def test_run_with_source_error_is_not_complete(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), FakeSource(errors=["A: Timeout"]))
+
+    assert db.last_complete_run() is None
+
+
+def test_run_with_unexpected_source_error_is_not_complete(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), BrokenSource())
+
+    assert db.last_complete_run() is None
+
+
+def test_run_with_unassessed_job_ad_is_not_complete(db: Store, output_dir: Path) -> None:
+    model = FakeLanguageModel(assessment_answer(), LanguageModelError("weg"))
+
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")]), model=model)
+
+    assert db.last_complete_run() is None
+
+
+def test_incomplete_run_keeps_last_complete_run(db: Store, output_dir: Path) -> None:
+    source = FakeSource([fake_job_ad("a-1")])
+    _run(db, output_dir, source, today=TODAY)
+
+    later = TODAY + timedelta(days=3)
+    _run(db, output_dir, source, FakeSource(errors=["A: Timeout"]), today=later)
+
+    assert db.last_complete_run() == TODAY
+
+
+def test_failed_report_is_no_complete_run(db: Store, tmp_path: Path) -> None:
+    blocked = tmp_path / "keinordner"
+    blocked.write_text("eine Datei, wo der Report-Ordner hin soll", encoding="utf-8")
+
+    with pytest.raises(ReportError):
+        _run(db, blocked, FakeSource([fake_job_ad("a-1")]))
+
+    assert db.last_complete_run() is None
+
+
+def test_report_shows_search_window_above_source_status(db: Store, output_dir: Path) -> None:
+    window = SearchWindow(4, since=date(2026, 2, 27), capped=False)
+
+    content = _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), window=window)
+
+    line = "Suchzeitraum: 4 Tage (seit dem vollständigen Lauf vom 27.02.)"
+    assert line in content
+    assert content.index(line) < content.index("## Quellen")

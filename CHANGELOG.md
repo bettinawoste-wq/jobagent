@@ -12,6 +12,11 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   Änderung hier unter „Unveröffentlicht“ ein (#35)
 - Typprüfung mit pyright im Modus „standard“ über `src/` und `tests/`, lokal per
   `uv run pyright` und als eigener Schritt in der CI (#36)
+- Suchzeitraum ab dem letzten vollständigen Lauf: Bundesagentur und Arbeitnow
+  holen die Tage seither plus 1, sodass ausgefallene Tage, Quellenfehler und
+  unbewertete Anzeigen nichts verlieren; der Report nennt ihn über dem
+  Quellenstatus, `veroeffentlichtseit` ist Start- und Höchstwert, in der
+  mitgelieferten `config.toml` 7 Tage (#37)
 
 ### Geändert
 

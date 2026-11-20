@@ -22,14 +22,14 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
   - Stichwort (`was` unter `[suche]`)
   - Ort (`wo` unter `[suche]`)
   - Umkreis (`umkreis` unter `[bundesagentur]`, nur diese Quelle nutzt ihn)
-  - Alter der Anzeige (`veroeffentlichtseit` unter `[suche]`)
+  - Alter der Anzeige (`veroeffentlichtseit` der API) aus dem Suchzeitraum, siehe `GLOSSARY.md`; `veroeffentlichtseit` unter `[suche]` ist nur dessen Startwert und Höchstwert
 - Die Beschreibung kommt per Detail-Call, einmal je Anzeige.
 - Die ID ist die rohe `referenznummer`.
 
 ## Arbeitnow (`ArbeitnowSource`)
 - Freie, öffentliche API ohne Key: `https://www.arbeitnow.com/api/job-board-api`. Sie sammelt Remote- und Europa-Jobs mit Tech-Schwerpunkt.
 - Es gibt keine serverseitige Suche nach Stichwort oder Ort. Gefiltert wird lokal, und alle Suchbegriffe teilen sich dieselben abgerufenen Seiten. Der Ort (`wo` unter `[suche]`) wird lokal im Ort-Feld gesucht. Ein `umkreis` ist nicht möglich, weil die API keine Geokoordinaten liefert.
-- Das Paging folgt `links.next` und stoppt, sobald Einträge älter als `veroeffentlichtseit` (unter `[suche]`) Tage auftauchen. Höchstens 10 Seiten pro Lauf, als Sicherheitsgrenze und zur maßvollen Nutzung der freien API.
+- Das Paging folgt `links.next` und stoppt, sobald Einträge auftauchen, die älter als der Suchzeitraum sind. Höchstens 10 Seiten pro Lauf, als Sicherheitsgrenze und zur maßvollen Nutzung der freien API.
 - Das Veröffentlichungsdatum `created_at` zählt nur als Zahl. Fehlt es oder hat es einen anderen Typ, auch einen Wahrheitswert, oder ist es keine endliche Zahl (NaN, Infinity), gilt die Anzeige nicht als zu alt.
 - Die Uhr kommt über den Konstruktor (`now`).
 - Die ID hat die Form `arbeitnow:<slug>`.
@@ -38,7 +38,7 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
 - Statt einer breiten Suche werden konkrete Firmen aus `config.toml` direkt über ihr öffentliches Jobboard durchsucht:
   - Sie stehen dort als `[[watchlist.firmen]]` mit `name`, `ats` und `slug`.
   - Im Code heißen sie `WatchlistCompany`.
-- Jedes Board wird pro Lauf einmal abgefragt, die Suchbegriffe werden lokal auf den Titel gefiltert. Von `[suche]` nutzt die Watchlist nur `was`, nicht `wo` und nicht `veroeffentlichtseit`.
+- Jedes Board wird pro Lauf einmal abgefragt, die Suchbegriffe werden lokal auf den Titel gefiltert. Von `[suche]` nutzt die Watchlist nur `was`, nicht `wo` und nicht `veroeffentlichtseit`; einen Suchzeitraum kennt sie nicht.
 - Scheitert eine Firma, werden die übrigen trotzdem durchsucht.
 - **Greenhouse** (`GreenhouseBoard`):
   - Abruf über `boards-api.greenhouse.io/v1/boards/{slug}/jobs`.

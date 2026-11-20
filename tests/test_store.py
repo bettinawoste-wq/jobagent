@@ -344,6 +344,7 @@ def test_db_schema_keeps_german_tables_and_columns(db: Store, db_path: Path) -> 
     assert _schema(db_path) == {
         "bewerbungen": ["id", "stelle", "firma", "titel", "anzeige_id", "status", "beworben_am"],
         "feedback": ["anzeige_id", "score", "grund", "datum", "verarbeitet"],
+        "vollstaendige_laeufe": ["datum", "report"],
         "gesehene_anzeigen": [
             "id",
             "titel",
@@ -411,6 +412,7 @@ def test_database_from_old_code_can_be_read_and_written(db_path: Path) -> None:
         assert db.count_open_feedback() == 1
         [feedback] = db.open_feedback()
         assert feedback.assessment == Assessment(2, ["Python"], ["Reisen"], [], "Eher nein.")
+        assert db.last_complete_run() is None
 
         db.remember_job_ad(_example_job_ad("a-2"), _assessment(), date(2026, 11, 3))
         db.save_match_numbers("2026-11-03", {"a-2": 1})
@@ -576,3 +578,28 @@ def test_transaction_keeps_everything_when_it_succeeds(db_path: Path) -> None:
         match = reopened.find_match("2026-11-05", 1)
         assert match is not None
         assert match.id == "a-1"
+
+
+# Vollständige Läufe
+
+
+def test_without_complete_run_there_is_no_last_one(db: Store) -> None:
+    assert db.last_complete_run() is None
+
+
+def test_last_complete_run_is_the_latest_day(db_path: Path) -> None:
+    with Store(db_path) as db:
+        db.remember_complete_run(date(2026, 11, 16), "2026-11-16")
+        db.remember_complete_run(date(2026, 11, 19), "2026-11-19")
+        db.remember_complete_run(date(2026, 11, 19), "2026-11-19-2")
+
+    with Store(db_path) as db:
+        assert db.last_complete_run() == date(2026, 11, 19)
+
+
+def test_complete_run_stores_only_day_and_report(db: Store, db_path: Path) -> None:
+    db.remember_complete_run(date(2026, 11, 19), "2026-11-19")
+
+    with sqlite3.connect(db_path) as raw:
+        rows = raw.execute("SELECT * FROM vollstaendige_laeufe").fetchall()
+    assert rows == [("2026-11-19", "2026-11-19")]

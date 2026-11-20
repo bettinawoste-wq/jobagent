@@ -10,6 +10,7 @@ from typing import TextIO
 
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
+from jobagent.search_window import SearchWindow
 from jobagent.store import FollowUpReminder
 
 OUTPUT_DIR = Path("output")
@@ -69,6 +70,7 @@ def write_report(
     follow_ups: Sequence[FollowUpReminder] = (),
     open_feedback: int = 0,
     unassessed: int = 0,
+    search_window: SearchWindow | None = None,
 ) -> WrittenReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -78,7 +80,7 @@ def write_report(
     """
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
-        f"{_sources_block(sources)}{_unassessed_line(unassessed)}"
+        f"{_search_window_line(search_window)}{_sources_block(sources)}{_unassessed_line(unassessed)}"
         f"{_follow_up_block(follow_ups, day)}"
         f"{_profile_hint(open_feedback)}"
     )
@@ -152,6 +154,22 @@ def _report_error(output_dir: Path, error: OSError) -> ReportError:
     return ReportError(
         f"Report lässt sich nicht in {output_dir} schreiben: {error.strerror or error}"
     )
+
+
+def _search_window_line(window: SearchWindow | None) -> str:
+    if window is None:
+        return ""
+    if window.days is None:
+        length = "unbegrenzt"
+    else:
+        length = "1 Tag" if window.days == 1 else f"{window.days} Tage"
+    if window.since is None:
+        reason = "erster Lauf"
+    else:
+        reason = f"seit dem vollständigen Lauf vom {window.since:%d.%m.}"
+        if window.capped:
+            reason += f", auf {length} begrenzt"
+    return f"Suchzeitraum: {length} ({reason})\n\n"
 
 
 def _sources_block(sources: Sequence[SourceStatus]) -> str:

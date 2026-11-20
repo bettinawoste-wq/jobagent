@@ -32,6 +32,8 @@ Auszug aus der Ausgabe (gekürzt, `…` markiert Auslassungen):
 ```markdown
 # Stellenvorschläge 2026-11-11
 
+Suchzeitraum: 7 Tage (erster Lauf)
+
 ## Quellen
 - Bundesagentur für Arbeit (Demo): 3 Anzeigen
 - Arbeitnow (Demo): 3 Anzeigen
@@ -154,7 +156,7 @@ Suchparameter in `config.toml` anpassen. Die Datei ist in Abschnitte geteilt:
 [suche]                      # was für alle Quellen, wo/veroeffentlichtseit ohne Watchlist
 was = ["Data Scientist", "IT Consultant"]
 wo = "München"
-veroeffentlichtseit = 7      # Tage
+veroeffentlichtseit = 7      # Tage: Startwert und Höchstwert des Suchzeitraums
 
 [bundesagentur]
 umkreis = 25                 # km
@@ -170,6 +172,15 @@ nachfassen_ab_tag = 14
 nachfassen_bis_tag = 28
 ```
 
+Der Agent merkt sich jeden vollständigen Lauf, also einen Lauf, in dem jede
+Quelle fehlerfrei geliefert hat und keine Anzeige unbewertet blieb. Bundesagentur
+und Arbeitnow suchen dann im Suchzeitraum: die Tage seit dem letzten
+vollständigen Lauf plus 1, also nach einem vollständigen Lauf am Montag am
+Donnerstag 4 Tage. `veroeffentlichtseit` gilt für den ersten Lauf und begrenzt
+den Suchzeitraum nach oben. Fällt ein Tag aus, eine Quelle aus oder bleibt eine
+Anzeige unbewertet, holt der nächste Lauf die Tage seither nach. Die Watchlist
+sucht ohne Zeitraum.
+
 Fehlende Werte behalten ihren Standard. Das alte flache Format ohne
 Abschnitte wird nicht mehr gelesen; der Lauf nennt dann den neuen Platz
 jedes alten Schlüssels.
@@ -182,8 +193,8 @@ uv run python -m jobagent.main
 
 Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
 `output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
-Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht je
-Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
+Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht der
+Suchzeitraum und je Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
 Treffer unter `mindest_score` (`[report]` in `config.toml`, Standard 3) erscheinen nur
 einzeilig am Ende.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
