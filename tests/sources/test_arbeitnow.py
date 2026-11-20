@@ -48,7 +48,7 @@ def test_search_filters_by_title_and_location_and_maps_job_ad() -> None:
     # in Muenchen, Eintrag 2 ist in Berlin aber ohne "(m/w/d)" im Titel.
     handler, _ = _pages(FIXTURE)
 
-    result = _source(handler, location="Berlin", published_since=14).search(["(m/w/d)"])
+    result = _source(handler, location="Berlin", search_window=14).search(["(m/w/d)"])
 
     assert result.job_ads == [
         JobAd(
@@ -77,7 +77,7 @@ def test_search_matches_any_keyword_case_insensitively() -> None:
 def test_search_fetches_each_page_once_for_several_keywords() -> None:
     handler, requests = _pages(PAGE_1, PAGE_2)
 
-    result = _source(handler, published_since=14).search(["Data Scientist", "Python", "Data"])
+    result = _source(handler, search_window=14).search(["Data Scientist", "Python", "Data"])
 
     assert len(requests) == 2
     assert [job_ad.id for job_ad in result.job_ads] == [
@@ -117,16 +117,16 @@ def test_search_ending_on_the_tenth_page_is_not_truncated() -> None:
     assert result.errors == []
 
 
-def test_search_stops_paging_at_job_ads_older_than_published_since() -> None:
+def test_search_stops_paging_at_job_ads_older_than_search_window() -> None:
     handler, requests = _pages(PAGE_1, PAGE_2)
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert result.job_ads == []
     assert len(requests) == 1
 
 
-def test_search_without_published_since_ignores_age() -> None:
+def test_search_without_search_window_ignores_age() -> None:
     handler, requests = _pages(PAGE_1, PAGE_2)
 
     result = _source(handler, today=365).search(["Data Scientist"])
@@ -140,7 +140,7 @@ def test_search_keeps_young_job_ads_of_the_page_that_stops_paging() -> None:
     page["data"].append({**page["data"][0], "slug": "neu-200009", "created_at": _days(59)})
     handler, requests = _pages(page, PAGE_2)
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:neu-200009"]
     assert len(requests) == 1
@@ -151,7 +151,7 @@ def test_published_date_as_boolean_does_not_count_as_too_old() -> None:
     page["data"][0]["created_at"] = True
     handler, _ = _pages(page, PAGE_2)
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert [job_ad.id for job_ad in result.job_ads] == [f"arbeitnow:{page['data'][0]['slug']}"]
 
@@ -172,7 +172,7 @@ def test_unusual_published_date_does_not_count_as_too_old(value: float) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert [job_ad.id for job_ad in result.job_ads] == [f"arbeitnow:{page['data'][0]['slug']}"]
     assert result.errors == []

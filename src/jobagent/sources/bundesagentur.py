@@ -35,9 +35,11 @@ _MAX_PAGES = 5
 class BundesagenturSource:
     """Sucht je Suchbegriff in der Jobsuche-API und holt die Jobdetails je Anzeige einmal.
 
-    Je Suchbegriff blättert sie (`page` ab 1, `size`), bis alle Ergebnisse da sind, höchstens
-    `_MAX_PAGES` Seiten. Bleiben danach Ergebnisse übrig, meldet sie "Ergebnisse
-    abgeschnitten" als Fehler: Der Lauf zählt dann nicht als vollständig.
+    Gesucht wird im Suchzeitraum `search_window` (in Tagen, an die API als
+    `veroeffentlichtseit`). Je Suchbegriff blättert sie (`page` ab 1, `size`), bis alle
+    Ergebnisse da sind, höchstens `_MAX_PAGES` Seiten. Bleiben danach Ergebnisse übrig,
+    meldet sie "Ergebnisse abgeschnitten" als Fehler: Der Lauf zählt dann nicht als
+    vollständig.
 
     Scheitert der Detail-Call einer Anzeige, bleibt nur deren Beschreibung leer; das gilt
     nicht als Fehler der Quelle.
@@ -49,13 +51,13 @@ class BundesagenturSource:
         self,
         location: str | None = None,
         radius: int | None = None,
-        published_since: int | None = None,
+        search_window: int | None = None,
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._location = location
         self._radius = radius
-        self._published_since = published_since
+        self._search_window = search_window
         self._transport = transport
 
     def search(self, keywords: list[str]) -> SearchResult:
@@ -105,8 +107,8 @@ class BundesagenturSource:
             params["wo"] = self._location
         if self._radius is not None:
             params["umkreis"] = self._radius
-        if self._published_since is not None:
-            params["veroeffentlichtseit"] = self._published_since
+        if self._search_window is not None:
+            params["veroeffentlichtseit"] = self._search_window
 
         data = get_json(client, _SEARCH_URL, params=params, headers=_HEADERS)
         # Hinweis: Die Live-API liefert ein anderes Schema als die Doku von

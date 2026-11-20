@@ -102,11 +102,11 @@ def default_sources(
     Bundesagentur und Arbeitnow suchen im Suchzeitraum `window`, die Watchlist ohne Suchzeitraum.
     """
     location = config.location
-    since = window.days
+    days = window.days
 
     sources: list[Source] = [
-        BundesagenturSource(location, config.radius, since, transport=transport),
-        ArbeitnowSource(location, since, transport=transport),
+        BundesagenturSource(location, config.radius, days, transport=transport),
+        ArbeitnowSource(location, days, transport=transport),
     ]
     if config.companies:
         sources.append(WatchlistSource(config.companies, transport=transport))

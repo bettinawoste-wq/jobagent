@@ -68,7 +68,7 @@ def test_search_sends_search_parameters_and_header() -> None:
         requests.append(request)
         return _successful_handler(request)
 
-    _source(handler, location="München", radius=30, published_since=7).search(
+    _source(handler, location="München", radius=30, search_window=7).search(
         ["Softwareentwicklerin"]
     )
 
