@@ -23,7 +23,8 @@ Liegt der Integrations-Branch woanders, geht `git checkout -B <eigener-branch> <
 ## 3. Committen
 - Es gelten die Regeln in `CLAUDE.md`: Betreff deutsch, im Imperativ, mit echten Umlauten. Der Text erklärt das Warum. Dazu `Refs #<n>` und am Ende `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Gib auch Merge-Commits einen deutschen Text: `git merge <integrations-branch> -m "Merge <integrations-branch>: <worum es geht>"`.
-- Trag deine Änderung in `CHANGELOG.md` unter „Unveröffentlicht“ ein, im selben Commit wie die Änderung: eine Zeile unter „Neu“, „Geändert“ oder „Behoben“ (fehlende Unterüberschrift anlegen), aus Sicht der Leserin formuliert und mit der Ticket-Nummer, z. B. `(#35)`. So ist die nächste Version schon beschrieben, wenn sie fertig ist. Gibt es dort beim Merge einen Konflikt mit anderen Tickets, behalte alle Zeilen.
+- Trag deine Änderung in `CHANGELOG.md` unter „Unveröffentlicht“ ein, im selben Commit wie die Änderung: eine Zeile unter der passenden Unterüberschrift „Neu“, „Geändert“ oder „Behoben“ (sie stehen bereit, auch leer), aus Sicht der Leserin formuliert und mit der Ticket-Nummer, z. B. `(#35)`. So ist die nächste Version schon beschrieben, wenn sie fertig ist.
+- `CHANGELOG.md` merget Git mit `merge=union` (`.gitattributes`): Es gibt keinen Konflikt, beide Seiten bleiben erhalten. Sieh den Abschnitt „Unveröffentlicht“ nach jedem Merge durch: Doppelte Zeilen oder Unterüberschriften und Zeilen, die unter die falsche Unterüberschrift gerutscht sind, räumst du auf.
 - Die Version hebst du nicht an. Das macht die Sitzung, die integriert, wenn die zusammenhängende Arbeit fertig ist.
 
 ## 4. Vor dem Bericht
@@ -31,7 +32,7 @@ Liegt der Integrations-Branch woanders, geht `git checkout -B <eigener-branch> <
   - `mattpocock-skills:code-review` prüft gegen Konventionen und Auftrag. Es läuft immer.
   - Das eingebaute `code-review` sucht nach Fehlern im Verhalten. Ändert der Diff Anwendungscode, ist es Pflicht und läuft auf Stufe high; bei reinen Doku- oder Test-Änderungen entfällt es.
 - Hast du nach einem Review noch etwas geändert, lass den Nachbesserungs-Diff von dem Review noch einmal prüfen, das die Befunde geliefert hat. Erst danach committest du ihn und lässt die Prüfungen unten laufen.
-- Lass alle Prüfungen wie in der CI laufen: `uv run ruff check .`, `uv run ruff format --check .`, `uv run pyright` und `uv run pytest`.
+- Lass alle Prüfungen wie in der CI laufen: `uv run ruff check .`, `uv run ruff format --check .`, `uv run pyright`, `uv run pytest` und den Demo-Lauf als Smoke-Test `uv run python -m jobagent.main --demo`.
 - Ob der Demo-Lauf zeichengleich ausgibt, prüft `tests/test_demo_snapshot.py` gegen den Snapshot `tests/fixtures/demo_report.md`. Vergleiche nicht per Hand. Ändert das Ticket den Report gewollt, schreib den Snapshot mit `JOBAGENT_UPDATE_SNAPSHOT=1 uv run pytest tests/test_demo_snapshot.py` neu und committe seinen Diff mit.
 - Merge die aktuelle Spitze des Integrations-Branch in deinen Branch und lass die Prüfungen danach noch einmal laufen.
 - Push nichts und schließ keine Issues. Beides macht die Sitzung, die integriert (`docs/agents/issue-tracker.md`).
