@@ -25,6 +25,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 - Die Score-Skala 1 bis 5 ist an einer Stelle festgelegt; Bewertung,
   Rückmeldung und Report richten sich danach, und der Bewerbungsstatus kommt
   typisiert aus dem Store in den Report (#41)
+- Scheitern alle Bewertungen eines Laufs auf dieselbe Art, nennt der Report
+  bei den unbewerteten Anzeigen die Ursache: „API-Key fehlt“, „Sprachmodell
+  nicht erreichbar“ oder „Antworten unbrauchbar“ (#39)
 
 ### Behoben
 - Die Rückmeldung lehnt `--am` beim eigenen Score und eine riesige Zahl als

@@ -13,7 +13,7 @@ import pytest
 
 from jobagent import demo, main
 from jobagent.job_ad import JobAd
-from jobagent.language_model import AnthropicLanguageModel
+from jobagent.language_model import AnthropicLanguageModel, LanguageModelFailure
 from jobagent.score import score_job_ad
 
 
@@ -69,7 +69,9 @@ def test_demo_language_model_answers_pass_the_assessment_check() -> None:
 def test_demo_language_model_has_no_answer_for_unknown_job_ad() -> None:
     unknown = JobAd("x-1", "Unbekannte Stelle", "Niemand GmbH", None, "https://example.com/x")
 
-    assert score_job_ad(unknown, demo.SEARCH_PROFILE, demo.DemoLanguageModel()) is None
+    assessment = score_job_ad(unknown, demo.SEARCH_PROFILE, demo.DemoLanguageModel())
+
+    assert assessment is LanguageModelFailure.UNUSABLE_ANSWER
 
 
 def test_demo_run_prints_report_without_creating_anything(

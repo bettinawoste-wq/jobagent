@@ -12,7 +12,7 @@ import pytest
 
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModel, LanguageModelError
+from jobagent.language_model import LanguageModel, LanguageModelError, LanguageModelFailure
 from jobagent.position import position_key
 from jobagent.report import ReportError
 from jobagent.run import run
@@ -320,6 +320,71 @@ def test_run_reports_unassessed_job_ads_under_source_status(db: Store, output_di
         "## Quellen\n- Bundesagentur für Arbeit: 4 Anzeigen\n\n"
         "3 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n\n"
     )
+
+
+@pytest.mark.parametrize(
+    ("failure", "cause"),
+    [
+        (LanguageModelFailure.MISSING_API_KEY, "API-Key fehlt"),
+        (LanguageModelFailure.UNREACHABLE, "Sprachmodell nicht erreichbar"),
+        (LanguageModelFailure.UNUSABLE_ANSWER, "Antworten unbrauchbar"),
+    ],
+)
+def test_run_names_cause_when_all_assessments_fail_alike(
+    db: Store, output_dir: Path, failure: LanguageModelFailure, cause: str
+) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(LanguageModelError("weg", failure))
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert f"\n2 unbewertete Anzeigen ({cause}) – der nächste Lauf versucht es erneut.\n" in content
+
+
+def test_run_names_cause_when_some_answers_fail_the_check(db: Store, output_dir: Path) -> None:
+    # Eine Antwort ohne Pflichtschlüssel scheitert am Seam, eine mit Score 7 erst in der
+    # Bewertung: Beides sind unbrauchbare Antworten.
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel({"score": 4}, assessment_answer(score=7))
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n2 unbewertete Anzeigen (Antworten unbrauchbar) – der nächste Lauf" in content
+
+
+def test_run_names_no_cause_for_mixed_failures(db: Store, output_dir: Path) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(
+        LanguageModelError("weg", LanguageModelFailure.UNREACHABLE),
+        LanguageModelError("kaputt", LanguageModelFailure.UNUSABLE_ANSWER),
+    )
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n2 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n" in content
+
+
+def test_run_names_no_cause_when_only_some_job_ads_are_unassessed(
+    db: Store, output_dir: Path
+) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(
+        LanguageModelError("weg", LanguageModelFailure.MISSING_API_KEY), assessment_answer()
+    )
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n1 unbewertete Anzeige – der nächste Lauf versucht es erneut.\n" in content
+
+
+def test_run_names_no_cause_when_an_unexpected_error_is_among_failures(
+    db: Store, output_dir: Path
+) -> None:
+    source = FakeSource([fake_job_ad("a-1")])
+
+    content = _run(db, output_dir, source, model=LanguageModelWithBug("Stelle a-1"))
+
+    assert "\n1 unbewertete Anzeige – der nächste Lauf versucht es erneut.\n" in content
 
 
 def test_run_without_unassessed_job_ads_has_no_such_line(db: Store, output_dir: Path) -> None:

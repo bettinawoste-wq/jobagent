@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TextIO
 
 from jobagent.job_ad import JobAd
+from jobagent.language_model import LanguageModelFailure
 from jobagent.score import SCORE_SCALE, Assessment
 from jobagent.search_window import SearchWindow
 from jobagent.store import ApplicationStatus, FollowUpReminder
@@ -28,6 +29,26 @@ class SourceStatus:
     name: str
     count: int
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Unassessed:
+    """Die unbewerteten Anzeigen eines Laufs.
+
+    `cause` ist gesetzt, wenn alle Bewertungen des Laufs auf dieselbe Art gescheitert sind.
+    """
+
+    count: int = 0
+    cause: LanguageModelFailure | None = None
+
+
+_NONE_UNASSESSED = Unassessed()
+
+_CAUSES = {
+    LanguageModelFailure.MISSING_API_KEY: "API-Key fehlt",
+    LanguageModelFailure.UNREACHABLE: "Sprachmodell nicht erreichbar",
+    LanguageModelFailure.UNUSABLE_ANSWER: "Antworten unbrauchbar",
+}
 
 
 class ReportError(Exception):
@@ -71,7 +92,7 @@ def write_report(
     applications: Mapping[str, AlreadyApplied] | None = None,
     follow_ups: Sequence[FollowUpReminder] = (),
     open_feedback: int = 0,
-    unassessed: int = 0,
+    unassessed: Unassessed = _NONE_UNASSESSED,
     search_window: SearchWindow | None = None,
 ) -> WrittenReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
@@ -188,11 +209,13 @@ def _source_line(source: SourceStatus) -> str:
     return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
 
 
-def _unassessed_line(unassessed: int) -> str:
-    if not unassessed:
+def _unassessed_line(unassessed: Unassessed) -> str:
+    if not unassessed.count:
         return ""
-    count = "1 unbewertete Anzeige" if unassessed == 1 else f"{unassessed} unbewertete Anzeigen"
-    return f"{count} – der nächste Lauf versucht es erneut.\n\n"
+    n = unassessed.count
+    count = "1 unbewertete Anzeige" if n == 1 else f"{n} unbewertete Anzeigen"
+    cause = f" ({_CAUSES[unassessed.cause]})" if unassessed.cause else ""
+    return f"{count}{cause} – der nächste Lauf versucht es erneut.\n\n"
 
 
 def _profile_hint(open_feedback: int) -> str:

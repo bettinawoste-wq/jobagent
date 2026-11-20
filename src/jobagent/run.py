@@ -12,7 +12,7 @@ from pathlib import Path
 from jobagent import report
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModel
+from jobagent.language_model import LanguageModel, LanguageModelFailure
 from jobagent.position import position_key
 from jobagent.report import SourceStatus
 from jobagent.score import Assessment, score_job_ad
@@ -46,8 +46,9 @@ def run(
     nichts und lässt keinen Report liegen: Die Treffer kommen im nächsten Lauf wieder.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
-    new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile)
-    complete = unassessed == 0 and not any(status.errors for status in source_status)
+    new_matches, failures = _new_matches(db, job_ads, language_model, search_profile)
+    unassessed = report.Unassessed(len(failures), _common_cause(new_matches, failures))
+    complete = not failures and not any(status.errors for status in source_status)
     return _report_and_remember(
         db,
         new_matches,
@@ -65,7 +66,7 @@ def _report_and_remember(
     db: Store,
     new_matches: list[report.Match],
     source_status: list[SourceStatus],
-    unassessed: int,
+    unassessed: report.Unassessed,
     config: Config,
     today: date,
     output_dir: Path,
@@ -123,7 +124,7 @@ def _write_report(
     db: Store,
     new_matches: list[report.Match],
     source_status: list[SourceStatus],
-    unassessed: int,
+    unassessed: report.Unassessed,
     applications: dict[str, report.AlreadyApplied],
     config: Config,
     today: date,
@@ -153,34 +154,44 @@ def _new_matches(
     job_ads: list[JobAd],
     language_model: LanguageModel,
     search_profile: str,
-) -> tuple[list[report.Match], int]:
-    """Bewertet die neuen Anzeigen; gibt die Treffer und die Zahl der unbewerteten zurück.
+) -> tuple[list[report.Match], list[LanguageModelFailure | None]]:
+    """Bewertet die neuen Anzeigen; gibt die Treffer zurück und je unbewerteter Anzeige,
+    woran ihre Bewertung scheiterte (None bei einem unerwarteten Fehler).
 
     Gemerkt werden die Treffer erst zusammen mit dem Report, siehe `_report_and_remember`.
     """
     matches: list[report.Match] = []
-    unassessed = 0
+    failures: list[LanguageModelFailure | None] = []
 
     for job_ad in job_ads:
         if not db.is_new(job_ad.id):
             continue
 
         assessment = _safe_score(job_ad, search_profile, language_model)
-        if assessment is None:
+        if not isinstance(assessment, Assessment):
             logger.warning(
                 "Anzeige unbewertet, der nächste Lauf versucht es erneut (anzeige=%r)", job_ad.id
             )
-            unassessed += 1
+            failures.append(assessment)
             continue
 
         matches.append((job_ad, assessment))
 
-    return matches, unassessed
+    return matches, failures
+
+
+def _common_cause(
+    matches: list[report.Match], failures: list[LanguageModelFailure | None]
+) -> LanguageModelFailure | None:
+    """Woran alle Bewertungen des Laufs scheiterten, wenn es bei allen dasselbe war."""
+    if matches or len(set(failures)) != 1:
+        return None
+    return failures[0]
 
 
 def _safe_score(
     job_ad: JobAd, search_profile: str, language_model: LanguageModel
-) -> Assessment | None:
+) -> Assessment | LanguageModelFailure | None:
     # Bekannte Fehler des Sprachmodells behandelt die Bewertung selbst. Dieses Netz fängt
     # z.B. einen Programmfehler in der Prüfung ab: Eine Bewertung darf den Lauf nie abbrechen.
     try:

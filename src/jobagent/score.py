@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModel, LanguageModelError
+from jobagent.language_model import LanguageModel, LanguageModelError, LanguageModelFailure
 
 logger = logging.getLogger(__name__)
 
@@ -81,24 +81,25 @@ def score_job_ad(
     job_ad: JobAd,
     search_profile: str,
     language_model: LanguageModel,
-) -> Assessment | None:
+) -> Assessment | LanguageModelFailure:
     """Bewertet eine Anzeige gegen das Suchprofil.
 
-    Gibt None zurück und loggt, wenn das Sprachmodell scheitert oder eine ungültige
-    Antwort liefert, statt den Lauf abzubrechen; die Anzeige bleibt dann unbewertet.
+    Scheitert das Sprachmodell oder liefert es eine ungültige Antwort, loggt sie das und
+    gibt statt einer Bewertung zurück, woran es lag, statt den Lauf abzubrechen; die
+    Anzeige bleibt dann unbewertet.
     """
     user_text = f"Suchprofil:\n{search_profile}\n\nStellenanzeige:\n{job_ad_as_text(job_ad)}"
     try:
         data = language_model.ask(_SYSTEM_PROMPT, user_text, _SCHEMA)
-    except LanguageModelError:
+    except LanguageModelError as error:
         logger.exception("Bewertung beim Sprachmodell fehlgeschlagen (anzeige=%r)", job_ad.id)
-        return None
+        return error.failure
 
     try:
         return _validate(data)
     except (KeyError, TypeError, ValueError):
         logger.exception("Ungültige Bewertungsantwort (anzeige=%r): %r", job_ad.id, data)
-        return None
+        return LanguageModelFailure.UNUSABLE_ANSWER
 
 
 def job_ad_as_text(job_ad: JobAd) -> str:

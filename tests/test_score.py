@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModelError
+from jobagent.language_model import LanguageModelError, LanguageModelFailure
 from jobagent.score import Assessment, score_job_ad
 from tests.fakes import FakeLanguageModel
 
@@ -48,7 +48,7 @@ def test_score_job_ad_replaces_lone_surrogates_in_answer() -> None:
 def test_score_job_ad_returns_assessment() -> None:
     assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(SCORE_FIXTURE))
 
-    assert assessment is not None
+    assert isinstance(assessment, Assessment)
     assert assessment.score == 4
     assert assessment.fits == SCORE_FIXTURE["passt"]
     assert assessment.misfits == []
@@ -72,15 +72,16 @@ def test_score_job_ad_asks_with_profile_job_ad_and_german_schema() -> None:
     assert request.schema["required"] == ["score", "passt", "passt_nicht", "luecken", "kurzfazit"]
 
 
-def test_score_job_ad_returns_none_on_language_model_error(
-    caplog: pytest.LogCaptureFixture,
+@pytest.mark.parametrize("failure", list(LanguageModelFailure))
+def test_score_job_ad_returns_failure_of_language_model(
+    failure: LanguageModelFailure, caplog: pytest.LogCaptureFixture
 ) -> None:
-    model = FakeLanguageModel(LanguageModelError("Netz weg"))
+    model = FakeLanguageModel(LanguageModelError("Netz weg", failure))
 
     with caplog.at_level("ERROR"):
         assessment = score_job_ad(_job_ad(), _PROFILE, model)
 
-    assert assessment is None
+    assert assessment is failure
     assert "fehlgeschlagen" in caplog.text
     assert "10001-1003353506-S" in caplog.text
 
@@ -92,24 +93,26 @@ def test_score_job_ad_returns_none_on_language_model_error(
         {**SCORE_FIXTURE, "passt": 123},
     ],
 )
-def test_score_job_ad_returns_none_on_invalid_response(
+def test_score_job_ad_returns_unusable_answer_on_invalid_response(
     invalid_data: dict, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level("ERROR"):
         assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(invalid_data))
 
-    assert assessment is None
+    assert assessment is LanguageModelFailure.UNUSABLE_ANSWER
     assert "Ungültige Bewertungsantwort" in caplog.text
 
 
-def test_score_job_ad_returns_none_without_required_key(caplog: pytest.LogCaptureFixture) -> None:
+def test_score_job_ad_returns_unusable_answer_without_required_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     # Fehlt ein Pflichtschlüssel des Schemas, scheitert schon das Sprachmodell am Seam.
     data = {k: v for k, v in SCORE_FIXTURE.items() if k != "kurzfazit"}
 
     with caplog.at_level("ERROR"):
         assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(data))
 
-    assert assessment is None
+    assert assessment is LanguageModelFailure.UNUSABLE_ANSWER
     assert "fehlgeschlagen" in caplog.text
 
 
@@ -122,7 +125,7 @@ def test_score_job_ad_accepts_string_instead_of_list() -> None:
 
     assessment = score_job_ad(_job_ad(), _PROFILE, FakeLanguageModel(data))
 
-    assert assessment is not None
+    assert isinstance(assessment, Assessment)
     assert assessment.fits == ["München-Standort, Hybrid möglich"]
 
 

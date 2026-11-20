@@ -2,6 +2,7 @@
 
 import json
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Protocol, cast
 
 import anthropic
@@ -16,8 +17,25 @@ _TOOL_NAME = "antwort_abgeben"
 _TOOL_ANNOTATIONS = ("title", "description")
 
 
+class LanguageModelFailure(Enum):
+    """Woran eine Frage an das Sprachmodell gescheitert ist."""
+
+    MISSING_API_KEY = "missing_api_key"
+    UNREACHABLE = "unreachable"
+    UNUSABLE_ANSWER = "unusable_answer"
+
+
 class LanguageModelError(Exception):
-    """Das Sprachmodell hat keine brauchbare Antwort geliefert, gleich aus welchem Grund."""
+    """Das Sprachmodell hat keine brauchbare Antwort geliefert, gleich aus welchem Grund.
+
+    Woran es lag, sagt ailure; ohne Angabe war die Antwort unbrauchbar.
+    """
+
+    def __init__(
+        self, message: str, failure: LanguageModelFailure = LanguageModelFailure.UNUSABLE_ANSWER
+    ) -> None:
+        super().__init__(message)
+        self.failure = failure
 
 
 class LanguageModel(Protocol):
@@ -55,10 +73,17 @@ class AnthropicLanguageModel[Response](ABC):
             if self._client is None:
                 self._client = anthropic.Anthropic()  # einmal je Instanz, nicht je Frage
             response = self._send(self._client, system, text, schema)
-        except (anthropic.AnthropicError, TypeError) as error:
-            # TypeError: So meldet das SDK einen fehlenden ANTHROPIC_API_KEY, schon beim
-            # Aufbau der Anfrage und nicht als AnthropicError.
-            raise LanguageModelError(f"Anthropic-API-Anfrage fehlgeschlagen: {error}") from error
+        except TypeError as error:
+            # So meldet das SDK einen fehlenden ANTHROPIC_API_KEY, schon beim Aufbau der
+            # Anfrage und nicht als AnthropicError.
+            raise LanguageModelError(
+                f"Anthropic-API-Anfrage fehlgeschlagen: {error}",
+                LanguageModelFailure.MISSING_API_KEY,
+            ) from error
+        except anthropic.AnthropicError as error:
+            raise LanguageModelError(
+                f"Anthropic-API-Anfrage fehlgeschlagen: {error}", LanguageModelFailure.UNREACHABLE
+            ) from error
 
         # Das Auswerten steht außerhalb des try, damit ein Programmfehler dabei nicht
         # wie ein Fehler der API aussieht.
