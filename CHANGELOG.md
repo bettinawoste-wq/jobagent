@@ -13,6 +13,10 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 - Typprüfung mit pyright im Modus „standard“ über `src/` und `tests/`, lokal per
   `uv run pyright` und als eigener Schritt in der CI (#36)
 
+### Geändert
+
+### Behoben
+
 ## 0.6.0 – 2026-11-15
 
 ### Neu
