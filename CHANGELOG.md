@@ -17,9 +17,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 
 ### Behoben
 - Profil-Vorschlag: Schlägt das Sprachmodell dieselbe Änderung mehrfach vor, gilt
-  sie nur einmal und die Wiederholung wird als übersprungen angezeigt; ob ein
-  Auszug genau einmal vorkommt, prüft der Vorschlag am Suchprofil vor dem
-  Vorschlag (#42)
+  sie nur einmal und die Wiederholung wird als übersprungen angezeigt. Auszüge
+  werden im Suchprofil vor dem Profil-Vorschlag gesucht; eine Änderung, deren
+  Auszug sich mit einer anderen überschneidet, wird ebenfalls übersprungen (#42)
 
 ## 0.6.0 – 2026-11-15
 

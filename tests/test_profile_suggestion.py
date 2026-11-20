@@ -192,7 +192,7 @@ def test_apply_changes_replaces_exactly_the_excerpt() -> None:
     result = apply_changes("a\nb\nc\n", [_change("b", "B")])
 
     assert result == AppliedChanges(
-        "a\nB\nc\n", applied=[_change("b", "B")], unusable=[], duplicates=[]
+        "a\nB\nc\n", applied=[_change("b", "B")], unusable=[], duplicates=[], overlapping=[]
     )
 
 
@@ -200,7 +200,7 @@ def test_apply_changes_skips_missing_excerpt() -> None:
     change = _change("fehlt", "x")
 
     assert apply_changes("a\n", [change]) == AppliedChanges(
-        "a\n", applied=[], unusable=[change], duplicates=[]
+        "a\n", applied=[], unusable=[change], duplicates=[], overlapping=[]
     )
 
 
@@ -208,7 +208,7 @@ def test_apply_changes_skips_ambiguous_excerpt() -> None:
     change = _change("a", "x")
 
     assert apply_changes("a a\n", [change]) == AppliedChanges(
-        "a a\n", applied=[], unusable=[change], duplicates=[]
+        "a a\n", applied=[], unusable=[change], duplicates=[], overlapping=[]
     )
 
 
@@ -216,7 +216,7 @@ def test_apply_changes_skips_empty_excerpt() -> None:
     change = _change("", "x")
 
     assert apply_changes("a\n", [change]) == AppliedChanges(
-        "a\n", applied=[], unusable=[change], duplicates=[]
+        "a\n", applied=[], unusable=[change], duplicates=[], overlapping=[]
     )
 
 
@@ -248,11 +248,55 @@ def test_apply_changes_checks_excerpt_against_profile_before_suggestion() -> Non
     assert result.unusable == [later]
 
 
+def test_apply_changes_ignores_occurrences_created_by_earlier_changes() -> None:
+    # "b" kommt im Suchprofil genau einmal vor; dass "a b" ein zweites "b" bringt, zählt nicht.
+    result = apply_changes("a\nb\n", [_change("a", "a b"), _change("b", "B")])
+
+    assert result.text == "a b\nB\n"
+    assert result.unusable == []
+
+
+def test_apply_changes_skips_other_change_at_the_same_excerpt() -> None:
+    # Wie ein Duplikat mit leicht anderem neuen Text; angewandt stünde die Ergänzung doppelt.
+    second = _change("- Python", "- Python, gern FastAPI.")
+
+    result = apply_changes("- Python\n", [_change("- Python", "- Python, gern FastAPI"), second])
+
+    assert result.text == "- Python, gern FastAPI\n"
+    assert result.overlapping == [second]
+
+
+def test_apply_changes_skips_change_inside_an_earlier_excerpt() -> None:
+    inner = _change("foo", "qux")
+
+    result = apply_changes("foo bar\n", [_change("foo bar", "baz foo"), inner])
+
+    assert result.text == "baz foo\n"
+    assert result.overlapping == [inner]
+
+
+def test_apply_changes_skips_excerpt_that_overlaps_itself() -> None:
+    # "ja ja" steht an Position 8 und 11; str.count zählt nur eine davon.
+    change = _change("ja ja", "nein")
+
+    assert apply_changes("Remote: ja ja ja\n", [change]).unusable == [change]
+
+
+def test_apply_changes_reports_repeated_unusable_change_as_duplicate() -> None:
+    broken = _change("fehlt", "x")
+
+    result = apply_changes("a\n", [broken, broken])
+
+    assert result.unusable == [broken]
+    assert result.duplicates == [broken]
+
+
 def test_suggestion_asks_for_changes_and_model_errors() -> None:
     model = FakeLanguageModel(_suggestion())
 
     create_suggestion(_PROFILE, [_feedback()], model)
 
+    assert "zu einer Aenderung zusammen" in model.requests[0].system
     schema = model.requests[0].schema
     assert schema["required"] == ["aenderungen", "modellfehler"]
     assert schema["properties"]["aenderungen"]["items"]["required"] == ["alt", "neu", "grund"]
@@ -368,6 +412,22 @@ def test_duplicate_change_is_applied_once_and_shown_as_skipped(
     assert f"Übersprungen, doppelte Änderung: {_CHANGE['alt']}" in output.err
     assert "nicht eindeutig" not in output.err
     assert output.out.count("Mehrfach falsch eingeordnet") == 1
+
+
+def test_overlapping_change_is_shown_as_skipped(
+    db: Store, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    other = {**_CHANGE, "neu": _CHANGE["neu"] + ".", "grund": "Anders formuliert"}
+
+    decision = _decision(db, profile_path, FakeLanguageModel(_suggestion([_CHANGE, other])))
+
+    assert decision.accepted is not None
+    output = capsys.readouterr()
+    assert (
+        f"Übersprungen, überschneidet sich mit einer anderen Änderung: {_CHANGE['alt']} "
+        "(Anders formuliert)"
+    ) in output.err
+    assert "Anders formuliert" not in output.out
 
 
 def test_rejecting_keeps_profile_and_processes(db: Store, profile_path: Path) -> None:
