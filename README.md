@@ -262,7 +262,7 @@ auf der Konsole weiter, statt ältere Läufe zu verlieren.
 
 Startet ein Lauf, während noch einer läuft (etwa Zeitplan und Handstart), bricht der
 zweite mit einer Meldung und Exit-Code 1 ab, bevor er sucht oder bewertet. Die Sperre
-hängt an `jobagent.db.lock` neben der Datenbank und löst sich mit dem Ende des Laufs,
+hängt an `jobagent.db.runlock` neben der Datenbank und löst sich mit dem Ende des Laufs,
 auch nach einem Absturz; die Datei selbst darf liegen bleiben. Rückmeldung und
 Profil-Vorschlag sind währenddessen weiter möglich.
 

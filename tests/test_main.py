@@ -145,6 +145,10 @@ def _database_is_folder(folder: Path) -> None:
     (folder / "jobagent.db").mkdir()
 
 
+def _lock_file_is_folder(folder: Path) -> None:
+    (folder / "jobagent.db.runlock").mkdir()
+
+
 def _output_is_file(folder: Path) -> None:
     (folder / "output").write_text("kein Ordner", encoding="utf-8")
 
@@ -158,6 +162,7 @@ def _output_is_file(folder: Path) -> None:
         (_no_profile, "Fehler: Suchprofil profile.md nicht gefunden"),
         (_database_is_folder, "Fehler: Datenbank jobagent.db nicht nutzbar"),
         (_output_is_file, "Fehler: Report lässt sich nicht in output schreiben"),
+        (_lock_file_is_folder, "Fehler: Sperrdatei jobagent.db.runlock nicht nutzbar"),
     ],
 )
 def test_cli_aborts_with_message_and_exit_code_1(
@@ -503,7 +508,10 @@ main.main(sources=[WaitingSource()], language_model=FakeLanguageModel())
 
 @pytest.fixture
 def run_in_other_process(project: dict[str, Path], tmp_path: Path) -> Iterator[subprocess.Popen]:
-    """Ein Lauf in einem anderen Prozess, der gerade sucht, solange der Test läuft."""
+    """Ein Lauf in einem anderen Prozess, der gerade sucht, solange der Test läuft.
+
+    `project` legt vorher config.toml und profile.md in seinem Arbeitsordner an.
+    """
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join([str(_REPO / "src"), str(_REPO)])
     process = subprocess.Popen(

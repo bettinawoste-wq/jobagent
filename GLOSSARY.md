@@ -80,6 +80,11 @@ Ein Lauf, in dem jede Quelle fehlerfrei geliefert hat und keine Anzeige unbewert
 _Im Code_: `complete_run`
 _Avoid_: erfolgreicher Lauf, letzter Lauf
 
+**Sperre**:
+Der Schutz davor, dass zwei Läufe gleichzeitig arbeiten: Ein zweiter Lauf bricht ab, solange ein anderer sie hält. Sie liegt auf der Sperrdatei neben der Datenbank und löst sich mit dem Ende des Laufs, auch nach einem Absturz. Rückmeldung, Profil-Vorschlag und Demo-Lauf sperren nicht.
+_Im Code_: `RunLock`, Sperrdatei `jobagent.db.runlock`
+_Avoid_: Mutex
+
 **Demo-Lauf**:
 Ein Lauf mit erfundenen Anzeigen und vorgefertigten Bewertungen, der nichts aus dem Netz holt und nichts Persönliches liest oder speichert.
 _Im Code_: `demo_run`
