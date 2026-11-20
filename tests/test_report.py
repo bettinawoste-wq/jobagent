@@ -401,7 +401,6 @@ def test_without_open_feedback_no_hint(tmp_path: Path) -> None:
     ("window", "line"),
     [
         (SearchWindow(7, None, False), "Suchzeitraum: 7 Tage (erster Lauf)"),
-        (SearchWindow(None, None, False), "Suchzeitraum: unbegrenzt (erster Lauf)"),
         (
             SearchWindow(4, date(2026, 11, 15), False),
             "Suchzeitraum: 4 Tage (seit dem vollständigen Lauf vom 15.11.)",

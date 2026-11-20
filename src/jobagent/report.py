@@ -178,10 +178,7 @@ def _report_error(output_dir: Path, error: OSError) -> ReportError:
 def _search_window_line(window: SearchWindow | None, day: date) -> str:
     if window is None:
         return ""
-    if window.days is None:
-        length = "unbegrenzt"
-    else:
-        length = "1 Tag" if window.days == 1 else f"{window.days} Tage"
+    length = "1 Tag" if window.days == 1 else f"{window.days} Tage"
     if window.since is None:
         reason = "erster Lauf"
     elif window.since > day:  # etwa nach einer verstellten Uhr

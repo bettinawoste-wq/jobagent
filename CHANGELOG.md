@@ -70,7 +70,8 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
   die Grenze, steht „Ergebnisse abgeschnitten“ im Quellenstatus, und der Lauf
   zählt nicht als vollständig, statt Anzeigen still zu verlieren
 - Der Suchzeitraum wächst nie über 100 Tage, mehr nimmt die Bundesagentur nicht
-  an; `veroeffentlichtseit` muss zwischen 1 und 100 liegen. Ein gemerkter
+  an; ohne `veroeffentlichtseit` sind es auch beim ersten Lauf 100 statt
+  unbegrenzt, und `veroeffentlichtseit` muss zwischen 1 und 100 liegen. Ein gemerkter
   vollständiger Lauf in der Zukunft (verstellte Uhr) zählt nicht, dann gilt der
   Startwert, und der Report nennt den Lauf statt „erster Lauf“
 - Der Suchzeitraum im Report nennt das Datum des letzten vollständigen Laufs mit

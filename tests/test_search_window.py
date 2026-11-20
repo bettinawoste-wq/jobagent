@@ -12,8 +12,16 @@ def test_first_run_searches_the_configured_days() -> None:
     assert search_window(None, THURSDAY, max_days=7) == SearchWindow(7, since=None, capped=False)
 
 
-def test_first_run_without_configured_days_has_no_limit() -> None:
-    assert search_window(None, THURSDAY, max_days=None) == SearchWindow(None, None, False)
+def test_first_run_without_configured_days_searches_up_to_the_upper_limit() -> None:
+    # Ohne Grenze holten die Quellen jedes Mal mehr, als ihre Seitengrenze erlaubt, und
+    # kein Lauf würde je vollständig.
+    assert search_window(None, THURSDAY, max_days=None) == SearchWindow(100, None, False)
+
+
+def test_complete_run_in_the_future_without_configured_days_uses_the_upper_limit() -> None:
+    future = date(2026, 11, 25)
+
+    assert search_window(future, THURSDAY, max_days=None) == SearchWindow(100, future, False)
 
 
 def test_gap_of_several_days_reaches_back_to_last_complete_run() -> None:
