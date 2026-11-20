@@ -329,6 +329,68 @@ def test_search_follows_the_total_count_when_the_api_sends_smaller_pages() -> No
     assert len(requests) == 3
 
 
+def _pages_handler(pages: list[list[dict]], total: int, requests: list[httpx.Request]):
+    """Handler, der feste Seiten mit der Gesamtzahl `total` liefert, danach leere."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != _SEARCH_PATH:
+            return httpx.Response(200, json={})
+        requests.append(request)
+        page = int(request.url.params["page"])
+        entries = pages[page - 1] if page <= len(pages) else []
+        return httpx.Response(200, json={"ergebnisliste": entries, "maxErgebnisse": total})
+
+    return handler
+
+
+def test_search_ends_at_an_empty_page_if_the_total_count_is_too_high() -> None:
+    numbered = [_numbered_entry(number) for number in range(1, 116)]
+    pages = [numbered[:50], numbered[50:100], numbered[100:]]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler(pages, 120, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 115
+    assert result.errors == []
+    assert len(requests) == 4
+
+
+def test_search_goes_on_after_a_short_later_page_while_the_total_is_not_reached() -> None:
+    # Verschwinden zwischen zwei Abrufen Anzeigen, ist eine Seite kürzer, aber nicht die letzte.
+    numbered = [_numbered_entry(number) for number in range(1, 141)]
+    pages = [numbered[:50], numbered[50:98], numbered[98:140]]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler(pages, 140, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 140
+    assert result.errors == []
+
+
+def test_search_ends_at_a_page_that_only_repeats_job_ads() -> None:
+    # Wiederholt die API für Seiten hinter dem Ende die letzte, ist nichts abgeschnitten.
+    numbered = [_numbered_entry(number) for number in range(1, 31)]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler([numbered] * 5, 120, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 30
+    assert result.errors == []
+    assert len(requests) == 2
+
+
+def test_search_counts_job_ads_repeated_across_pages_only_once() -> None:
+    # Verschieben sich die Ergebnisse zwischen zwei Abrufen, wiederholt die API Einträge.
+    numbered = [_numbered_entry(number) for number in range(1, 101)]
+    pages = [numbered[:50], numbered[40:90], numbered[90:]]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler(pages, 100, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 100
+    assert result.errors == []
+
+
 def test_search_stops_at_a_short_page_without_total_count() -> None:
     requests: list[httpx.Request] = []
 

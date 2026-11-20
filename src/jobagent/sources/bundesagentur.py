@@ -84,7 +84,7 @@ class BundesagenturSource:
         """
         job_ads: list[JobAd] = []
         errors: list[str] = []
-        fetched = 0
+        seen: set[str] = set()
         for page in range(1, _MAX_PAGES + 1):
             try:
                 result = self._search_page(client, keyword, page)
@@ -93,8 +93,9 @@ class BundesagenturSource:
                 break
             job_ads.extend(result.converted.job_ads)
             errors.extend(result.converted.errors(keyword))
-            fetched += result.entries
-            if _last_page(result, fetched):
+            new = set(result.ids) - seen
+            seen |= new
+            if _last_page(result, len(seen), brought_new=bool(new)):
                 break
         else:
             errors.append(f"{keyword}: {truncated_reason(_MAX_PAGES)}")
@@ -127,31 +128,33 @@ class BundesagenturSource:
                 entries, _to_job_ad, what="Jobsuche-Antwort", where=f"was={keyword!r}"
             )
         total = data.get("maxErgebnisse") if isinstance(data, dict) else None
-        return _Page(converted, len(entries), _count_or_none(total))
+        ids = tuple(entry["referenznummer"] for entry in entries)
+        return _Page(converted, ids, _count_or_none(total))
 
 
 @dataclass(frozen=True, slots=True)
 class _Page:
-    """Eine Ergebnisseite: ihre Anzeigen, die Zahl ihrer Einträge und, falls die API sie
-    nennt, die Gesamtzahl der Ergebnisse (`maxErgebnisse`)."""
+    """Eine Ergebnisseite: ihre Anzeigen, die Referenznummern aller ihrer Einträge und,
+    falls die API sie nennt, die Gesamtzahl der Ergebnisse (`maxErgebnisse`)."""
 
     converted: ConvertedEntries
-    entries: int
+    ids: tuple[str, ...]
     total: int | None
 
 
-def _last_page(page: _Page, fetched: int) -> bool:
-    """Ob nach dieser Seite nichts mehr kommt; `fetched` zählt die Einträge bis hier.
+def _last_page(page: _Page, seen: int, *, brought_new: bool) -> bool:
+    """Ob nach dieser Seite nichts mehr kommt; `seen` zählt die verschiedenen Einträge bis hier.
 
-    Nennt die API die Gesamtzahl, zählt nur sie: Hält sie sich nicht an `size`, ist eine
-    kürzere Seite noch nicht die letzte. Eine leere Seite beendet das Blättern immer.
-    Ohne Gesamtzahl ist eine nicht volle Seite die letzte.
+    Nennt die API die Gesamtzahl, endet das Blättern, sobald so viele verschiedene Einträge
+    da sind; eine kürzere Seite allein beendet es dann nicht, denn die API muss sich nicht
+    an `size` halten. Ohne Gesamtzahl ist eine nicht volle Seite die letzte. Eine Seite
+    ohne neue Einträge (leer oder nur Wiederholungen) beendet das Blättern immer.
     """
-    if page.entries == 0:
+    if not brought_new:
         return True
     if page.total is not None:
-        return fetched >= page.total
-    return page.entries < _PAGE_SIZE
+        return seen >= page.total
+    return len(page.ids) < _PAGE_SIZE
 
 
 def _count_or_none(value: object) -> int | None:

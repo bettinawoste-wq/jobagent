@@ -68,7 +68,9 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 - Die Bundesagentur blättert je Suchbegriff durch alle Ergebnisseiten statt nur
   die erste zu holen, höchstens 5 Seiten. Erreicht sie oder Arbeitnow (10 Seiten)
   die Grenze, steht „Ergebnisse abgeschnitten“ im Quellenstatus, und der Lauf
-  zählt nicht als vollständig, statt Anzeigen still zu verlieren
+  zählt nicht als vollständig, statt Anzeigen still zu verlieren. Das Blättern
+  richtet sich auch nach der Gesamtzahl `maxErgebnisse` der API und zählt
+  wiederholte Anzeigen nur einmal
 - Der Suchzeitraum wächst nie über 100 Tage, mehr nimmt die Bundesagentur nicht
   an; ohne `veroeffentlichtseit` sind es auch beim ersten Lauf 100 statt
   unbegrenzt, und `veroeffentlichtseit` muss zwischen 1 und 100 liegen. Ein gemerkter
