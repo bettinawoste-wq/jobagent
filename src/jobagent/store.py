@@ -158,6 +158,16 @@ class _Connection:
         with self._errors():
             return self._raw.execute(sql, parameters).fetchone()
 
+    def fetch_value(self, sql: str, parameters: tuple = ()) -> object:
+        """Der Wert einer Abfrage, die genau eine Zeile liefert, etwa mit COUNT oder MAX.
+
+        Kommt doch keine Zeile, ist die Datenbank nicht so, wie der Store sie kennt.
+        """
+        row = self.fetchone(sql, parameters)
+        if row is None:
+            raise StoreError(f"Datenbank {self._path} nicht nutzbar: Abfrage ohne Ergebnis")
+        return row[0]
+
     def fetchall(self, sql: str, parameters: tuple = ()) -> list[tuple]:
         with self._errors():
             return self._raw.execute(sql, parameters).fetchall()
@@ -300,9 +310,9 @@ class Store:
 
     def last_complete_run(self) -> date | None:
         """Tag des letzten vollständigen Laufs; None, wenn es noch keinen gab."""
-        # MAX liefert immer genau eine Zeile, ohne vollständigen Lauf mit NULL.
-        (day,) = cast(tuple, self._conn.fetchone("SELECT MAX(datum) FROM vollstaendige_laeufe"))
-        return date.fromisoformat(day) if day else None
+        # Ohne vollständigen Lauf liefert MAX NULL.
+        day = self._conn.fetch_value("SELECT MAX(datum) FROM vollstaendige_laeufe")
+        return date.fromisoformat(cast(str, day)) if day else None
 
     # Bewerbungen
 
@@ -425,11 +435,8 @@ class Store:
 
     def count_open_feedback(self) -> int:
         """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
-        # COUNT(*) liefert immer genau eine Zeile; fetchone ist nur allgemein optional typisiert.
-        (count,) = cast(
-            tuple, self._conn.fetchone("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
-        )
-        return count
+        count = self._conn.fetch_value("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
+        return cast(int, count)
 
     def mark_feedback_processed(self, job_ad_ids: list[str]) -> None:
         self._conn.executemany(
