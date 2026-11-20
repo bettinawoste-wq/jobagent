@@ -14,6 +14,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   `uv run pyright` und als eigener Schritt in der CI (#36)
 
 ### Geändert
+- `config.toml` wird streng geprüft: Unbekannte Abschnitte und Schlüssel brechen
+  das Laden mit einem Vorschlag für den nächstliegenden Namen ab, falsche
+  Werttypen mit dem erwarteten Typ; alle Fehler erscheinen in einer Meldung (#40)
 
 ### Behoben
 

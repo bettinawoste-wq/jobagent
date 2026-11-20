@@ -170,9 +170,11 @@ nachfassen_ab_tag = 14
 nachfassen_bis_tag = 28
 ```
 
-Fehlende Werte behalten ihren Standard. Das alte flache Format ohne
-Abschnitte wird nicht mehr gelesen; der Lauf nennt dann den neuen Platz
-jedes alten Schlüssels.
+Fehlende Werte behalten ihren Standard. Unbekannte Abschnitte und Schlüssel
+oder Werte vom falschen Typ brechen den Lauf ab; die Meldung nennt alle Fehler
+der Datei auf einmal und schlägt bei Tippfehlern den gemeinten Namen vor. Das
+alte flache Format ohne Abschnitte wird nicht mehr gelesen; der Lauf nennt
+dann den neuen Platz jedes alten Schlüssels.
 
 ## Verwenden
 
