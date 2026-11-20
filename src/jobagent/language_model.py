@@ -16,25 +16,33 @@ _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _TOOL_NAME = "antwort_abgeben"
 _TOOL_ANNOTATIONS = ("title", "description")
 _MISSING_API_KEY_MESSAGE = "Could not resolve authentication method"
+_UNREACHABLE_ERRORS = (
+    anthropic.APIConnectionError,  # samt APITimeoutError
+    anthropic.RequestTimeoutError,  # 408
+    anthropic.RateLimitError,  # 429
+    # 5xx samt überlastet; auch die seltenen 5xx, hinter denen eine dauerhafte
+    # Einstellung beim Anbieter steckt, gelten bewusst als nicht erreichbar.
+    anthropic.InternalServerError,
+)
 
 
 class LanguageModelFailure(Enum):
     """Woran eine Frage an das Sprachmodell gescheitert ist."""
 
     MISSING_API_KEY = "missing_api_key"
-    UNREACHABLE = "unreachable"  # keine Verbindung, überlastet oder Störung beim Anbieter
+    UNREACHABLE = "unreachable"  # keine Verbindung, Zeitüberschreitung, überlastet, Störung
     UNUSABLE_ANSWER = "unusable_answer"
-    OTHER = "other"  # z.B. Key ungültig oder Modell unbekannt; der Report nennt keine Ursache
+    OTHER = "other"  # z.B. Key ungültig, Modell unbekannt oder Ausgabenlimit erreicht
 
 
 class LanguageModelError(Exception):
     """Das Sprachmodell hat keine brauchbare Antwort geliefert, gleich aus welchem Grund.
 
-    Woran es lag, sagt `failure`; ohne Angabe war die Antwort unbrauchbar.
+    Woran es lag, sagt `failure`; ohne Angabe ist es ein sonstiger Fehler.
     """
 
     def __init__(
-        self, message: str, failure: LanguageModelFailure = LanguageModelFailure.UNUSABLE_ANSWER
+        self, message: str, failure: LanguageModelFailure = LanguageModelFailure.OTHER
     ) -> None:
         super().__init__(message)
         self.failure = failure
@@ -44,10 +52,10 @@ class LanguageModel(Protocol):
     def ask(self, system: str, text: str, schema: dict) -> dict:
         """Fragt das Sprachmodell und liefert seine Antwort als Daten nach `schema`.
 
-        Wirft nur `LanguageModelError`, nie einen Fehler des SDK dahinter; dessen `failure`
-        sagt, woran die Frage scheiterte. Jede Umsetzung gibt ihre Antwort durch
-        `with_required_keys`: Pflichtschlüssel sind da, und Texte enthalten keine
-        einzelnen Surrogate.
+        Wirft nur `LanguageModelError`, nie einen Fehler des SDK dahinter; `failure` des
+        `LanguageModelError` sagt, woran die Frage scheiterte. Jede Umsetzung gibt ihre
+        Antwort durch `with_required_keys`: Pflichtschlüssel sind da, und Texte enthalten
+        keine einzelnen Surrogate.
         """
         ...
 
@@ -93,7 +101,7 @@ class AnthropicLanguageModel[Response](ABC):
 
     @abstractmethod
     def _answer_from(self, response: Response) -> dict:
-        """Liest die Daten aus der Antwort; wirft `LanguageModelError`, wenn das nicht geht."""
+        """Liest die Daten aus der Antwort; wirft sonst `_unusable_answer(...)`."""
 
 
 class AnthropicToolLanguageModel(AnthropicLanguageModel[Message]):
@@ -150,40 +158,44 @@ def _failure_of(error: Exception) -> LanguageModelFailure:
         if _MISSING_API_KEY_MESSAGE in str(error):
             return LanguageModelFailure.MISSING_API_KEY
         return LanguageModelFailure.OTHER
-    if isinstance(
-        error,
-        (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError),
-    ):
+    if isinstance(error, anthropic.EnforcedSpendLimitReachedError):
+        # Ein 429 wie RateLimitError, aber bis jemand das Limit hebt, scheitert jeder Lauf.
+        return LanguageModelFailure.OTHER
+    if isinstance(error, _UNREACHABLE_ERRORS):
         return LanguageModelFailure.UNREACHABLE
     return LanguageModelFailure.OTHER
+
+
+def _unusable_answer(message: str) -> LanguageModelError:
+    return LanguageModelError(message, LanguageModelFailure.UNUSABLE_ANSWER)
 
 
 def _tool_input_from(response: Message) -> dict:
     if response.stop_reason != "tool_use":
         # z.B. max_tokens: Der Werkzeug-Input ist dann womöglich abgeschnitten, auch wenn
         # alle Pflichtschlüssel schon drinstehen.
-        raise LanguageModelError(
+        raise _unusable_answer(
             f"Keine vollständige Werkzeug-Antwort (stop_reason={response.stop_reason!r})"
         )
     data = next((block.input for block in response.content if block.type == "tool_use"), None)
     if data is None:
-        raise LanguageModelError("Antwort enthält keinen Werkzeug-Aufruf")
+        raise _unusable_answer("Antwort enthält keinen Werkzeug-Aufruf")
     return data
 
 
 def _json_object_from(response: BetaMessage) -> dict:
     if response.stop_reason != "end_turn":
         # z.B. max_tokens oder refusal: Der Text ist dann abgeschnitten oder fehlt.
-        raise LanguageModelError(f"Antwort unvollständig (stop_reason={response.stop_reason!r})")
+        raise _unusable_answer(f"Antwort unvollständig (stop_reason={response.stop_reason!r})")
     text = next((block.text for block in response.content if block.type == "text"), None)
     if text is None:
-        raise LanguageModelError("Antwort enthält keinen Text")
+        raise _unusable_answer("Antwort enthält keinen Text")
     try:
         data = json.loads(text)
     except (ValueError, RecursionError) as error:  # RecursionError: sehr tief verschachtelt
-        raise LanguageModelError(f"Antwort ist kein JSON: {text!r}") from error
+        raise _unusable_answer(f"Antwort ist kein JSON: {text!r}") from error
     if not isinstance(data, dict):
-        raise LanguageModelError(f"Antwort ist kein JSON-Objekt: {text!r}")
+        raise _unusable_answer(f"Antwort ist kein JSON-Objekt: {text!r}")
     return data
 
 
@@ -210,14 +222,14 @@ def with_required_keys(schema: dict, data: dict) -> dict:
     try:
         return _checked(schema, data)
     except RecursionError as error:  # sehr tief verschachtelt, wie in _json_object_from
-        raise LanguageModelError("Antwort ist zu tief verschachtelt") from error
+        raise _unusable_answer("Antwort ist zu tief verschachtelt") from error
 
 
 def _checked(schema: dict, data: dict) -> dict:
     # Auch repr und Bereinigung gehen rekursiv durch die Antwort, daher alles im try oben.
     if not isinstance(data, dict):
-        raise LanguageModelError(f"Antwort ist kein Objekt: {data!r}")
+        raise _unusable_answer(f"Antwort ist kein Objekt: {data!r}")
     missing = [key for key in schema.get("required", []) if key not in data]
     if missing:
-        raise LanguageModelError(f"Antwort ohne Pflichtschlüssel {missing}: {data!r}")
+        raise _unusable_answer(f"Antwort ohne Pflichtschlüssel {missing}: {data!r}")
     return cast(dict, encodable_data(data))

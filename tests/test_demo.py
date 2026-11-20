@@ -71,7 +71,7 @@ def test_demo_language_model_has_no_answer_for_unknown_job_ad() -> None:
 
     assessment = score_job_ad(unknown, demo.SEARCH_PROFILE, demo.DemoLanguageModel())
 
-    assert assessment is LanguageModelFailure.UNUSABLE_ANSWER
+    assert assessment is LanguageModelFailure.OTHER
 
 
 def test_demo_run_prints_report_without_creating_anything(

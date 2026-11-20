@@ -198,6 +198,7 @@ def _safe_score(
         return score_job_ad(job_ad, search_profile, language_model)
     except Exception:
         logger.exception("Unerwarteter Fehler in der Bewertung (anzeige=%r)", job_ad.id)
+        # Kein Fehler des Sprachmodells, aber wie ein sonstiger: ohne Ursache im Report.
         return LanguageModelFailure.OTHER
 
 

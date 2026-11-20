@@ -30,7 +30,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   typisiert aus dem Store in den Report (#41)
 - Scheitern alle Bewertungen eines Laufs auf dieselbe Art, nennt der Report
   bei den unbewerteten Anzeigen die Ursache: „API-Key fehlt“, „Sprachmodell
-  nicht erreichbar“ oder „Antworten unbrauchbar“ (#39)
+  nicht erreichbar“ (auch bei Zeitüberschreitung) oder „Antworten unbrauchbar“;
+  bei sonstigen Fehlern wie einem ungültigen Key oder einem erreichten
+  Ausgabenlimit bleibt es bei der Zahl (#39)
 
 ### Behoben
 - Profil-Vorschlag: Schlägt das Sprachmodell dieselbe Änderung mehrfach vor, gilt

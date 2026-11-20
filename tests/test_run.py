@@ -352,6 +352,18 @@ def test_run_names_cause_when_some_answers_fail_the_check(db: Store, output_dir:
     assert "\n2 unbewertete Anzeigen (Antworten unbrauchbar) – der nächste Lauf" in content
 
 
+@pytest.mark.parametrize("failure", list(LanguageModelFailure))
+def test_run_writes_report_for_every_kind_of_failure(
+    db: Store, output_dir: Path, failure: LanguageModelFailure
+) -> None:
+    # Keine Fehlerart darf das Schreiben des Reports abbrechen.
+    model = FakeLanguageModel(LanguageModelError("weg", failure))
+
+    content = _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), model=model)
+
+    assert "\n1 unbewertete Anzeige" in content
+
+
 def test_run_names_no_cause_when_all_assessments_fail_otherwise(
     db: Store, output_dir: Path
 ) -> None:

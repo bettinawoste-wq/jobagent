@@ -141,6 +141,9 @@ _REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
         anthropic.RateLimitError(
             "Zu viele Anfragen", response=httpx2.Response(429, request=_REQUEST), body=None
         ),
+        anthropic.RequestTimeoutError(
+            "Zeitüberschreitung", response=httpx2.Response(408, request=_REQUEST), body=None
+        ),
     ],
 )
 def test_api_error_becomes_language_model_error_unreachable(error: Exception) -> None:
@@ -164,6 +167,10 @@ def test_api_error_becomes_language_model_error_unreachable(error: Exception) ->
         anthropic.BadRequestError(
             "Guthaben leer", response=httpx2.Response(400, request=_REQUEST), body=None
         ),
+        # Auch ein 429: Bis jemand das Limit hebt, scheitert jeder weitere Lauf gleich.
+        anthropic.EnforcedSpendLimitReachedError(
+            "Ausgabenlimit erreicht", response=httpx2.Response(429, request=_REQUEST), body=None
+        ),
         anthropic.AnthropicError("sonstwas"),
         TypeError("unexpected keyword argument 'foo'"),
     ],
@@ -184,6 +191,10 @@ def test_missing_api_key_becomes_language_model_error_missing_api_key() -> None:
     assert caught.value.failure is LanguageModelFailure.MISSING_API_KEY
 
 
+def test_language_model_error_without_failure_names_no_cause() -> None:
+    assert LanguageModelError("weg").failure is LanguageModelFailure.OTHER
+
+
 @pytest.mark.parametrize(
     "answer",
     [
@@ -193,9 +204,14 @@ def test_missing_api_key_becomes_language_model_error_missing_api_key() -> None:
             ToolUseBlock(id="toolu_1", input={"score": 4}, name="x", type="tool_use"),
             stop_reason="max_tokens",
         ),
+        _message(
+            ToolUseBlock.model_construct(
+                id="toolu_1", input=["score"], name="antwort_abgeben", type="tool_use"
+            )
+        ),
     ],
 )
-def test_unusable_tool_answer_is_marked_as_unusable(answer: Message) -> None:
+def test_unusable_tool_answer_is_marked_as_unusable(answer: object) -> None:
     with pytest.raises(LanguageModelError) as caught:
         _ask(answer)
 
@@ -323,8 +339,10 @@ def _deeply_nested(depth: int = 100_000) -> list:
     ],
 )
 def test_deeply_nested_answer_becomes_language_model_error(answer: dict) -> None:
-    with pytest.raises(LanguageModelError):
+    with pytest.raises(LanguageModelError) as caught:
         with_required_keys(_SCHEMA, answer)
+
+    assert caught.value.failure is LanguageModelFailure.UNUSABLE_ANSWER
 
 
 def test_json_answer_after_thinking_returns_its_data() -> None:

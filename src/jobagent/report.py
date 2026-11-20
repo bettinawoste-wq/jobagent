@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum, auto
 from pathlib import Path
-from typing import TextIO
+from typing import TextIO, assert_never
 
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelFailure
@@ -44,12 +44,6 @@ class Unassessed:
 
 
 _NONE_UNASSESSED = Unassessed()
-
-_CAUSES = {
-    LanguageModelFailure.MISSING_API_KEY: "API-Key fehlt",
-    LanguageModelFailure.UNREACHABLE: "Sprachmodell nicht erreichbar",
-    LanguageModelFailure.UNUSABLE_ANSWER: "Antworten unbrauchbar",
-}
 
 
 class ReportError(Exception):
@@ -210,6 +204,21 @@ def _source_line(source: SourceStatus) -> str:
     return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
 
 
+def _cause_text(cause: LanguageModelFailure) -> str | None:
+    # match mit assert_never: Kommt eine Fehlerart hinzu, meldet pyright die Lücke hier.
+    match cause:
+        case LanguageModelFailure.MISSING_API_KEY:
+            return "API-Key fehlt"
+        case LanguageModelFailure.UNREACHABLE:
+            return "Sprachmodell nicht erreichbar"
+        case LanguageModelFailure.UNUSABLE_ANSWER:
+            return "Antworten unbrauchbar"
+        case LanguageModelFailure.OTHER:
+            return None  # sonstiger Fehler, ohne Ursache im Report
+        case _:
+            assert_never(cause)
+
+
 def _unassessed_line(unassessed: Unassessed) -> str:
     if not unassessed.count:
         return ""
@@ -218,7 +227,7 @@ def _unassessed_line(unassessed: Unassessed) -> str:
         if unassessed.count == 1
         else f"{unassessed.count} unbewertete Anzeigen"
     )
-    cause = _CAUSES.get(unassessed.cause) if unassessed.cause else None
+    cause = _cause_text(unassessed.cause) if unassessed.cause else None
     if cause:
         text += f" ({cause})"
     return f"{text} – der nächste Lauf versucht es erneut.\n\n"
