@@ -21,6 +21,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   Exit-Code 1 ab, bevor er sucht oder bewertet. Die Sperre gibt das
   Betriebssystem frei, auch nach Absturz; Rückmeldung, Profil-Vorschlag und
   Demo-Lauf sperren nicht (#38)
+- Abschnitt „Aufbau“ im README: Ein Mermaid-Diagramm zeigt den Lauf mit den
+  Seams Quelle, Sprachmodell und `Store`, ihren Adaptern, den Fakes der Tests,
+  den Demo-Teilen und dem Zusammenbau in der Kommandozeile (#44)
 
 ### Geändert
 - `config.toml` wird streng geprüft: Unbekannte Abschnitte und Schlüssel brechen

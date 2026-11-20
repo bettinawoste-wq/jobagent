@@ -4,7 +4,10 @@
 boards for new postings, has Claude rate each one against a personal search
 profile and writes a ranked Markdown report. It never applies or sends
 anything on its own: it only makes suggestions, and every decision stays with
-the human. Try it in one command with `--demo`, no API key or network needed.*
+the human. Try it in one command with `--demo`, no API key or network needed.
+A small pipeline sits in the middle and talks only to three seams (job sources,
+language model, SQLite store), so tests and the demo swap in stand-ins instead
+of network and model calls.*
 
 # Job-Agent
 
@@ -121,6 +124,73 @@ des Reports. Scheitert die Bewertung einer Anzeige (API-Fehler, ungültige
 Antwort des Sprachmodells), wird das geloggt. Der Report zählt die Anzeige dann
 als unbewertet, und der nächste Lauf versucht es erneut, sofern eine Quelle sie
 noch liefert. Der Gesamtlauf bricht daran nicht ab.
+
+## Aufbau
+
+```mermaid
+flowchart LR
+    subgraph cli["Kommandozeile: Zusammenbau"]
+        realRun["main.py: echter Lauf"]
+        demoRun["main.py --demo: demo_run"]
+        suggestion["profile_suggestion.py: Profil-Vorschlag"]
+        lock["run_lock.py: Sperre (RunLock)"]
+        window["search_window.py: Suchzeitraum"]
+    end
+
+    tests["Tests (pytest)"]
+
+    runNode(["run.py: Lauf (run)<br/>suchen, deduplizieren, bewerten, Report"])
+    reportFile["report.py: Report<br/>output/YYYY-MM-DD.md"]
+
+    subgraph sourceSeam["Seam Source: Quelle"]
+        ba["BundesagenturSource"]
+        an["ArbeitnowSource"]
+        wl["WatchlistSource<br/>mit GreenhouseBoard, LeverBoard"]
+        fakeSource["FakeSource (Tests)"]
+        demoSource["DemoSource (Demo-Lauf)"]
+    end
+
+    subgraph modelSeam["Seam LanguageModel: Sprachmodell"]
+        haiku["AnthropicToolLanguageModel<br/>Haiku, Bewertung"]
+        sonnet["AnthropicJsonLanguageModel<br/>Sonnet, Profil-Vorschlag"]
+        fakeModel["FakeLanguageModel (Tests)"]
+        demoModel["DemoLanguageModel (Demo-Lauf)"]
+    end
+
+    subgraph storeSeam["Store: SQLite"]
+        db["jobagent.db"]
+        tempDb["temporäre Datenbank<br/>(Tests, Demo-Lauf)"]
+    end
+
+    realRun -- "zuerst" --> lock
+    realRun --> window
+    demoRun --> window
+    db -. "letzter vollständiger Lauf" .-> window
+    window -. "Tage" .-> ba
+    window -. "Tage" .-> an
+    realRun -- "default_sources" --> ba
+    realRun -- "default_sources" --> an
+    realRun -- "default_sources" --> wl
+    realRun --> haiku & db
+    demoRun --> demoSource & demoModel & tempDb
+    suggestion --> sonnet & db
+    tests --> fakeSource & fakeModel & tempDb
+
+    realRun --> runNode
+    demoRun --> runNode
+    runNode -- "Anzeigen holen" --> sourceSeam
+    runNode -- "score.py: Bewertung" --> modelSeam
+    runNode -- "deduplizieren, merken" --> storeSeam
+    runNode --> reportFile
+```
+
+Weil der Lauf `run` alles übergeben bekommt und nur die Seams kennt, geben ihm die
+Tests statt der echten Adapter `FakeSource` und `FakeLanguageModel` aus
+`tests/fakes.py` und einen `Store` auf einer temporären SQLite-Datei. So prüfen sie
+Suchen, Bewerten, Merken und Report ohne Netz, ohne echtes Sprachmodell und ohne
+persönliche Daten. Die echten Quellen testen sie getrennt mit nachgestellten
+HTTP-Antworten aus `tests/fixtures/`, und ein Vertragstest am Seam `Source` stellt
+sicher, dass keine Quelle wirft.
 
 ## Stack
 
