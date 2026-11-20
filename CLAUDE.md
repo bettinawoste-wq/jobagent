@@ -12,6 +12,8 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/sources/`: Quellen als Adapter am Seam `Source`. Vor jeder Arbeit dort oder an den Fixtures: `docs/quellen.md`
 - `src/jobagent/run.py`: der Lauf `run` (suchen, dedupe, bewerten, Report); bekommt alles übergeben
 - `src/jobagent/main.py`: Kommandozeile und Zusammenbau des Laufs und Demo-Laufs, dazu `default_sources`, die die eingebauten Quellen aus der Konfiguration baut
+- `src/jobagent/search_window.py`: der Suchzeitraum ab dem letzten vollständigen Lauf, höchstens 100 Tage
+- `src/jobagent/run_lock.py`: die Sperre `RunLock` gegen gleichzeitige Läufe
 - `src/jobagent/language_model.py`: Seam `LanguageModel` samt Fehlerart `LanguageModelFailure`, frei vom SDK. Die Anthropic-Adapter `AnthropicToolLanguageModel` (Bewertung) und `AnthropicJsonLanguageModel` (Profil-Vorschlag) stehen in `src/jobagent/anthropic_language_model.py`. Bewertung und Profil-Vorschlag sprechen nur mit dem Seam; die Adapter samt Modellnamen bauen `main.py` und `profile_suggestion.py` beim Zusammenbau ein. Tests nutzen `FakeLanguageModel` aus `tests/fakes.py`
 - `src/jobagent/config.py`: `config.toml` in Abschnitten; die einzige Stelle, die deren deutsche Schlüssel übersetzt
 - `src/jobagent/store.py`: der `Store` (SQLite); einzige Stelle, die das deutsche DB-Schema übersetzt. Report und Merken gelingen zusammen oder gar nicht
@@ -19,6 +21,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - `src/jobagent/demo.py`: Demo-Lauf, im README zitiert; nur Fantasiefirmen und `example.com`
 - `GLOSSARY.md`: Fachbegriffe mit ihrem Namen im Code
 - `CODING_STANDARDS.md`: Ermessensregeln, gegen die jedes Review prüft
+- `CHANGELOG.md`: Änderungen je Version; Neues steht unter „Unveröffentlicht“
 - `docs/adr/`: Grundsatzentscheidungen; vor Änderungen an Speicherung, Quellen, Rückkanal, Modellwahl oder Namen lesen
 - `profile.md`: mein Suchprofil, nicht im Repo (Vorlage: `profile.example.md`)
 
@@ -43,6 +46,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Commit-Text erklärt das Warum (Anlass, Auswirkung), nicht nur das Was
 - Die Version steigt erst, wenn eine zusammenhängende Arbeit abgeschlossen ist, die meist mehrere Commits umfasst
 - Version in `pyproject.toml` dann nach SemVer (0.x): neue Quelle oder Funktion → Minor, nur Fixes → Patch; `uv.lock` mitziehen
+- Was Leserinnen merken, bekommt eine Zeile unter „Unveröffentlicht“ in `CHANGELOG.md`; bei der Versionsanhebung wird der Abschnitt zur Version mit Datum, darüber ein neuer leerer „Unveröffentlicht“
 - Jede Versionsanhebung bekommt einen annotierten Tag `vX.Y.Z`
 
 ## Leitplanken

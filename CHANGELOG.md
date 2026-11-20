@@ -9,6 +9,14 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 ## Unveröffentlicht
 
 ### Neu
+
+### Geändert
+
+### Behoben
+
+## 0.7.0 – 2026-11-20
+
+### Neu
 - `CHANGELOG.md` beschreibt die Versionen ab 0.2.0; jedes Ticket trägt seine
   Änderung hier unter „Unveröffentlicht“ ein (#35)
 - Typprüfung mit pyright im Modus „standard“ über `src/` und `tests/`, lokal per
