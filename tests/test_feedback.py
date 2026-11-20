@@ -239,7 +239,7 @@ def test_feedback_for_unknown_match_is_error(db: Store, db_path: Path) -> None:
 
 @pytest.mark.parametrize("score", [0, 6])
 def test_feedback_outside_score_scale_is_error(db: Store, db_path: Path, score: int) -> None:
-    with pytest.raises(FeedbackError, match="zwischen 1 und 5"):
+    with pytest.raises(FeedbackError, match="Skala von 1 bis 5"):
         save_feedback_for_match(db, _REPORT, 2, score=score, reason=None, today=_TODAY)
 
     assert _feedback(db_path) == []

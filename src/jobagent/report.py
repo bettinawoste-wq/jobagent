@@ -17,6 +17,8 @@ DEFAULT_MIN_SCORE = 3
 
 Match = tuple[JobAd, Assessment]
 
+_SCORE_MAX = SCORE_SCALE[-1]
+
 
 @dataclass(frozen=True, slots=True)
 class SourceStatus:
@@ -210,7 +212,7 @@ def _compact_block(compact: list[tuple[int, Match]], min_score: int) -> str:
 def _compact_line(number: int, job_ad: JobAd, assessment: Assessment) -> str:
     return (
         f"{_line_start(number, job_ad)} – "
-        f"Score {assessment.score}/{SCORE_SCALE[-1]}: {assessment.summary} – {job_ad.link}"
+        f"Score {assessment.score}/{_SCORE_MAX}: {assessment.summary} – {job_ad.link}"
     )
 
 
@@ -228,7 +230,7 @@ def _applied_line(
     number: int, job_ad: JobAd, assessment: Assessment, application: AlreadyApplied
 ) -> str:
     return (
-        f"{_line_start(number, job_ad)} – Score {assessment.score}/{SCORE_SCALE[-1]} – "
+        f"{_line_start(number, job_ad)} – Score {assessment.score}/{_SCORE_MAX} – "
         f"{application.status}, beworben am {application.applied_on:%d.%m.%Y} – "
         f"{_TEXT_COMPARISON[application.text_differs]} – {job_ad.link}"
     )
@@ -242,7 +244,7 @@ def _line_start(number: int, job_ad: JobAd) -> str:
 
 def _section(number: int, job_ad: JobAd, assessment: Assessment) -> str:
     lines = [
-        f"## {number}. {job_ad.title} – Score {assessment.score}/{SCORE_SCALE[-1]}",
+        f"## {number}. {job_ad.title} – Score {assessment.score}/{_SCORE_MAX}",
         f"- Firma: {job_ad.company or 'unbekannt'}",
         f"- Ort: {job_ad.location or 'unbekannt'}",
         f"- Link: {job_ad.link}",

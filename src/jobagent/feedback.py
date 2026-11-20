@@ -40,8 +40,8 @@ _DATE_ONLY_WITH_APPLIED = f"--am gibt es nur zusammen mit {ApplicationStatus.APP
 
 _REPORT_NAME = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-_USAGE = """python -m jobagent.feedback REPORT NUMMER AKTION
-       python -m jobagent.feedback REPORT NUMMER score 1-5 [GRUND]
+_USAGE = f"""python -m jobagent.feedback REPORT NUMMER AKTION
+       python -m jobagent.feedback REPORT NUMMER score {SCORE_SCALE[0]}-{SCORE_SCALE[-1]} [GRUND]
        python -m jobagent.feedback AKTION --firma FIRMA --titel TITEL
 
 AKTION: beworben, gespräch, absage, zusage, zurückgezogen, zurücknehmen
@@ -159,12 +159,15 @@ def _parse_action(text: str) -> Action:
 
 
 def _parse_score(values: list[str]) -> int:
+    error = FeedbackError(f"Nach score wird eine Zahl von {SCORE_SCALE_TEXT} erwartet.")
+    if not values or not values[0].isdecimal():
+        raise error
     try:
-        score = int(values[0]) if values and values[0].isdecimal() else None
+        score = int(values[0])
     except ValueError:  # int() lehnt sehr lange Zahlen ab
-        score = None
-    if score is None or score not in SCORE_SCALE:
-        raise FeedbackError(f"Nach score wird eine Zahl von {SCORE_SCALE_TEXT} erwartet.")
+        raise error from None
+    if score not in SCORE_SCALE:
+        raise error
     return score
 
 
@@ -244,9 +247,7 @@ def save_feedback_for_match(
     auf der Score-Skala liegt oder der Treffer nicht gefunden wird.
     """
     if score not in SCORE_SCALE:
-        raise FeedbackError(
-            f"Der Score liegt zwischen {SCORE_SCALE[0]} und {SCORE_SCALE[-1]}, bekam: {score}"
-        )
+        raise FeedbackError(f"Der Score liegt auf der Skala von {SCORE_SCALE_TEXT}, bekam: {score}")
     match = _find_match(db, report_name, match_number)
     db.save_feedback(match.id, score, reason, today)
     return f"Feedback gespeichert: {match.title} bekommt von dir Score {score}"
