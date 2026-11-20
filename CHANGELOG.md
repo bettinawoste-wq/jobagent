@@ -14,6 +14,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   `uv run pyright` und als eigener Schritt in der CI (#36)
 
 ### Geändert
+- `output/abgebrochen.log` wächst nur noch auf etwa 1 MB; danach bleibt genau
+  eine ältere Kopie `abgebrochen.log.1`. Das README weist darauf hin, dass
+  `ANTHROPIC_LOG=debug` Anzeigen-Volltexte auf die Konsole bringt, nicht ins Log (#43)
 
 ### Behoben
 

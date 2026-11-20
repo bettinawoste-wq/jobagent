@@ -289,6 +289,71 @@ def test_cli_keeps_traceback_of_abort_in_log_file_not_on_console(
     assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
 
 
+def test_cli_starts_new_log_of_aborted_runs_beyond_about_one_megabyte(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "abgebrochen.log").write_text("Log alter Läufe\n" * 70_000, encoding="utf-8")
+
+    assert main.cli([]) == 1
+
+    log = (output / "abgebrochen.log").read_text(encoding="utf-8")
+    assert "Log alter Läufe" not in log
+    assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+    older = (output / "abgebrochen.log.1").read_text(encoding="utf-8")
+    assert older == "Log alter Läufe\n" * 70_000
+
+
+def test_cli_keeps_only_one_older_copy_of_the_log_of_aborted_runs(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "abgebrochen.log").write_text("Log alter Läufe\n" * 70_000, encoding="utf-8")
+    (output / "abgebrochen.log.1").write_text("Log uralter Läufe\n", encoding="utf-8")
+
+    assert main.cli([]) == 1
+
+    assert sorted(path.name for path in output.iterdir()) == [
+        "abgebrochen.log",
+        "abgebrochen.log.1",
+    ]
+    older = (output / "abgebrochen.log.1").read_text(encoding="utf-8")
+    assert "Log uralter Läufe" not in older
+    assert older.startswith("Log alter Läufe\n")
+
+
+def test_cli_appends_to_log_of_aborted_runs_below_about_one_megabyte(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "abgebrochen.log").write_text("Log alter Läufe\n" * 50_000, encoding="utf-8")
+
+    assert main.cli([]) == 1
+
+    log = (output / "abgebrochen.log").read_text(encoding="utf-8")
+    assert log.startswith("Log alter Läufe\n" * 50_000)
+    assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+    assert not (output / "abgebrochen.log.1").exists()
+
+
 def test_cli_logs_job_ad_ids_but_never_their_full_text(
     project: dict[str, Path],
     tmp_path: Path,
