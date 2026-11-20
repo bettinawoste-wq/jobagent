@@ -21,6 +21,7 @@ from jobagent import main
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
+from jobagent.search_window import SearchWindow
 from jobagent.sources.watchlist import WatchlistCompany
 from jobagent.store import Store
 from tests.fakes import FakeLanguageModel, FakeSource, assessment_answer, fake_job_ad
@@ -41,6 +42,8 @@ mindest_score = 5
 """
 
 _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
+
+_WINDOW = SearchWindow(1, since=None, capped=False)
 
 
 @pytest.fixture
@@ -168,7 +171,7 @@ def test_cli_aborts_with_message_and_exit_code_1(
     no_builtins: None,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource()])
+    monkeypatch.setattr(main, "default_sources", lambda config, search_window: [FakeSource()])
     breakage(tmp_path)
     caplog.set_level(logging.DEBUG)
 
@@ -190,7 +193,7 @@ def test_cli_returns_exit_code_0_after_run(
     no_builtins: None,
 ) -> None:
     fixed_today(TODAY)  # arbeitet auch in tmp_path
-    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource()])
+    monkeypatch.setattr(main, "default_sources", lambda config, search_window: [FakeSource()])
 
     assert main.cli([]) == 0
     assert (tmp_path / "output" / "2026-03-02.md").exists()
@@ -205,7 +208,7 @@ def test_cli_writes_log_file_named_like_its_report(
 ) -> None:
     fixed_today(TODAY)
     source = FakeSource([fake_job_ad("a-1")])
-    monkeypatch.setattr(main, "default_sources", lambda config: [source])
+    monkeypatch.setattr(main, "default_sources", lambda config, search_window: [source])
     model = FakeLanguageModel(LanguageModelError("Zeitüberschreitung"))
     monkeypatch.setattr(main, "AnthropicToolLanguageModel", lambda model_name: model)
 
@@ -224,7 +227,7 @@ def test_cli_writes_log_file_named_like_its_report(
 
 
 def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:
-    names = [source.name for source in main.default_sources(Config())]
+    names = [source.name for source in main.default_sources(Config(), _WINDOW)]
 
     assert names == ["Bundesagentur für Arbeit", "Arbeitnow"]
 
@@ -232,12 +235,12 @@ def test_default_sources_are_bundesagentur_and_arbeitnow() -> None:
 def test_default_sources_include_watchlist_with_companies_from_config() -> None:
     config = Config(companies=[WatchlistCompany(name="GitLab", ats="greenhouse", slug="gitlab")])
 
-    names = [source.name for source in main.default_sources(config)]
+    names = [source.name for source in main.default_sources(config, _WINDOW)]
 
     assert names == ["Bundesagentur für Arbeit", "Arbeitnow", "Firmen-Watchlist"]
 
 
-def test_default_sources_search_with_location_radius_and_age_from_config() -> None:
+def test_default_sources_search_with_location_radius_and_search_window() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -255,8 +258,9 @@ def test_default_sources_search_with_location_radius_and_age_from_config() -> No
         published_since=7,
         companies=[WatchlistCompany(name="GitLab", ats="greenhouse", slug="gitlab")],
     )
+    window = SearchWindow(4, since=date(2026, 2, 27), capped=False)
 
-    for source in main.default_sources(config, transport=httpx.MockTransport(handler)):
+    for source in main.default_sources(config, window, transport=httpx.MockTransport(handler)):
         assert source.search(config.keywords).errors == []
 
     hosts = [request.url.host for request in requests]
@@ -265,8 +269,9 @@ def test_default_sources_search_with_location_radius_and_age_from_config() -> No
         "was": "Python",
         "wo": "München",
         "umkreis": "30",
-        "veroeffentlichtseit": "7",
+        "veroeffentlichtseit": "4",
     }
+    assert dict(requests[2].url.params) == {}  # die Watchlist kennt keinen Suchzeitraum
 
 
 def test_cli_keeps_traceback_of_abort_in_log_file_not_on_console(
@@ -289,6 +294,96 @@ def test_cli_keeps_traceback_of_abort_in_log_file_not_on_console(
     assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
 
 
+def _aborted_log_of(output: Path, size: int) -> bytes:
+    """Legt `abgebrochen.log` mit `size` Bytes älterer Läufe an und gibt den Inhalt zurück."""
+    output.mkdir(exist_ok=True)
+    line = b"Log alter Laeufe\n"
+    content = line * (size // len(line)) + b"x" * (size % len(line))
+    (output / "abgebrochen.log").write_bytes(content)
+    return content
+
+
+def test_cli_starts_new_log_of_aborted_runs_when_this_run_would_exceed_the_limit(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    # Knapp unter der Grenze; erst das Log dieses Laufs brächte die Datei darüber.
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES - 100)
+
+    assert main.cli([]) == 1
+
+    log = (output / "abgebrochen.log").read_text(encoding="utf-8")
+    assert "Log alter Laeufe" not in log
+    assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+    assert (output / "abgebrochen.log.1").read_bytes() == old
+
+
+def test_cli_keeps_only_one_older_copy_of_the_log_of_aborted_runs(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES + 100)
+    (output / "abgebrochen.log.1").write_text("Log uralter Läufe\n", encoding="utf-8")
+
+    assert main.cli([]) == 1
+
+    assert sorted(path.name for path in output.iterdir()) == [
+        "abgebrochen.log",
+        "abgebrochen.log.1",
+    ]
+    assert (output / "abgebrochen.log.1").read_bytes() == old
+
+
+def test_cli_appends_to_log_of_aborted_runs_below_the_limit(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES // 2)
+
+    assert main.cli([]) == 1
+
+    log = (output / "abgebrochen.log").read_bytes()
+    assert log.startswith(old)
+    assert b"SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+    assert not (output / "abgebrochen.log.1").exists()
+
+
+def test_cli_keeps_log_of_aborted_runs_when_older_copy_cannot_be_made(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES + 100)
+    (output / "abgebrochen.log.1").mkdir()  # die ältere Kopie lässt sich nicht anlegen
+
+    assert main.cli([]) == 1
+
+    log = (output / "abgebrochen.log").read_bytes()
+    assert log.startswith(old)
+    assert b"SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+    assert "Ältere Kopie des Logs ließ sich nicht anlegen" in capsys.readouterr().err
+
+
 def test_cli_logs_job_ad_ids_but_never_their_full_text(
     project: dict[str, Path],
     tmp_path: Path,
@@ -301,7 +396,9 @@ def test_cli_logs_job_ad_ids_but_never_their_full_text(
     full_text = "Wir suchen eine Entwicklerin mit Leidenschaft für saubere Daten."
     job_ad = JobAd("a-1", "Stelle a-1", "Beispiel GmbH", "München", "https://example.com/a-1")
     job_ad = dataclasses.replace(job_ad, description=full_text)
-    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource([job_ad])])
+    monkeypatch.setattr(
+        main, "default_sources", lambda config, search_window: [FakeSource([job_ad])]
+    )
 
     class ChattyLanguageModel(FakeLanguageModel):
         """Loggt wie das SDK von Anthropic die ganze Anfrage auf DEBUG und scheitert dann."""
@@ -330,7 +427,7 @@ def test_cli_replaces_stale_log_file_of_a_deleted_report(
     no_builtins: None,
 ) -> None:
     fixed_today(TODAY)
-    monkeypatch.setattr(main, "default_sources", lambda config: [FakeSource()])
+    monkeypatch.setattr(main, "default_sources", lambda config, search_window: [FakeSource()])
     (tmp_path / "output").mkdir()
     (tmp_path / "output" / "2026-03-02.log").write_text("Log eines alten Laufs", encoding="utf-8")
 
@@ -375,3 +472,87 @@ def test_command_writes_traceback_of_abort_into_log_file(tmp_path: Path) -> None
     log = (tmp_path / "output" / "abgebrochen.log").read_text(encoding="utf-8")
     assert "Abgebrochen\nTraceback (most recent call last):" in log
     assert "ConfigError: config.toml nicht gefunden" in log
+
+
+def test_arbeitnow_from_default_sources_skips_job_ads_older_than_search_window() -> None:
+    # Arbeitnow liest die echte Uhr; die Zeitstempel liegen daher weit davor und danach.
+    year_3000, year_1970 = 32503680000, 86400
+    entries = [_arbeitnow_entry("neu", year_3000), _arbeitnow_entry("alt", year_1970)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": entries})
+
+    config = Config(keywords=["Python"])  # ohne veroeffentlichtseit: nur der Suchzeitraum zählt
+    window = SearchWindow(2, since=date(2026, 3, 1), capped=False)
+    [_, arbeitnow] = main.default_sources(config, window, transport=httpx.MockTransport(handler))
+
+    assert [job_ad.id for job_ad in arbeitnow.search(["Python"]).job_ads] == ["arbeitnow:neu"]
+
+
+def _arbeitnow_entry(slug: str, created_at: float) -> dict:
+    return {
+        "slug": slug,
+        "title": "Python Developer",
+        "url": f"https://example.com/{slug}",
+        "created_at": created_at,
+    }
+
+
+def _search_windows_of_main(monkeypatch: pytest.MonkeyPatch) -> list[SearchWindow]:
+    """Lässt main mit einer leeren Fake-Quelle laufen und hält die Suchzeiträume fest."""
+    windows: list[SearchWindow] = []
+
+    def sources(config: Config, search_window: SearchWindow) -> list[FakeSource]:
+        windows.append(search_window)
+        return [FakeSource()]
+
+    monkeypatch.setattr(main, "default_sources", sources)
+    return windows
+
+
+def test_main_searches_since_last_complete_run(
+    project: dict[str, Path],
+    fixed_today: Callable[[date], None],
+    monkeypatch: pytest.MonkeyPatch,
+    no_builtins: None,
+) -> None:
+    windows = _search_windows_of_main(monkeypatch)
+    model = FakeLanguageModel(assessment_answer())
+    monday, thursday = date(2026, 11, 16), date(2026, 11, 19)
+
+    fixed_today(monday)
+    # sources=None: die eingebauten, hier ersetzt durch _search_windows_of_main
+    main.main(**project, sources=None, language_model=model)
+    fixed_today(thursday)
+    path = main.main(**project, sources=None, language_model=model)
+
+    # In _CONFIG steht veroeffentlichtseit = 1: Startwert, danach Höchstwert.
+    assert windows == [
+        SearchWindow(1, since=None, capped=False),
+        SearchWindow(1, since=monday, capped=True),
+    ]
+    assert "Suchzeitraum: 1 Tag (seit dem vollständigen Lauf vom 16.11., auf 1 Tag begrenzt)" in (
+        path.read_text(encoding="utf-8")
+    )
+
+
+def test_main_counts_from_last_complete_run_after_failed_source(
+    project: dict[str, Path],
+    fixed_today: Callable[[date], None],
+    no_builtins: None,
+) -> None:
+    project["config_path"].write_text(
+        _CONFIG.replace("veroeffentlichtseit = 1", "veroeffentlichtseit = 7"), encoding="utf-8"
+    )
+    model = FakeLanguageModel(assessment_answer())
+
+    fixed_today(date(2026, 11, 16))
+    main.main(**project, sources=[FakeSource()], language_model=model)
+    fixed_today(date(2026, 11, 18))
+    main.main(**project, sources=[FakeSource(errors=["Data: Timeout"])], language_model=model)
+    fixed_today(date(2026, 11, 19))
+    path = main.main(**project, sources=[FakeSource()], language_model=model)
+
+    assert "Suchzeitraum: 4 Tage (seit dem vollständigen Lauf vom 16.11.)" in path.read_text(
+        encoding="utf-8"
+    )

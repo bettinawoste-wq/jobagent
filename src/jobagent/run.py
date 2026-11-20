@@ -16,6 +16,7 @@ from jobagent.language_model import LanguageModel
 from jobagent.position import position_key
 from jobagent.report import SourceStatus
 from jobagent.score import Assessment, score_job_ad
+from jobagent.search_window import SearchWindow
 from jobagent.sources import SearchResult, Source
 from jobagent.store import Store, description_hash
 
@@ -33,18 +34,30 @@ def run(
     config: Config,
     today: date,
     output_dir: Path,
+    search_window: SearchWindow,
 ) -> Path:
     """Führt einen Lauf aus und gibt den Pfad des geschriebenen Reports zurück.
 
-    Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `search_profile`.
-    In `db` merkt sich der Lauf die bewerteten Anzeigen und die Treffernummern des Reports.
+    Die `sources` suchen bereits im Suchzeitraum `search_window`; der Lauf nennt ihn im
+    Report. Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil
+    `search_profile`. In `db` merkt sich der Lauf die bewerteten Anzeigen, die
+    Treffernummern des Reports und, wenn er vollständig war, sich selbst.
     Scheitert der Report (`ReportError`) oder das Merken (`StoreError`), merkt er sich
     nichts und lässt keinen Report liegen: Die Treffer kommen im nächsten Lauf wieder.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
     new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile)
+    complete = unassessed == 0 and not any(status.errors for status in source_status)
     return _report_and_remember(
-        db, new_matches, source_status, unassessed, config, today, output_dir
+        db,
+        new_matches,
+        source_status,
+        unassessed,
+        config,
+        today,
+        output_dir,
+        search_window,
+        complete=complete,
     )
 
 
@@ -56,8 +69,14 @@ def _report_and_remember(
     config: Config,
     today: date,
     output_dir: Path,
+    search_window: SearchWindow,
+    *,
+    complete: bool,
 ) -> Path:
-    """Schreibt den Report und merkt Treffer samt Treffernummern: alles oder nichts."""
+    """Schreibt den Report und merkt Treffer samt Treffernummern: alles oder nichts.
+
+    Ein vollständiger Lauf merkt sich mit, damit der nächste Suchzeitraum ab ihm rechnet.
+    """
     written: report.WrittenReport | None = None
     # Vor dem Merken: Sonst verglich eine Bewerbung auf genau diese Anzeige deren Text
     # mit sich selbst statt mit dem Text zum Zeitpunkt der Bewerbung.
@@ -67,9 +86,19 @@ def _report_and_remember(
             for job_ad, assessment in new_matches:
                 db.remember_job_ad(job_ad, assessment, today)
             written = _write_report(
-                db, new_matches, source_status, unassessed, applications, config, today, output_dir
+                db,
+                new_matches,
+                source_status,
+                unassessed,
+                applications,
+                config,
+                today,
+                output_dir,
+                search_window,
             )
             db.save_match_numbers(written.path.stem, written.match_numbers)
+            if complete:
+                db.remember_complete_run(today, written.path.stem)
     except BaseException:
         # Ohne gemerkte Treffernummern liefen die Nummern dieses Reports ins Leere.
         if written is not None:
@@ -99,11 +128,13 @@ def _write_report(
     config: Config,
     today: date,
     output_dir: Path,
+    search_window: SearchWindow,
 ) -> report.WrittenReport:
     return report.write_report(
         new_matches,
         today,
         output_dir,
+        search_window=search_window,
         sources=source_status,
         unassessed=unassessed,
         min_score=config.min_score,

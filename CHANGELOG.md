@@ -12,13 +12,31 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   Änderung hier unter „Unveröffentlicht“ ein (#35)
 - Typprüfung mit pyright im Modus „standard“ über `src/` und `tests/`, lokal per
   `uv run pyright` und als eigener Schritt in der CI (#36)
+- Suchzeitraum ab dem letzten vollständigen Lauf: Bundesagentur und Arbeitnow
+  holen die Tage seither plus 1, sodass ausgefallene Tage, Quellenfehler und
+  unbewertete Anzeigen nichts verlieren; der Report nennt ihn über dem
+  Quellenstatus, `veroeffentlichtseit` ist Start- und Höchstwert, in der
+  mitgelieferten `config.toml` 7 Tage (#37)
 
 ### Geändert
 - `config.toml` wird streng geprüft: Unbekannte Abschnitte und Schlüssel brechen
   das Laden mit einem Vorschlag für den nächstliegenden Namen ab, falsche
   Werttypen mit dem erwarteten Typ; alle Fehler erscheinen in einer Meldung (#40)
+- `output/abgebrochen.log` wächst nur noch auf etwa 1 MB; danach bleibt genau
+  eine ältere Kopie `abgebrochen.log.1`. Das README weist darauf hin, dass
+  `ANTHROPIC_LOG=debug` Anzeigen-Volltexte auf die Konsole bringt, nicht ins Log (#43)
+- Die Score-Skala 1 bis 5 ist an einer Stelle festgelegt; Bewertung,
+  Rückmeldung und Report richten sich danach, und der Bewerbungsstatus kommt
+  typisiert aus dem Store in den Report (#41)
 
 ### Behoben
+- Profil-Vorschlag: Schlägt das Sprachmodell dieselbe Änderung mehrfach vor, gilt
+  sie nur einmal und die Wiederholung wird als übersprungen angezeigt. Auszüge
+  werden im Suchprofil vor dem Profil-Vorschlag gesucht; eine Änderung, deren
+  Auszug sich mit einer anderen überschneidet, wird ebenfalls übersprungen (#42)
+- Die Rückmeldung lehnt `--am` beim eigenen Score und eine riesige Zahl als
+  Score mit deutscher Meldung und Exit-Code 1 ab, statt `--am` still zu
+  ignorieren oder mit einem Traceback abzubrechen (#41)
 
 ## 0.6.0 – 2026-11-15
 

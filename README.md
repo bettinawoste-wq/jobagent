@@ -32,6 +32,8 @@ Auszug aus der Ausgabe (gekürzt, `…` markiert Auslassungen):
 ```markdown
 # Stellenvorschläge 2026-11-11
 
+Suchzeitraum: 7 Tage (erster Lauf)
+
 ## Quellen
 - Bundesagentur für Arbeit (Demo): 3 Anzeigen
 - Arbeitnow (Demo): 3 Anzeigen
@@ -154,7 +156,7 @@ Suchparameter in `config.toml` anpassen. Die Datei ist in Abschnitte geteilt:
 [suche]                      # was für alle Quellen, wo/veroeffentlichtseit ohne Watchlist
 was = ["Data Scientist", "IT Consultant"]
 wo = "München"
-veroeffentlichtseit = 7      # Tage
+veroeffentlichtseit = 7      # Tage: Startwert und Höchstwert des Suchzeitraums
 
 [bundesagentur]
 umkreis = 25                 # km
@@ -170,6 +172,15 @@ nachfassen_ab_tag = 14
 nachfassen_bis_tag = 28
 ```
 
+Der Agent merkt sich jeden vollständigen Lauf, also einen Lauf, in dem jede
+Quelle fehlerfrei geliefert hat und keine Anzeige unbewertet blieb. Bundesagentur
+und Arbeitnow suchen dann im Suchzeitraum: die Tage seit dem letzten
+vollständigen Lauf plus 1, also nach einem vollständigen Lauf am Montag am
+Donnerstag 4 Tage. `veroeffentlichtseit` gilt für den ersten Lauf und begrenzt
+den Suchzeitraum nach oben. Fällt ein Tag aus, eine Quelle aus oder bleibt eine
+Anzeige unbewertet, holt der nächste Lauf die Tage seither nach. Die Watchlist
+sucht ohne Suchzeitraum.
+
 Fehlende Werte behalten ihren Standard. Unbekannte Abschnitte und Schlüssel
 oder Werte vom falschen Typ brechen den Lauf ab; die Meldung nennt alle Fehler
 der Datei auf einmal und schlägt bei Tippfehlern den gemeinten Namen vor. Das
@@ -184,8 +195,8 @@ uv run python -m jobagent.main
 
 Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
 `output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
-Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht je
-Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
+Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht der
+Suchzeitraum und je Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
 Treffer unter `mindest_score` (`[report]` in `config.toml`, Standard 3) erscheinen nur
 einzeilig am Ende.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
@@ -246,7 +257,15 @@ Lässt sich z. B. per Windows Task Scheduler (`Register-ScheduledTask`) oder
 cron an bestimmten Wochentagen morgens automatisch starten. Das Log eines Laufs
 bleibt dabei erhalten: Es liegt neben dem Report und heißt wie er
 (`output/YYYY-MM-DD.log`). Bricht ein Lauf ganz ab, gibt es keinen Report; sein Log
-samt Traceback landet dann in `output/abgebrochen.log`.
+samt Traceback landet dann in `output/abgebrochen.log`. Diese Datei wächst auf etwa
+1 MB; danach wird sie zu `output/abgebrochen.log.1`, und eine noch ältere Kopie
+fällt weg. Lässt sich diese Kopie nicht anlegen, wächst die Datei mit einer Warnung
+auf der Konsole weiter, statt ältere Läufe zu verlieren.
+
+Wer selbst `ANTHROPIC_LOG=debug` setzt, bekommt vom SDK von Anthropic dessen
+Anfragen samt Anzeigen-Volltext auf die Konsole. Die Log-Dateien des Agenten bleiben
+davon unberührt: Sie nehmen von fremden Bibliotheken nichts unter INFO auf
+([ADR 0001](docs/adr/0001-datensparsamkeit.md)).
 
 ## Änderungen
 

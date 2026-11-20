@@ -9,13 +9,16 @@ from pathlib import Path
 from typing import TextIO
 
 from jobagent.job_ad import JobAd
-from jobagent.score import Assessment
-from jobagent.store import FollowUpReminder
+from jobagent.score import SCORE_SCALE, Assessment
+from jobagent.search_window import SearchWindow
+from jobagent.store import ApplicationStatus, FollowUpReminder
 
 OUTPUT_DIR = Path("output")
 DEFAULT_MIN_SCORE = 3
 
 Match = tuple[JobAd, Assessment]
+
+_SCORE_MAX = SCORE_SCALE[-1]
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +57,7 @@ _TEXT_COMPARISON = {
 
 @dataclass(frozen=True, slots=True)
 class AlreadyApplied:
-    status: str
+    status: ApplicationStatus
     applied_on: date
     text_differs: TextComparison
 
@@ -69,6 +72,7 @@ def write_report(
     follow_ups: Sequence[FollowUpReminder] = (),
     open_feedback: int = 0,
     unassessed: int = 0,
+    search_window: SearchWindow | None = None,
 ) -> WrittenReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -78,7 +82,7 @@ def write_report(
     """
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
-        f"{_sources_block(sources)}{_unassessed_line(unassessed)}"
+        f"{_search_window_line(search_window)}{_sources_block(sources)}{_unassessed_line(unassessed)}"
         f"{_follow_up_block(follow_ups, day)}"
         f"{_profile_hint(open_feedback)}"
     )
@@ -154,6 +158,22 @@ def _report_error(output_dir: Path, error: OSError) -> ReportError:
     )
 
 
+def _search_window_line(window: SearchWindow | None) -> str:
+    if window is None:
+        return ""
+    if window.days is None:
+        length = "unbegrenzt"
+    else:
+        length = "1 Tag" if window.days == 1 else f"{window.days} Tage"
+    if window.since is None:
+        reason = "erster Lauf"
+    else:
+        reason = f"seit dem vollständigen Lauf vom {window.since:%d.%m.}"
+        if window.capped:
+            reason += f", auf {length} begrenzt"
+    return f"Suchzeitraum: {length} ({reason})\n\n"
+
+
 def _sources_block(sources: Sequence[SourceStatus]) -> str:
     if not sources:
         return ""
@@ -210,7 +230,7 @@ def _compact_block(compact: list[tuple[int, Match]], min_score: int) -> str:
 def _compact_line(number: int, job_ad: JobAd, assessment: Assessment) -> str:
     return (
         f"{_line_start(number, job_ad)} – "
-        f"Score {assessment.score}/5: {assessment.summary} – {job_ad.link}"
+        f"Score {assessment.score}/{_SCORE_MAX}: {assessment.summary} – {job_ad.link}"
     )
 
 
@@ -228,7 +248,7 @@ def _applied_line(
     number: int, job_ad: JobAd, assessment: Assessment, application: AlreadyApplied
 ) -> str:
     return (
-        f"{_line_start(number, job_ad)} – Score {assessment.score}/5 – "
+        f"{_line_start(number, job_ad)} – Score {assessment.score}/{_SCORE_MAX} – "
         f"{application.status}, beworben am {application.applied_on:%d.%m.%Y} – "
         f"{_TEXT_COMPARISON[application.text_differs]} – {job_ad.link}"
     )
@@ -242,7 +262,7 @@ def _line_start(number: int, job_ad: JobAd) -> str:
 
 def _section(number: int, job_ad: JobAd, assessment: Assessment) -> str:
     lines = [
-        f"## {number}. {job_ad.title} – Score {assessment.score}/5",
+        f"## {number}. {job_ad.title} – Score {assessment.score}/{_SCORE_MAX}",
         f"- Firma: {job_ad.company or 'unbekannt'}",
         f"- Ort: {job_ad.location or 'unbekannt'}",
         f"- Link: {job_ad.link}",
