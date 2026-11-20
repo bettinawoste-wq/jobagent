@@ -19,6 +19,7 @@ from jobagent.language_model import (
     AnthropicJsonLanguageModel,
     AnthropicToolLanguageModel,
     LanguageModelError,
+    LanguageModelFailure,
     with_required_keys,
 )
 
@@ -126,20 +127,95 @@ def test_schema_title_and_description_name_and_describe_the_tool() -> None:
     assert kwargs["tool_choice"] == {"type": "tool", "name": "bewertung_abgeben"}
 
 
-def test_api_error_becomes_language_model_error() -> None:
-    error = anthropic.APIConnectionError(
-        request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
-    )
+_REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 
-    with pytest.raises(LanguageModelError):
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        anthropic.APIConnectionError(request=_REQUEST),
+        anthropic.APITimeoutError(request=_REQUEST),
+        anthropic.InternalServerError(
+            "Überlastet", response=httpx2.Response(529, request=_REQUEST), body=None
+        ),
+        anthropic.RateLimitError(
+            "Zu viele Anfragen", response=httpx2.Response(429, request=_REQUEST), body=None
+        ),
+        anthropic.RequestTimeoutError(
+            "Zeitüberschreitung", response=httpx2.Response(408, request=_REQUEST), body=None
+        ),
+    ],
+)
+def test_api_error_becomes_language_model_error_unreachable(error: Exception) -> None:
+    with pytest.raises(LanguageModelError) as caught:
         _ask(error)
 
+    assert caught.value.failure is LanguageModelFailure.UNREACHABLE
 
-def test_missing_api_key_becomes_language_model_error() -> None:
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        # Der Server hat geantwortet, nur nicht mit einer Antwort: weder fehlt der Key,
+        # noch ist das Sprachmodell unerreichbar.
+        anthropic.AuthenticationError(
+            "Key ungültig", response=httpx2.Response(401, request=_REQUEST), body=None
+        ),
+        anthropic.NotFoundError(
+            "Modell unbekannt", response=httpx2.Response(404, request=_REQUEST), body=None
+        ),
+        anthropic.BadRequestError(
+            "Guthaben leer", response=httpx2.Response(400, request=_REQUEST), body=None
+        ),
+        # Auch ein 429: Bis jemand das Limit hebt, scheitert jeder weitere Lauf gleich.
+        anthropic.EnforcedSpendLimitReachedError(
+            "Ausgabenlimit erreicht", response=httpx2.Response(429, request=_REQUEST), body=None
+        ),
+        anthropic.AnthropicError("sonstwas"),
+        TypeError("unexpected keyword argument 'foo'"),
+    ],
+)
+def test_other_errors_of_the_request_have_no_named_cause(error: Exception) -> None:
+    with pytest.raises(LanguageModelError) as caught:
+        _ask(error)
+
+    assert caught.value.failure is LanguageModelFailure.OTHER
+
+
+def test_missing_api_key_becomes_language_model_error_missing_api_key() -> None:
     # So meldet das SDK 2.x einen fehlenden ANTHROPIC_API_KEY: als rohen TypeError beim
     # Aufbau der Anfrage, nicht als AnthropicError (geprüft mit dem echten Client).
-    with pytest.raises(LanguageModelError):
+    with pytest.raises(LanguageModelError) as caught:
         _ask(TypeError("Could not resolve authentication method."))
+
+    assert caught.value.failure is LanguageModelFailure.MISSING_API_KEY
+
+
+def test_language_model_error_without_failure_names_no_cause() -> None:
+    assert LanguageModelError("weg").failure is LanguageModelFailure.OTHER
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        _message(TextBlock(text="Freitext statt Werkzeug", type="text"), stop_reason="end_turn"),
+        _tool_answer({"score": 4}),
+        _message(
+            ToolUseBlock(id="toolu_1", input={"score": 4}, name="x", type="tool_use"),
+            stop_reason="max_tokens",
+        ),
+        _message(
+            ToolUseBlock.model_construct(
+                id="toolu_1", input=["score"], name="antwort_abgeben", type="tool_use"
+            )
+        ),
+    ],
+)
+def test_unusable_tool_answer_is_marked_as_unusable(answer: object) -> None:
+    with pytest.raises(LanguageModelError) as caught:
+        _ask(answer)
+
+    assert caught.value.failure is LanguageModelFailure.UNUSABLE_ANSWER
 
 
 def test_client_is_created_once_for_all_questions(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -263,8 +339,10 @@ def _deeply_nested(depth: int = 100_000) -> list:
     ],
 )
 def test_deeply_nested_answer_becomes_language_model_error(answer: dict) -> None:
-    with pytest.raises(LanguageModelError):
+    with pytest.raises(LanguageModelError) as caught:
         with_required_keys(_SCHEMA, answer)
+
+    assert caught.value.failure is LanguageModelFailure.UNUSABLE_ANSWER
 
 
 def test_json_answer_after_thinking_returns_its_data() -> None:
@@ -302,12 +380,29 @@ def test_json_answer_is_asked_with_fallback_instead_of_tool() -> None:
         _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="max_tokens"),
         _thought_and_text('{"score": 4, "kurzfazit": "x"}', stop_reason="refusal"),
         _beta_message(),
-        TypeError("Could not resolve authentication method."),
-        anthropic.APIConnectionError(
-            request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
-        ),
     ],
 )
 def test_unusable_json_answer_becomes_language_model_error(answer: object) -> None:
-    with pytest.raises(LanguageModelError):
+    with pytest.raises(LanguageModelError) as caught:
         _ask_json_model(answer)
+
+    assert caught.value.failure is LanguageModelFailure.UNUSABLE_ANSWER
+
+
+@pytest.mark.parametrize(
+    ("error", "failure"),
+    [
+        (
+            TypeError("Could not resolve authentication method."),
+            LanguageModelFailure.MISSING_API_KEY,
+        ),
+        (anthropic.APIConnectionError(request=_REQUEST), LanguageModelFailure.UNREACHABLE),
+    ],
+)
+def test_json_model_tells_failures_of_the_request_apart(
+    error: Exception, failure: LanguageModelFailure
+) -> None:
+    with pytest.raises(LanguageModelError) as caught:
+        _ask_json_model(error)
+
+    assert caught.value.failure is failure

@@ -157,7 +157,7 @@ def _output_is_file(folder: Path) -> None:
     ("breakage", "message"),
     [
         (_broken_toml, "Fehler: config.toml ist kein gültiges TOML"),
-        (_misplaced_key, "Fehler: config.toml ist nicht richtig gegliedert"),
+        (_misplaced_key, "Fehler: config.toml ist ungültig"),
         (_no_config, "Fehler: config.toml nicht gefunden"),
         (_no_profile, "Fehler: Suchprofil profile.md nicht gefunden"),
         (_database_is_folder, "Fehler: Datenbank jobagent.db nicht nutzbar"),

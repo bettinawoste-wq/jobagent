@@ -6,9 +6,10 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum, auto
 from pathlib import Path
-from typing import TextIO
+from typing import TextIO, assert_never
 
 from jobagent.job_ad import JobAd
+from jobagent.language_model import LanguageModelFailure
 from jobagent.score import SCORE_SCALE, Assessment
 from jobagent.search_window import SearchWindow
 from jobagent.store import ApplicationStatus, FollowUpReminder
@@ -28,6 +29,21 @@ class SourceStatus:
     name: str
     count: int
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Unassessed:
+    """Die unbewerteten Anzeigen eines Laufs.
+
+    `cause` ist gesetzt, wenn alle Bewertungen des Laufs auf dieselbe Art gescheitert sind;
+    der Report nennt sie, außer bei einem sonstigen Fehler (`LanguageModelFailure.OTHER`).
+    """
+
+    count: int = 0
+    cause: LanguageModelFailure | None = None
+
+
+_NONE_UNASSESSED = Unassessed()
 
 
 class ReportError(Exception):
@@ -71,7 +87,7 @@ def write_report(
     applications: Mapping[str, AlreadyApplied] | None = None,
     follow_ups: Sequence[FollowUpReminder] = (),
     open_feedback: int = 0,
-    unassessed: int = 0,
+    unassessed: Unassessed = _NONE_UNASSESSED,
     search_window: SearchWindow | None = None,
 ) -> WrittenReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
@@ -188,11 +204,33 @@ def _source_line(source: SourceStatus) -> str:
     return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
 
 
-def _unassessed_line(unassessed: int) -> str:
-    if not unassessed:
+def _cause_text(cause: LanguageModelFailure) -> str | None:
+    # match mit assert_never: Kommt eine Fehlerart hinzu, meldet pyright die Lücke hier.
+    match cause:
+        case LanguageModelFailure.MISSING_API_KEY:
+            return "API-Key fehlt"
+        case LanguageModelFailure.UNREACHABLE:
+            return "Sprachmodell nicht erreichbar"
+        case LanguageModelFailure.UNUSABLE_ANSWER:
+            return "Antworten unbrauchbar"
+        case LanguageModelFailure.OTHER:
+            return None  # sonstiger Fehler, ohne Ursache im Report
+        case _:
+            assert_never(cause)
+
+
+def _unassessed_line(unassessed: Unassessed) -> str:
+    if not unassessed.count:
         return ""
-    count = "1 unbewertete Anzeige" if unassessed == 1 else f"{unassessed} unbewertete Anzeigen"
-    return f"{count} – der nächste Lauf versucht es erneut.\n\n"
+    text = (
+        "1 unbewertete Anzeige"
+        if unassessed.count == 1
+        else f"{unassessed.count} unbewertete Anzeigen"
+    )
+    cause = _cause_text(unassessed.cause) if unassessed.cause else None
+    if cause:
+        text += f" ({cause})"
+    return f"{text} – der nächste Lauf versucht es erneut.\n\n"
 
 
 def _profile_hint(open_feedback: int) -> str:
