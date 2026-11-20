@@ -19,6 +19,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   mitgelieferten `config.toml` 7 Tage (#37)
 
 ### Geändert
+- `config.toml` wird streng geprüft: Unbekannte Abschnitte und Schlüssel brechen
+  das Laden mit einem Vorschlag für den nächstliegenden Namen ab, falsche
+  Werttypen mit dem erwarteten Typ; alle Fehler erscheinen in einer Meldung (#40)
 - `output/abgebrochen.log` wächst nur noch auf etwa 1 MB; danach bleibt genau
   eine ältere Kopie `abgebrochen.log.1`. Das README weist darauf hin, dass
   `ANTHROPIC_LOG=debug` Anzeigen-Volltexte auf die Konsole bringt, nicht ins Log (#43)
@@ -30,6 +33,10 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   nicht erreichbar“ oder „Antworten unbrauchbar“ (#39)
 
 ### Behoben
+- Profil-Vorschlag: Schlägt das Sprachmodell dieselbe Änderung mehrfach vor, gilt
+  sie nur einmal und die Wiederholung wird als übersprungen angezeigt. Auszüge
+  werden im Suchprofil vor dem Profil-Vorschlag gesucht; eine Änderung, deren
+  Auszug sich mit einer anderen überschneidet, wird ebenfalls übersprungen (#42)
 - Die Rückmeldung lehnt `--am` beim eigenen Score und eine riesige Zahl als
   Score mit deutscher Meldung und Exit-Code 1 ab, statt `--am` still zu
   ignorieren oder mit einem Traceback abzubrechen (#41)
