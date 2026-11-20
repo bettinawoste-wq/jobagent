@@ -1,8 +1,9 @@
 """Sperre gegen gleichzeitige Läufe.
 
-Die Sperre ist eine Sperre des Betriebssystems auf einer Sperrdatei, keine bloße Datei: Endet
-der Prozess, auch durch Absturz oder hartes Beenden, gibt das Betriebssystem sie frei. Die
-Sperrdatei selbst bleibt liegen und stört nicht; sie wird beim nächsten Lauf wieder gesperrt.
+Die Sperre ist eine Dateisperre des Betriebssystems auf der Sperrdatei, nicht die bloße Datei:
+Endet der Prozess, auch durch Absturz oder hartes Beenden, gibt das Betriebssystem sie frei.
+Die Sperrdatei selbst bleibt liegen und stört nicht; sie wird beim nächsten Lauf wieder
+gesperrt.
 """
 
 import contextlib
@@ -84,9 +85,9 @@ class RunLock:
 
 # Fehlernummern, mit denen das Sperren scheitert, weil ein anderer die Sperre hält: unter
 # Linux EWOULDBLOCK (gleich EAGAIN), wo flock auf fcntl aufsetzt auch EACCES, unter Windows
-# EACCES oder EDEADLOCK. Windows meldet
-# allerdings jedes Scheitern als EACCES; dort lässt sich ein belegter Lauf nicht von einer
-# Sperrdatei unterscheiden, die sich nicht sperren lässt.
+# EACCES oder EDEADLOCK. Windows meldet allerdings jedes Scheitern als EACCES; dort lässt
+# sich ein belegter Lauf nicht von einer Sperrdatei unterscheiden, die sich nicht sperren
+# lässt.
 _HELD_ELSEWHERE = {errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES}
 if sys.platform == "win32":
     _HELD_ELSEWHERE.add(errno.EDEADLOCK)

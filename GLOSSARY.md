@@ -39,7 +39,7 @@ _Avoid_: Region, Standort
 **Suchzeitraum**:
 Die Zahl der zurückliegenden Tage, aus denen ein Lauf Anzeigen von den Quellen holt; er reicht bis zum Tag des letzten vollständigen Laufs zurück, höchstens so weit wie `veroeffentlichtseit` im Abschnitt `[suche]` und nie mehr als 100 Tage.
 _Im Code_: `search_window`
-_Avoid_: Zeitfenster, Zeitraum, veroeffentlichtseit
+_Avoid_: Zeitfenster, Zeitraum, veroeffentlichtseit (nur als Begriff; als Schlüssel in `config.toml` und Parameter der Bundesagentur bleibt `veroeffentlichtseit`)
 
 ## Bewertung
 

@@ -397,7 +397,7 @@ def test_accepting_returns_new_profile_and_leaves_saving_to_main(
     assert "Mehrfach falsch eingeordnet" in output
 
 
-def test_duplicate_change_is_applied_once_and_shown_as_skipped(
+def test_duplicate_change_is_applied_once_and_shown_as_not_applied(
     db: Store, profile_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
     decision = _decision(db, profile_path, FakeLanguageModel(_suggestion([_CHANGE, _CHANGE])))
@@ -408,12 +408,12 @@ def test_duplicate_change_is_applied_once_and_shown_as_skipped(
         "(Beratungsfirmen zählen nicht)\n"
     )
     output = capsys.readouterr()
-    assert f"Übersprungen, doppelte Änderung: {_CHANGE['alt']}" in output.err
+    assert f"Nicht angewandt, doppelte Änderung: {_CHANGE['alt']}" in output.err
     assert "nicht eindeutig" not in output.err
     assert output.out.count("Mehrfach falsch eingeordnet") == 1
 
 
-def test_overlapping_change_is_shown_as_skipped(
+def test_overlapping_change_is_shown_as_not_applied(
     db: Store, profile_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
     other = {**_CHANGE, "neu": _CHANGE["neu"] + ".", "grund": "Anders formuliert"}
@@ -423,7 +423,7 @@ def test_overlapping_change_is_shown_as_skipped(
     assert decision.accepted is not None
     output = capsys.readouterr()
     assert (
-        f"Übersprungen, überschneidet sich mit einer anderen Änderung: {_CHANGE['alt']} "
+        f"Nicht angewandt, überschneidet sich mit einer anderen Änderung: {_CHANGE['alt']} "
         "(Anders formuliert)"
     ) in output.err
     assert "Anders formuliert" not in output.out

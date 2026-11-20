@@ -115,8 +115,8 @@ def load_config(path: Path) -> Config:
     ein Abschnitt oder Schlüssel unbekannt ist, ein Wert nicht den erwarteten Typ hat oder
     außerhalb seines Wertebereichs liegt (auch `nachfassen_ab_tag` nach `nachfassen_bis_tag`
     und ein `ats` außer `ATS_NAMES`).
-    Die Meldung sammelt alle Fehler der Datei und schlägt für unbekannte Namen den
-    nächstliegenden bekannten vor. Fehlt die Datei, ist sie nicht lesbar oder kein gültiges
+    Die Meldung sammelt alle Fehler der Datei und nennt zu unbekannten Namen den ähnlichsten
+    bekannten („meintest du …?“). Fehlt die Datei, ist sie nicht lesbar oder kein gültiges
     TOML, wirft das Laden ebenfalls `ConfigError`.
     """
     raw = _read_toml(path)
@@ -162,7 +162,7 @@ def _reject_invalid(raw: dict, path: Path) -> None:
     ]
     if problems:
         text = "; ".join(problems)
-        # Endet die Meldung mit einem Vorschlag, schließt sie mit dessen Fragezeichen.
+        # Endet die Meldung mit „meintest du …?“, schließt sie mit diesem Fragezeichen.
         end = "" if text.endswith("?") else "."
         hint = (
             " Das alte flache Format ohne Abschnitte wird nicht mehr gelesen." if flat_keys else ""
@@ -206,7 +206,7 @@ def _unknown_top_level(raw: dict) -> list[str]:
 
 def _unknown_top_level_name(name: str, value: object) -> str:
     # Eine Tabelle oben ist ein Abschnitt; jeder andere Wert ein Schlüssel wie im alten
-    # flachen Format, für den ein bekannter Schlüssel an seinem Platz vorgeschlagen wird.
+    # flachen Format, zu dem als ähnlicher Name ein bekannter Schlüssel an seinem Platz steht.
     if isinstance(value, dict):
         return _unknown(f"Abschnitt `[{name}]`", _closest(name, _SECTIONS), lambda s: f"[{s}]")
     return _unknown(f"`{name}`", _closest(name, _SECTION_OF_KEY), spell=_place_of)
@@ -221,7 +221,7 @@ def _unknown_keys(raw: dict) -> list[str]:
 
 
 def _unknown_key_in_section(section: str, german: str) -> str:
-    # Vorgeschlagen wird erst ein Schlüssel desselben Abschnitts, der Kürze halber ohne
+    # Als ähnlicher Name gilt erst ein Schlüssel desselben Abschnitts, der Kürze halber ohne
     # Abschnitt, außer er steht als Liste von Tabellen; sonst einer aus einem anderen
     # Abschnitt an seinem Platz.
     label = f"`[{section}] {german}`"
@@ -323,7 +323,7 @@ def _unknown_ats(label: str, ats: str) -> str:
 
 
 def _unknown(label: str, closest: str | None, spell: Callable[[str], str]) -> str:
-    """Meldung für einen unbekannten Namen, mit Vorschlag, falls es einen nahen gibt."""
+    """Meldung für einen unbekannten Namen, mit „meintest du …?“, falls es einen ähnlichen gibt."""
     if closest is None:
         return f"{label} unbekannt"
     return f"{label} unbekannt, meintest du `{spell(closest)}`?"

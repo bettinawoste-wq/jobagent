@@ -27,7 +27,7 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 
 ### Geändert
 - `config.toml` wird streng geprüft: Unbekannte Abschnitte und Schlüssel brechen
-  das Laden mit einem Vorschlag für den nächstliegenden Namen ab, falsche
+  das Laden mit „meintest du …?“ und dem ähnlichsten Namen ab, falsche
   Werttypen mit dem erwarteten Typ; alle Fehler erscheinen in einer Meldung (#40)
 - `config.toml` prüft auch Wertebereiche: `mindest_score` auf der Score-Skala,
   `nachfassen_ab_tag` und `nachfassen_bis_tag` ab 0 und in dieser Reihenfolge,
@@ -47,9 +47,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 
 ### Behoben
 - Profil-Vorschlag: Schlägt das Sprachmodell dieselbe Änderung mehrfach vor, gilt
-  sie nur einmal und die Wiederholung wird als übersprungen angezeigt. Auszüge
+  sie nur einmal und die Wiederholung wird als nicht angewandt angezeigt. Auszüge
   werden im Suchprofil vor dem Profil-Vorschlag gesucht; eine Änderung, deren
-  Auszug sich mit einer anderen überschneidet, wird ebenfalls übersprungen (#42)
+  Auszug sich mit einer anderen überschneidet, wird ebenfalls nicht angewandt (#42)
 - Die Rückmeldung lehnt `--am` beim eigenen Score und eine riesige Zahl als
   Score mit deutscher Meldung und Exit-Code 1 ab, statt `--am` still zu
   ignorieren oder mit einem Traceback abzubrechen (#41)

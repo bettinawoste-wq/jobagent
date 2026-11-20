@@ -164,12 +164,12 @@ def _as_texts(value: object) -> list[str] | None:
 
 @dataclass(frozen=True, slots=True)
 class AppliedChanges:
-    """Das Suchprofil nach den Ersetzungen, die angewandten und die übersprungenen Änderungen.
+    """Das Suchprofil nach den Ersetzungen, die angewandten und die nicht angewandten Änderungen.
 
     `missing`: Auszug leer oder nicht im Suchprofil. `ambiguous`: Auszug kommt mehrfach vor.
     `unchanged`: `old` und `new` sind gleich, die Änderung bewirkt nichts. `duplicates`:
     dieselbe Ersetzung (gleiches `old` und `new`) wurde schon angewandt, der Grund zählt
-    dabei nicht; die Wiederholung einer übersprungenen Änderung steht nirgends noch einmal.
+    dabei nicht; die Wiederholung einer nicht angewandten Änderung steht nirgends noch einmal.
     `overlapping`: der Auszug überschneidet sich mit dem einer schon angewandten Änderung.
     """
 
@@ -299,7 +299,7 @@ def suggest_and_decide(
     ids = [entry.job_ad_id for entry in feedback]
     result = apply_changes(search_profile, suggestion.changes)
     _show_model_errors(suggestion.model_errors)
-    _show_skipped(result)
+    _show_not_applied(result)
 
     if not suggestion.changes:
         db.mark_feedback_processed(ids)
@@ -340,18 +340,18 @@ def _show_model_errors(model_errors: list[str]) -> None:
         print()
 
 
-def _show_skipped(result: AppliedChanges) -> None:
+def _show_not_applied(result: AppliedChanges) -> None:
     for change in result.missing:
-        print(f"Übersprungen, Auszug fehlt: {change.old}", file=sys.stderr)
+        print(f"Nicht angewandt, Auszug fehlt: {change.old}", file=sys.stderr)
     for change in result.ambiguous:
-        print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
+        print(f"Nicht angewandt, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
     for change in result.unchanged:
-        print(f"Übersprungen, ändert nichts: {change.old}", file=sys.stderr)
+        print(f"Nicht angewandt, ändert nichts: {change.old}", file=sys.stderr)
     for change in result.duplicates:
-        print(f"Übersprungen, doppelte Änderung: {change.old}", file=sys.stderr)
+        print(f"Nicht angewandt, doppelte Änderung: {change.old}", file=sys.stderr)
     for change in result.overlapping:
         print(
-            "Übersprungen, überschneidet sich mit einer anderen Änderung: "
+            "Nicht angewandt, überschneidet sich mit einer anderen Änderung: "
             f"{change.old} ({change.reason})",
             file=sys.stderr,
         )
