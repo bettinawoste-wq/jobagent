@@ -12,9 +12,10 @@ MAX_SEARCH_WINDOW_DAYS = 100
 class SearchWindow:
     """Aus wie vielen zurückliegenden Tagen ein Lauf Anzeigen holt.
 
-    `since` ist der Tag des letzten
-    vollständigen Laufs, None beim ersten Lauf; liegt er in der Zukunft, gilt der Startwert.
-    `capped` sagt, ob `veroeffentlichtseit` oder die Obergrenze den Suchzeitraum begrenzt hat.
+    `days` ist die Zahl der Tage, höchstens `veroeffentlichtseit` oder, fehlt es,
+    `MAX_SEARCH_WINDOW_DAYS`. `since` ist der Tag des letzten vollständigen Laufs, None beim
+    ersten Lauf; liegt er in der Zukunft, gilt der Startwert. `capped` sagt, ob
+    `veroeffentlichtseit` oder die Obergrenze den Suchzeitraum begrenzt hat.
     """
 
     days: int
