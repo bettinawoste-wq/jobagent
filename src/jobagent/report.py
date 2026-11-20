@@ -98,7 +98,7 @@ def write_report(
     """
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
-        f"{_search_window_line(search_window)}{_sources_block(sources)}{_unassessed_line(unassessed)}"
+        f"{_search_window_line(search_window, day)}{_sources_block(sources)}{_unassessed_line(unassessed)}"
         f"{_follow_up_block(follow_ups, day)}"
         f"{_profile_hint(open_feedback)}"
     )
@@ -174,7 +174,7 @@ def _report_error(output_dir: Path, error: OSError) -> ReportError:
     )
 
 
-def _search_window_line(window: SearchWindow | None) -> str:
+def _search_window_line(window: SearchWindow | None, day: date) -> str:
     if window is None:
         return ""
     if window.days is None:
@@ -184,7 +184,13 @@ def _search_window_line(window: SearchWindow | None) -> str:
     if window.since is None:
         reason = "erster Lauf"
     else:
-        reason = f"seit dem vollständigen Lauf vom {window.since:%d.%m.}"
+        # Mit Jahr, wenn der Lauf nicht im Jahr des Reports liegt (Jahreswechsel).
+        since = (
+            f"{window.since:%d.%m.}"
+            if window.since.year == day.year
+            else f"{window.since:%d.%m.%Y}"
+        )
+        reason = f"seit dem vollständigen Lauf vom {since}"
         if window.capped:
             reason += f", auf {length} begrenzt"
     return f"Suchzeitraum: {length} ({reason})\n\n"

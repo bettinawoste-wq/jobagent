@@ -57,6 +57,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   an; `veroeffentlichtseit` muss zwischen 1 und 100 liegen. Ein gemerkter
   vollständiger Lauf in der Zukunft (verstellte Uhr) zählt nicht, dann gilt der
   Startwert
+- Der Suchzeitraum im Report nennt das Datum des letzten vollständigen Laufs mit
+  Jahr, wenn es nicht im Jahr des Reports liegt, damit es über den Jahreswechsel
+  eindeutig bleibt
 
 ## 0.6.0 – 2026-11-15
 
