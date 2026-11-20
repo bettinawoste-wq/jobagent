@@ -400,7 +400,7 @@ class Store:
 
     def count_open_feedback(self) -> int:
         """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
-        # COUNT(*) liefert immer genau eine Zeile, sqlite3 typisiert sie aber als optional.
+        # COUNT(*) liefert immer genau eine Zeile; fetchone ist nur allgemein optional typisiert.
         (count,) = cast(
             tuple, self._conn.fetchone("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
         )

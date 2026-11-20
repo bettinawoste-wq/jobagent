@@ -217,9 +217,12 @@ def test_run_remembers_report_and_match_number(db: Store, output_dir: Path) -> N
 
     _run(db, output_dir, FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")]), model=model)
 
-    first, second = db.find_match("2026-03-02", 1), db.find_match("2026-03-02", 2)
-    assert first is not None and second is not None
-    assert (first.id, second.id) == ("a-2", "a-1")
+    first = db.find_match("2026-03-02", 1)
+    second = db.find_match("2026-03-02", 2)
+    assert first is not None
+    assert second is not None
+    assert first.id == "a-2"
+    assert second.id == "a-1"
 
 
 def test_run_skips_already_seen_job_ads(db: Store, output_dir: Path) -> None:
