@@ -36,12 +36,18 @@ class RunLock:
     def __init__(self, db_path: Path) -> None:
         # Neben der Datenbank: Wer dieselbe Datenbank nutzt, nutzt auch dieselbe Sperre. Nicht
         # `<db>.lock`: Den Namen nutzt SQLite auf manchen Dateisystemen für eigene Sperren.
+        self._db_path = db_path
         self._path = db_path.with_name(db_path.name + ".runlock")
         self._fd: int | None = None
 
     def __enter__(self) -> "RunLock":
         try:
             fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o644)
+        except FileNotFoundError as error:
+            # Der Ordner fehlt; gemeint hat die Nutzerin die Datenbank, nicht die Sperrdatei.
+            raise RunLockFileError(
+                f"Datenbank {self._db_path} nicht nutzbar: Ordner {self._db_path.parent} fehlt"
+            ) from error
         except OSError as error:
             raise RunLockFileError(f"Sperrdatei {self._path} nicht nutzbar: {error}") from error
         try:
@@ -50,8 +56,10 @@ class RunLock:
             os.close(fd)
             if error.errno not in _HELD_ELSEWHERE:
                 raise RunLockFileError(f"Sperrdatei {self._path} nicht nutzbar: {error}") from error
+            # Unter Windows kann auch eine Sperrdatei, die sich nicht sperren lässt, so
+            # erscheinen (siehe `_HELD_ELSEWHERE`); deshalb nennt die Meldung sie.
             raise RunLockedError(
-                "Es läuft schon ein anderer Lauf; dieser bricht ab. "
+                f"Es läuft schon ein anderer Lauf (Sperrdatei {self._path}); dieser bricht ab. "
                 "Starte ihn erneut, wenn der andere fertig ist."
             ) from error
         self._fd = fd

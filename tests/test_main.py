@@ -548,8 +548,8 @@ def test_cli_aborts_second_run_while_another_runs(
 
     assert exit_code == 1
     assert capsys.readouterr().err == (
-        "Fehler: Es läuft schon ein anderer Lauf; dieser bricht ab. "
-        "Starte ihn erneut, wenn der andere fertig ist.\n"
+        "Fehler: Es läuft schon ein anderer Lauf (Sperrdatei jobagent.db.runlock); dieser "
+        "bricht ab. Starte ihn erneut, wenn der andere fertig ist.\n"
     )
     assert source.received == []  # nichts gesucht, also auch nichts bewertet
     assert list((tmp_path / "output").glob("*.md")) == []  # kein Report

@@ -69,6 +69,9 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   neuer Text) gilt als nicht angewandt und blockiert keine andere an derselben
   Stelle; ein leerer oder im Suchprofil fehlender Auszug heißt „Auszug fehlt“
   statt „nicht eindeutig“
+- Die Meldung „Es läuft schon ein anderer Lauf“ nennt die Sperrdatei, weil unter
+  Windows auch eine kaputte Sperrdatei so erscheinen kann; fehlt der Ordner der
+  Datenbank, nennt die Meldung die Datenbank statt der Sperrdatei
 
 ## 0.6.0 – 2026-11-15
 
