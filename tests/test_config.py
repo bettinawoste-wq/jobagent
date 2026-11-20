@@ -228,9 +228,12 @@ def test_load_config_rejects_wrong_value_type_and_names_expected_type(
     [
         (
             '[[watchlist.firmen]]\nname = "GitLab"\natz = "greenhouse"',
-            "`[[watchlist.firmen]] atz` unbekannt, meintest du `ats`?",
+            "`[[watchlist.firmen]] atz` (Firma 1) unbekannt, meintest du `ats`?",
         ),
-        ("[[watchlist.firmen]]\nslug = 42", "`[[watchlist.firmen]] slug` muss ein Text sein"),
+        (
+            '[[watchlist.firmen]]\nslug = "a"\n\n[[watchlist.firmen]]\nslug = 42',
+            "`[[watchlist.firmen]] slug` (Firma 2) muss ein Text sein",
+        ),
     ],
 )
 def test_load_config_checks_fields_of_watchlist_companies(
@@ -258,3 +261,30 @@ def test_load_config_reads_config_toml_of_the_repo() -> None:
 
     assert config.keywords
     assert config.companies
+
+
+def test_load_config_ends_message_with_question_after_suggestion(tmp_path: Path) -> None:
+    message = _error_of(_write(tmp_path, "[report]\nmindestscore = 4\n"))
+
+    assert message.endswith("meintest du `mindest_score`?")
+
+
+def test_load_config_suggests_known_key_of_other_section_at_its_place(tmp_path: Path) -> None:
+    message = _error_of(_write(tmp_path, "[report]\numkreiss = 30\n"))
+
+    assert "`[report] umkreiss` unbekannt, meintest du `[bundesagentur] umkreis`?" in message
+
+
+def test_load_config_suggests_companies_as_list_of_tables(tmp_path: Path) -> None:
+    message = _error_of(_write(tmp_path, "[watchlist]\nfirma = 1\n"))
+
+    assert "`[watchlist] firma` unbekannt, meintest du `[[watchlist.firmen]]`?" in message
+
+
+def test_load_config_names_expected_type_and_spelling_of_companies(tmp_path: Path) -> None:
+    message = _error_of(_write(tmp_path, '[watchlist]\nfirmen = "GitLab"\n'))
+
+    assert (
+        "`[watchlist] firmen` muss eine Liste von Tabellen sein, geschrieben als "
+        "`[[watchlist.firmen]]`" in message
+    )

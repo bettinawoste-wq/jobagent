@@ -2,9 +2,10 @@
 
 import difflib
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple, TypeGuard
 
 from jobagent.report import DEFAULT_MIN_SCORE
 from jobagent.sources.watchlist import WatchlistCompany
@@ -45,7 +46,7 @@ def _is_list_of_texts(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
-def _is_list_of_tables(value: object) -> bool:
+def _is_list_of_tables(value: object) -> TypeGuard[list[dict]]:
     return isinstance(value, list) and all(isinstance(item, dict) for item in value)
 
 
@@ -54,18 +55,28 @@ _WHOLE_NUMBER = _ValueType("eine ganze Zahl", _is_whole_number)
 _LIST_OF_TEXTS = _ValueType("eine Liste von Texten", _is_list_of_texts)
 _LIST_OF_TABLES = _ValueType("eine Liste von Tabellen", _is_list_of_tables)
 
+
+class _Key(NamedTuple):
+    """Wohin ein deutscher Schlüssel übersetzt wird und welchen Typ sein Wert haben muss."""
+
+    field: str
+    value_type: _ValueType
+
+
 # Die einzige Stelle, an der die deutschen Schlüssel aus `config.toml` übersetzt werden:
-# (Abschnitt, Schlüssel) -> (Feld von `Config`, erwarteter Typ).
-_TOML_KEYS: dict[tuple[str, str], tuple[str, _ValueType]] = {
-    ("suche", "was"): ("keywords", _LIST_OF_TEXTS),
-    ("suche", "wo"): ("location", _TEXT),
-    ("suche", "veroeffentlichtseit"): ("published_since", _WHOLE_NUMBER),
-    ("bundesagentur", "umkreis"): ("radius", _WHOLE_NUMBER),
-    ("watchlist", "firmen"): ("companies", _LIST_OF_TABLES),
-    ("report", "mindest_score"): ("min_score", _WHOLE_NUMBER),
-    ("report", "nachfassen_ab_tag"): ("follow_up_min_days", _WHOLE_NUMBER),
-    ("report", "nachfassen_bis_tag"): ("follow_up_max_days", _WHOLE_NUMBER),
+# (Abschnitt, Schlüssel) -> Feld von `Config` und erwarteter Typ.
+_TOML_KEYS = {
+    ("suche", "was"): _Key("keywords", _LIST_OF_TEXTS),
+    ("suche", "wo"): _Key("location", _TEXT),
+    ("suche", "veroeffentlichtseit"): _Key("published_since", _WHOLE_NUMBER),
+    ("bundesagentur", "umkreis"): _Key("radius", _WHOLE_NUMBER),
+    ("watchlist", "firmen"): _Key("companies", _LIST_OF_TABLES),
+    ("report", "mindest_score"): _Key("min_score", _WHOLE_NUMBER),
+    ("report", "nachfassen_ab_tag"): _Key("follow_up_min_days", _WHOLE_NUMBER),
+    ("report", "nachfassen_bis_tag"): _Key("follow_up_max_days", _WHOLE_NUMBER),
 }
+# Platz der Firmen der Watchlist, des einzigen Eintrags, der eine Liste von Tabellen ist.
+_COMPANIES_KEY = ("watchlist", "firmen")
 # Felder einer Firma der Watchlist, übersetzt in `_to_company`.
 _COMPANY_FIELDS = {"name": _TEXT, "ats": _TEXT, "slug": _TEXT}
 # Abschnitt, in den ein deutscher Schlüssel gehört.
@@ -84,10 +95,10 @@ def load_config(path: Path) -> Config:
     TOML, wirft das Laden ebenfalls `ConfigError`.
     """
     raw = _read_toml(path)
-    _reject_problems(raw, path)
+    _reject_invalid(raw, path)
     values = {
-        english: raw[section][german]
-        for (section, german), (english, _) in _TOML_KEYS.items()
+        key.field: raw[section][german]
+        for (section, german), key in _TOML_KEYS.items()
         if german in raw.get(section, {})
     }
     if "companies" in values:
@@ -111,25 +122,25 @@ def _read_toml(path: Path) -> dict:
         raise ConfigError(f"{path} ist kein gültiges TOML: {error}") from error
 
 
-def _reject_problems(raw: dict, path: Path) -> None:
+def _reject_invalid(raw: dict, path: Path) -> None:
     flat_keys = _flat_keys(raw)
     problems = [
         *flat_keys,
         *_sections_without_table(raw),
         *_keys_in_other_section(raw),
-        *_companies_without_tables(raw),
-        *_unknown_sections(raw),
+        *_unknown_top_level(raw),
         *_unknown_keys(raw),
         *_wrong_value_types(raw),
-        *_company_field_problems(raw),
+        *_company_problems(raw),
     ]
     if problems:
+        text = "; ".join(problems)
+        # Endet die Meldung mit einem Vorschlag, schließt sie mit dessen Fragezeichen.
+        end = "" if text.endswith("?") else "."
         hint = (
             " Das alte flache Format ohne Abschnitte wird nicht mehr gelesen." if flat_keys else ""
         )
-        raise ConfigError(
-            f"{path} ist ungültig: " + "; ".join(dict.fromkeys(problems)) + "." + hint
-        )
+        raise ConfigError(f"{path} ist ungültig: {text}{end}{hint}")
 
 
 def _flat_keys(raw: dict) -> list[str]:
@@ -153,95 +164,121 @@ def _keys_in_other_section(raw: dict) -> list[str]:
     return [
         f"`{_spelling(section, german, bool(value) and _is_list_of_tables(value))}` gehört "
         f"unter `{_place(_SECTION_OF_KEY[german], german)}`"
-        for section, german, value in _known_keys_in_sections(raw)
-        if _SECTION_OF_KEY[german] != section
+        for section, german, value in _keys_in_sections(raw)
+        if german in _SECTION_OF_KEY and _SECTION_OF_KEY[german] != section
     ]
 
 
-def _companies_without_tables(raw: dict) -> list[str]:
+def _unknown_top_level(raw: dict) -> list[str]:
     return [
-        f"`[{section}] {german}` muss als `{_place(section, german)}` stehen"
-        for section, german, value in _known_keys_in_sections(raw)
-        if _SECTION_OF_KEY[german] == section
-        and _is_companies(section, german)
-        and not _is_list_of_tables(value)
-    ]
-
-
-def _wrong_value_types(raw: dict) -> list[str]:
-    # Die Firmen haben mit `_companies_without_tables` eine eigene Meldung.
-    return [
-        f"`[{section}] {german}` muss {_TOML_KEYS[(section, german)][1].words} sein"
-        for section, german, value in _known_keys_in_sections(raw)
-        if _SECTION_OF_KEY[german] == section
-        and not _is_companies(section, german)
-        and not _TOML_KEYS[(section, german)][1].accepts(value)
-    ]
-
-
-def _company_field_problems(raw: dict) -> list[str]:
-    companies = raw.get("watchlist", {}).get("firmen", []) if _is_table(raw, "watchlist") else []
-    if not _is_list_of_tables(companies):
-        return []  # meldet `_companies_without_tables`
-    place = _place("watchlist", "firmen")
-    fields = {name: name for name in _COMPANY_FIELDS}
-    return [
-        f"`{place} {name}` unbekannt" + _suggestion(name, fields)
-        if name not in _COMPANY_FIELDS
-        else f"`{place} {name}` muss {_COMPANY_FIELDS[name].words} sein"
-        for company in companies
-        for name, value in company.items()
-        if name not in _COMPANY_FIELDS or not _COMPANY_FIELDS[name].accepts(value)
-    ]
-
-
-def _is_table(raw: dict, section: str) -> bool:
-    return isinstance(raw.get(section), dict)
-
-
-def _unknown_sections(raw: dict) -> list[str]:
-    # Unbekannte Tabellen oben gelten als Abschnitt, andere Werte als Schlüssel im alten
-    # flachen Format; für diese wird der bekannte Schlüssel an seinem Platz vorgeschlagen.
-    sections = {section: f"[{section}]" for section in _SECTIONS}
-    keys = {german: _place(section, german) for section, german in _TOML_KEYS}
-    return [
-        f"Abschnitt `[{name}]` unbekannt" + _suggestion(name, sections)
-        if isinstance(value, dict)
-        else f"`{name}` unbekannt" + _suggestion(name, keys)
+        _unknown_top_level_name(name, value)
         for name, value in raw.items()
         if name not in _SECTIONS and name not in _SECTION_OF_KEY
     ]
 
 
+def _unknown_top_level_name(name: str, value: object) -> str:
+    # Eine Tabelle oben ist ein Abschnitt; jeder andere Wert ein Schlüssel wie im alten
+    # flachen Format, für den ein bekannter Schlüssel an seinem Platz vorgeschlagen wird.
+    if isinstance(value, dict):
+        return _unknown(f"Abschnitt `[{name}]`", _closest(name, _SECTIONS), lambda s: f"[{s}]")
+    return _unknown(f"`{name}`", _closest(name, _SECTION_OF_KEY), spell=_place_of)
+
+
 def _unknown_keys(raw: dict) -> list[str]:
     return [
-        f"`[{section}] {german}` unbekannt" + _suggestion(german, _keys_of(section))
-        for section, table in raw.items()
-        if section in _SECTIONS and isinstance(table, dict)
-        for german in table
+        _unknown_key_in_section(section, german)
+        for section, german, _ in _keys_in_sections(raw)
         if german not in _SECTION_OF_KEY
     ]
 
 
-def _keys_of(section: str) -> dict[str, str]:
-    return {german: german for known_section, german in _TOML_KEYS if known_section == section}
+def _unknown_key_in_section(section: str, german: str) -> str:
+    # Vorgeschlagen wird erst ein Schlüssel desselben Abschnitts, der Kürze halber ohne
+    # Abschnitt, außer er steht als Liste von Tabellen; sonst einer aus einem anderen
+    # Abschnitt an seinem Platz.
+    label = f"`[{section}] {german}`"
+    same_section = _closest(german, [key for known, key in _TOML_KEYS if known == section])
+    if same_section is None:
+        return _unknown(label, _closest(german, _SECTION_OF_KEY), spell=_place_of)
+    if _is_companies(section, same_section):
+        return _unknown(label, same_section, spell=_place_of)
+    return _unknown(label, same_section, spell=str)
 
 
-def _suggestion(name: str, spellings: dict[str, str]) -> str:
-    """Vorschlag des nächstliegenden bekannten Namens als `spellings[name]`, falls es einen gibt."""
-    closest = difflib.get_close_matches(name.lower(), list(spellings), n=1)
-    return f", meintest du `{spellings[closest[0]]}`?" if closest else ""
+def _wrong_value_types(raw: dict) -> list[str]:
+    return [
+        _wrong_value_type(section, german)
+        for section, german, value in _keys_in_sections(raw)
+        if _SECTION_OF_KEY.get(german) == section
+        and not _TOML_KEYS[(section, german)].value_type.accepts(value)
+    ]
 
 
-def _known_keys_in_sections(raw: dict) -> list[tuple[str, str, object]]:
-    """Bekannte Schlüssel in bekannten Abschnitten als (Abschnitt, Schlüssel, Wert)."""
+def _wrong_value_type(section: str, german: str) -> str:
+    message = f"`[{section}] {german}` muss {_TOML_KEYS[(section, german)].value_type.words} sein"
+    place = _place(section, german)
+    if place != _spelling(section, german, list_of_tables=False):
+        message += f", geschrieben als `{place}`"
+    return message
+
+
+def _company_problems(raw: dict) -> list[str]:
+    section, german = _COMPANIES_KEY
+    table = raw.get(section)
+    companies = table.get(german) if isinstance(table, dict) else None
+    if not _is_list_of_tables(companies):
+        return []  # Fehlende Firmen sind erlaubt, falsch geformte meldet `_wrong_value_types`.
+    return [
+        problem
+        for number, company in enumerate(companies, start=1)
+        for problem in _problems_of_company(number, company)
+    ]
+
+
+def _problems_of_company(number: int, company: dict) -> list[str]:
+    place = _place(*_COMPANIES_KEY)
+
+    def label(name: str) -> str:
+        return f"`{place} {name}` (Firma {number})"
+
+    unknown = [
+        _unknown(label(name), _closest(name, _COMPANY_FIELDS), spell=str)
+        for name in company
+        if name not in _COMPANY_FIELDS
+    ]
+    wrong_types = [
+        f"{label(name)} muss {_COMPANY_FIELDS[name].words} sein"
+        for name, value in company.items()
+        if name in _COMPANY_FIELDS and not _COMPANY_FIELDS[name].accepts(value)
+    ]
+    return unknown + wrong_types
+
+
+def _unknown(label: str, closest: str | None, spell: Callable[[str], str]) -> str:
+    """Meldung für einen unbekannten Namen, mit Vorschlag, falls es einen nahen gibt."""
+    if closest is None:
+        return f"{label} unbekannt"
+    return f"{label} unbekannt, meintest du `{spell(closest)}`?"
+
+
+def _closest(name: str, known: Iterable[str]) -> str | None:
+    matches = difflib.get_close_matches(name.lower(), list(known), n=1)
+    return matches[0] if matches else None
+
+
+def _keys_in_sections(raw: dict) -> list[tuple[str, str, object]]:
+    """Alle Schlüssel in bekannten Abschnitten als (Abschnitt, Schlüssel, Wert)."""
     return [
         (section, german, value)
         for section, table in raw.items()
         if section in _SECTIONS and isinstance(table, dict)
         for german, value in table.items()
-        if german in _SECTION_OF_KEY
     ]
+
+
+def _place_of(german: str) -> str:
+    return _place(_SECTION_OF_KEY[german], german)
 
 
 def _place(section: str, german: str) -> str:
@@ -257,8 +294,7 @@ def _spelling(section: str, german: str, list_of_tables: bool) -> str:
 
 
 def _is_companies(section: str, german: str) -> bool:
-    # Die Firmen der Watchlist sind der einzige Eintrag, der eine Liste von Tabellen ist.
-    return _TOML_KEYS[(section, german)][0] == "companies"
+    return (section, german) == _COMPANIES_KEY
 
 
 def _to_company(entry: dict) -> WatchlistCompany:
