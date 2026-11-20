@@ -1,5 +1,7 @@
 # Stellenvorschläge 2026-03-02
 
+Suchzeitraum: 7 Tage (erster Lauf)
+
 ## Quellen
 - Bundesagentur für Arbeit (Demo): 3 Anzeigen
 - Arbeitnow (Demo): 3 Anzeigen
