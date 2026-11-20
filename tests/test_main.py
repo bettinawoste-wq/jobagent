@@ -261,7 +261,7 @@ def test_default_sources_search_with_location_radius_and_search_window() -> None
         keywords=["Python"],
         location="München",
         radius=30,
-        published_since=7,
+        max_search_window=7,
         companies=[WatchlistCompany(name="GitLab", ats="greenhouse", slug="gitlab")],
     )
     window = SearchWindow(4, since=date(2026, 2, 27), capped=False)

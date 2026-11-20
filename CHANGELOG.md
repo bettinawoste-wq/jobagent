@@ -42,6 +42,9 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
   `nachfassen_ab_tag` und `nachfassen_bis_tag` ab 0 und in dieser Reihenfolge,
   `umkreis` ab 0 und `ats` nur `greenhouse` oder `lever`, bei Tippfehlern mit
   dem ähnlichen Namen
+- Das Anthropic-SDK muss mindestens Version 2.5 haben; ältere Versionen kennen
+  die Fehlerklassen nicht, nach denen der Report die Ursache unbewerteter
+  Anzeigen nennt
 - `output/abgebrochen.log` wächst nur noch auf etwa 1 MB; danach bleibt genau
   eine ältere Kopie `abgebrochen.log.1`. Das README weist darauf hin, dass
   `ANTHROPIC_LOG=debug` Anzeigen-Volltexte auf die Konsole bringt, nicht ins Log (#43)

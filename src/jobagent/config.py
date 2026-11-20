@@ -20,7 +20,7 @@ class Config:
     keywords: list[str] = field(default_factory=list)
     location: str | None = None
     radius: int | None = None
-    published_since: int | None = None
+    max_search_window: int | None = None  # `veroeffentlichtseit`: Start- und Höchstwert
     min_score: int = DEFAULT_MIN_SCORE
     follow_up_min_days: int = 14
     follow_up_max_days: int = 28
@@ -39,7 +39,7 @@ class _ValueType:
     accepts: Callable[[object], bool]
 
 
-def _is_whole_number(value: object) -> bool:
+def _is_whole_number(value: object) -> TypeGuard[int]:
     # TOML-Wahrheitswerte sind in Python `bool` und damit auch `int`.
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -88,7 +88,7 @@ _TOML_KEYS = {
     ("suche", "was"): _Key("keywords", _LIST_OF_TEXTS),
     ("suche", "wo"): _Key("location", _TEXT),
     ("suche", "veroeffentlichtseit"): _Key(
-        "published_since", _WHOLE_NUMBER, _Bounds(1, MAX_SEARCH_WINDOW_DAYS)
+        "max_search_window", _WHOLE_NUMBER, _Bounds(1, MAX_SEARCH_WINDOW_DAYS)
     ),
     ("bundesagentur", "umkreis"): _Key("radius", _WHOLE_NUMBER, _Bounds(0)),
     ("watchlist", "firmen"): _Key("companies", _LIST_OF_TABLES),
@@ -251,14 +251,13 @@ def _wrong_value_type(section: str, german: str) -> str:
 
 
 def _values_out_of_bounds(raw: dict) -> list[str]:
-    # Nur Werte vom richtigen Typ; einen falschen meldet schon `_wrong_value_types`.
+    # Nur ganze Zahlen; einen falschen Typ meldet schon `_wrong_value_types`.
     return [
         f"`[{section}] {german}` muss {bounds.words()}"
         for section, german, value in _keys_in_sections(raw)
         if _SECTION_OF_KEY.get(german) == section
         and (bounds := _TOML_KEYS[(section, german)].bounds) is not None
-        and _TOML_KEYS[(section, german)].value_type.accepts(value)
-        and isinstance(value, int)
+        and _is_whole_number(value)
         and not bounds.accepts(value)
     ]
 

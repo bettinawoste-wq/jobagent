@@ -67,7 +67,7 @@ def main(
         today = date.today()
 
         with Store(db_path) as db:
-            window = search_window(db.last_complete_run(), today, max_days=config.published_since)
+            window = search_window(db.last_complete_run(), today, max_days=config.max_search_window)
             return run(
                 sources=default_sources(config, window) if sources is None else sources,
                 language_model=language_model,
@@ -132,7 +132,7 @@ def demo_run(output_dir: Path | None = None) -> str:
                 config=demo.CONFIG,
                 today=today,
                 output_dir=output_dir or Path(temp),
-                search_window=search_window(None, today, max_days=demo.CONFIG.published_since),
+                search_window=search_window(None, today, max_days=demo.CONFIG.max_search_window),
             )
         return path.read_text(encoding="utf-8")
 

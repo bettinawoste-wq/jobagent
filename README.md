@@ -257,9 +257,9 @@ Fehlende Werte behalten ihren Standard. Unbekannte Abschnitte und Schlüssel,
 Werte vom falschen Typ oder außerhalb ihres Bereichs (etwa `mindest_score`
 außerhalb der Score-Skala, `nachfassen_ab_tag` nach `nachfassen_bis_tag`, ein
 `ats` außer `greenhouse` und `lever`) brechen den Lauf ab; die Meldung nennt
-alle Fehler der Datei auf einmal und schlägt bei Tippfehlern den gemeinten
-Namen vor. Das alte flache Format ohne Abschnitte wird nicht mehr gelesen; der
-Lauf nennt dann den neuen Platz jedes alten Schlüssels.
+alle Fehler der Datei auf einmal und fragt bei Tippfehlern „meintest du …?“
+mit dem ähnlichsten Namen. Das alte flache Format ohne Abschnitte wird nicht
+mehr gelesen; der Lauf nennt dann den neuen Platz jedes alten Schlüssels.
 
 ## Verwenden
 

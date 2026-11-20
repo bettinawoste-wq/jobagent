@@ -32,7 +32,7 @@ class FetchError(Exception):
         self.reason = reason
 
 
-def truncated(max_pages: int) -> str:
+def truncated_reason(max_pages: int) -> str:
     """Grund für den Quellenstatus, wenn das Blättern an der Sicherheitsgrenze endet.
 
     Als Fehler der Quelle zählt der Lauf dann nicht als vollständig: Der nächste Suchzeitraum

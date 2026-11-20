@@ -20,7 +20,7 @@ from jobagent.sources._http import (
     text_at,
     text_or_none,
     title_matches,
-    truncated,
+    truncated_reason,
 )
 
 _URL = "https://www.arbeitnow.com/api/job-board-api"
@@ -114,7 +114,7 @@ class ArbeitnowSource:
                     return
                 url = (page.get("links") or {}).get("next")
         if url:
-            raise FetchError(truncated(_MAX_PAGES))
+            raise FetchError(truncated_reason(_MAX_PAGES))
 
     def _matches(self, entry: dict, keywords: list[str]) -> bool:
         if not title_matches(entry.get("title"), keywords):

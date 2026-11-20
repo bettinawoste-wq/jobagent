@@ -43,7 +43,7 @@ def test_load_config_reads_sections_with_german_keys(tmp_path: Path) -> None:
         keywords=["Full-Stack-Entwickler", "Data Scientist"],
         location="München",
         radius=30,
-        published_since=1,
+        max_search_window=1,
         min_score=4,
         follow_up_min_days=10,
         follow_up_max_days=20,
@@ -347,7 +347,7 @@ def test_load_config_collects_range_problems_in_one_message(tmp_path: Path) -> N
 def test_load_config_accepts_search_window_at_the_upper_limit(tmp_path: Path) -> None:
     config_path = _write(tmp_path, "[suche]\nveroeffentlichtseit = 100\n")
 
-    assert load_config(config_path).published_since == 100
+    assert load_config(config_path).max_search_window == 100
 
 
 def test_load_config_reads_config_toml_of_the_repo() -> None:

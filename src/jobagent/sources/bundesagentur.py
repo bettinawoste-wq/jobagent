@@ -19,7 +19,7 @@ from jobagent.sources._http import (
     required_text,
     text_at,
     text_or_none,
-    truncated,
+    truncated_reason,
 )
 
 _SEARCH_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
@@ -65,8 +65,10 @@ class BundesagenturSource:
         errors: list[str] = []
         with httpx.Client(timeout=TIMEOUT, transport=self._transport) as client:
             for keyword in keywords:
-                for job_ad in self._search_keyword(client, keyword, errors):
+                result = self._search_keyword(client, keyword)
+                for job_ad in result.job_ads:
                     found.setdefault(job_ad.id, job_ad)
+                errors.extend(result.errors)
             # Die Details erst nach dem Zusammenführen holen: je Anzeige nur einmal.
             job_ads = [
                 replace(job_ad, description=_description(client, job_ad.id))
@@ -74,31 +76,32 @@ class BundesagenturSource:
             ]
         return SearchResult(job_ads, errors)
 
-    def _search_keyword(self, client: httpx.Client, keyword: str, errors: list[str]) -> list[JobAd]:
+    def _search_keyword(self, client: httpx.Client, keyword: str) -> SearchResult:
         """Blättert durch alle Seiten zu einem Suchbegriff, höchstens `_MAX_PAGES`.
 
-        Fehler hängt es an `errors` an. Scheitert eine Seite oder ist die Grenze erreicht,
-        bleiben die Anzeigen der Seiten davor erhalten.
+        Scheitert eine Seite oder ist die Grenze erreicht, bleiben die Anzeigen der Seiten
+        davor erhalten, und der Fehler steht im Ergebnis.
         """
         job_ads: list[JobAd] = []
+        errors: list[str] = []
         fetched = 0
         for page in range(1, _MAX_PAGES + 1):
             try:
                 result = self._search_page(client, keyword, page)
             except FetchError as error:
                 errors.append(f"{keyword}: {error.reason}")
-                return job_ads
+                break
             job_ads.extend(result.converted.job_ads)
-            errors.extend(
-                error for error in result.converted.errors(keyword) if error not in errors
-            )
+            errors.extend(result.converted.errors(keyword))
             fetched += result.entries
             if result.entries < _PAGE_SIZE or (
                 result.total is not None and fetched >= result.total
             ):
-                return job_ads
-        errors.append(f"{keyword}: {truncated(_MAX_PAGES)}")
-        return job_ads
+                break
+        else:
+            errors.append(f"{keyword}: {truncated_reason(_MAX_PAGES)}")
+        # "ungültige Antwort" höchstens einmal je Suchbegriff, auch über mehrere Seiten.
+        return SearchResult(job_ads, list(dict.fromkeys(errors)))
 
     def _search_page(self, client: httpx.Client, keyword: str, page: int) -> "_Page":
         """Eine Ergebnisseite zu einem Suchbegriff, noch ohne Beschreibung."""
