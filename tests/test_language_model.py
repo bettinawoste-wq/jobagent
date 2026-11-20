@@ -138,6 +138,9 @@ _REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
         anthropic.InternalServerError(
             "Überlastet", response=httpx2.Response(529, request=_REQUEST), body=None
         ),
+        anthropic.RateLimitError(
+            "Zu viele Anfragen", response=httpx2.Response(429, request=_REQUEST), body=None
+        ),
     ],
 )
 def test_api_error_becomes_language_model_error_unreachable(error: Exception) -> None:
@@ -145,6 +148,31 @@ def test_api_error_becomes_language_model_error_unreachable(error: Exception) ->
         _ask(error)
 
     assert caught.value.failure is LanguageModelFailure.UNREACHABLE
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        # Der Server hat geantwortet, nur nicht mit einer Antwort: weder fehlt der Key,
+        # noch ist das Sprachmodell unerreichbar.
+        anthropic.AuthenticationError(
+            "Key ungültig", response=httpx2.Response(401, request=_REQUEST), body=None
+        ),
+        anthropic.NotFoundError(
+            "Modell unbekannt", response=httpx2.Response(404, request=_REQUEST), body=None
+        ),
+        anthropic.BadRequestError(
+            "Guthaben leer", response=httpx2.Response(400, request=_REQUEST), body=None
+        ),
+        anthropic.AnthropicError("sonstwas"),
+        TypeError("unexpected keyword argument 'foo'"),
+    ],
+)
+def test_other_errors_of_the_request_have_no_named_cause(error: Exception) -> None:
+    with pytest.raises(LanguageModelError) as caught:
+        _ask(error)
+
+    assert caught.value.failure is LanguageModelFailure.OTHER
 
 
 def test_missing_api_key_becomes_language_model_error_missing_api_key() -> None:

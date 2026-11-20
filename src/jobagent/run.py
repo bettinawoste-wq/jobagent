@@ -154,14 +154,14 @@ def _new_matches(
     job_ads: list[JobAd],
     language_model: LanguageModel,
     search_profile: str,
-) -> tuple[list[report.Match], list[LanguageModelFailure | None]]:
+) -> tuple[list[report.Match], list[LanguageModelFailure]]:
     """Bewertet die neuen Anzeigen; gibt die Treffer zurück und je unbewerteter Anzeige,
-    woran ihre Bewertung scheiterte (None bei einem unerwarteten Fehler).
+    woran ihre Bewertung scheiterte.
 
     Gemerkt werden die Treffer erst zusammen mit dem Report, siehe `_report_and_remember`.
     """
     matches: list[report.Match] = []
-    failures: list[LanguageModelFailure | None] = []
+    failures: list[LanguageModelFailure] = []
 
     for job_ad in job_ads:
         if not db.is_new(job_ad.id):
@@ -181,7 +181,7 @@ def _new_matches(
 
 
 def _common_cause(
-    matches: list[report.Match], failures: list[LanguageModelFailure | None]
+    matches: list[report.Match], failures: list[LanguageModelFailure]
 ) -> LanguageModelFailure | None:
     """Woran alle Bewertungen des Laufs scheiterten, wenn es bei allen dasselbe war."""
     if matches or len(set(failures)) != 1:
@@ -191,14 +191,14 @@ def _common_cause(
 
 def _safe_score(
     job_ad: JobAd, search_profile: str, language_model: LanguageModel
-) -> Assessment | LanguageModelFailure | None:
+) -> Assessment | LanguageModelFailure:
     # Bekannte Fehler des Sprachmodells behandelt die Bewertung selbst. Dieses Netz fängt
     # z.B. einen Programmfehler in der Prüfung ab: Eine Bewertung darf den Lauf nie abbrechen.
     try:
         return score_job_ad(job_ad, search_profile, language_model)
     except Exception:
         logger.exception("Unerwarteter Fehler in der Bewertung (anzeige=%r)", job_ad.id)
-        return None
+        return LanguageModelFailure.OTHER
 
 
 def _open_feedback(db: Store) -> int:

@@ -15,20 +15,22 @@ _MAX_TOKENS = 1024
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _TOOL_NAME = "antwort_abgeben"
 _TOOL_ANNOTATIONS = ("title", "description")
+_MISSING_API_KEY_MESSAGE = "Could not resolve authentication method"
 
 
 class LanguageModelFailure(Enum):
     """Woran eine Frage an das Sprachmodell gescheitert ist."""
 
     MISSING_API_KEY = "missing_api_key"
-    UNREACHABLE = "unreachable"
+    UNREACHABLE = "unreachable"  # keine Verbindung, überlastet oder Störung beim Anbieter
     UNUSABLE_ANSWER = "unusable_answer"
+    OTHER = "other"  # z.B. Key ungültig oder Modell unbekannt; der Report nennt keine Ursache
 
 
 class LanguageModelError(Exception):
     """Das Sprachmodell hat keine brauchbare Antwort geliefert, gleich aus welchem Grund.
 
-    Woran es lag, sagt ailure; ohne Angabe war die Antwort unbrauchbar.
+    Woran es lag, sagt `failure`; ohne Angabe war die Antwort unbrauchbar.
     """
 
     def __init__(
@@ -42,9 +44,10 @@ class LanguageModel(Protocol):
     def ask(self, system: str, text: str, schema: dict) -> dict:
         """Fragt das Sprachmodell und liefert seine Antwort als Daten nach `schema`.
 
-        Wirft nur `LanguageModelError`, nie einen Fehler des SDK dahinter. Jede Umsetzung
-        gibt ihre Antwort durch `with_required_keys`: Pflichtschlüssel sind da, und Texte
-        enthalten keine einzelnen Surrogate.
+        Wirft nur `LanguageModelError`, nie einen Fehler des SDK dahinter; dessen `failure`
+        sagt, woran die Frage scheiterte. Jede Umsetzung gibt ihre Antwort durch
+        `with_required_keys`: Pflichtschlüssel sind da, und Texte enthalten keine
+        einzelnen Surrogate.
         """
         ...
 
@@ -73,16 +76,11 @@ class AnthropicLanguageModel[Response](ABC):
             if self._client is None:
                 self._client = anthropic.Anthropic()  # einmal je Instanz, nicht je Frage
             response = self._send(self._client, system, text, schema)
-        except TypeError as error:
-            # So meldet das SDK einen fehlenden ANTHROPIC_API_KEY, schon beim Aufbau der
-            # Anfrage und nicht als AnthropicError.
+        except (anthropic.AnthropicError, TypeError) as error:
+            # TypeError: So meldet das SDK einen fehlenden ANTHROPIC_API_KEY, schon beim
+            # Aufbau der Anfrage und nicht als AnthropicError.
             raise LanguageModelError(
-                f"Anthropic-API-Anfrage fehlgeschlagen: {error}",
-                LanguageModelFailure.MISSING_API_KEY,
-            ) from error
-        except anthropic.AnthropicError as error:
-            raise LanguageModelError(
-                f"Anthropic-API-Anfrage fehlgeschlagen: {error}", LanguageModelFailure.UNREACHABLE
+                f"Anthropic-API-Anfrage fehlgeschlagen: {error}", _failure_of(error)
             ) from error
 
         # Das Auswerten steht außerhalb des try, damit ein Programmfehler dabei nicht
@@ -142,6 +140,22 @@ class AnthropicJsonLanguageModel(AnthropicLanguageModel[BetaMessage]):
 
     def _answer_from(self, response: BetaMessage) -> dict:
         return _json_object_from(response)
+
+
+def _failure_of(error: Exception) -> LanguageModelFailure:
+    """Woran die Anfrage scheiterte, nach dem Fehler des SDK."""
+    if isinstance(error, TypeError):
+        # Nur diese Meldung steht für den fehlenden Key; ein anderer TypeError ist z.B.
+        # ein Programmfehler beim Aufbau der Anfrage.
+        if _MISSING_API_KEY_MESSAGE in str(error):
+            return LanguageModelFailure.MISSING_API_KEY
+        return LanguageModelFailure.OTHER
+    if isinstance(
+        error,
+        (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError),
+    ):
+        return LanguageModelFailure.UNREACHABLE
+    return LanguageModelFailure.OTHER
 
 
 def _tool_input_from(response: Message) -> dict:

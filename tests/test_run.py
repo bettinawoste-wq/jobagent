@@ -352,6 +352,17 @@ def test_run_names_cause_when_some_answers_fail_the_check(db: Store, output_dir:
     assert "\n2 unbewertete Anzeigen (Antworten unbrauchbar) – der nächste Lauf" in content
 
 
+def test_run_names_no_cause_when_all_assessments_fail_otherwise(
+    db: Store, output_dir: Path
+) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(LanguageModelError("401", LanguageModelFailure.OTHER))
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n2 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n" in content
+
+
 def test_run_names_no_cause_for_mixed_failures(db: Store, output_dir: Path) -> None:
     source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
     model = FakeLanguageModel(

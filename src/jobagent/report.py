@@ -35,7 +35,8 @@ class SourceStatus:
 class Unassessed:
     """Die unbewerteten Anzeigen eines Laufs.
 
-    `cause` ist gesetzt, wenn alle Bewertungen des Laufs auf dieselbe Art gescheitert sind.
+    `cause` ist gesetzt, wenn alle Bewertungen des Laufs auf dieselbe Art gescheitert sind;
+    der Report nennt sie, außer bei einem sonstigen Fehler (`LanguageModelFailure.OTHER`).
     """
 
     count: int = 0
@@ -212,10 +213,15 @@ def _source_line(source: SourceStatus) -> str:
 def _unassessed_line(unassessed: Unassessed) -> str:
     if not unassessed.count:
         return ""
-    n = unassessed.count
-    count = "1 unbewertete Anzeige" if n == 1 else f"{n} unbewertete Anzeigen"
-    cause = f" ({_CAUSES[unassessed.cause]})" if unassessed.cause else ""
-    return f"{count}{cause} – der nächste Lauf versucht es erneut.\n\n"
+    text = (
+        "1 unbewertete Anzeige"
+        if unassessed.count == 1
+        else f"{unassessed.count} unbewertete Anzeigen"
+    )
+    cause = _CAUSES.get(unassessed.cause) if unassessed.cause else None
+    if cause:
+        text += f" ({cause})"
+    return f"{text} – der nächste Lauf versucht es erneut.\n\n"
 
 
 def _profile_hint(open_feedback: int) -> str:
