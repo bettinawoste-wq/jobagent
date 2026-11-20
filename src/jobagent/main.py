@@ -73,7 +73,7 @@ def main(
 # Fehler, die nicht eine Quelle oder Anzeige betreffen, sondern den ganzen Lauf abbrechen.
 _ABORTS = (ConfigError, SearchProfileError, StoreError, ReportError)
 _ABORTED_LOG = "abgebrochen.log"
-# Abgebrochene Läufe sammeln sich in einer Datei; so groß wird sie etwa, dazu eine ältere Kopie.
+# Obergrenze für das Log der abgebrochenen Läufe; darüber bleibt eine ältere Kopie.
 _ABORTED_LOG_MAX_BYTES = 1_000_000
 
 

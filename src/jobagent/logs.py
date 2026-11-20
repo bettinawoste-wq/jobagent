@@ -7,8 +7,10 @@ der gehört in kein Log (ADR 0001).
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
+from typing import Literal
 
 _CONSOLE_FORMAT = "%(levelname)s:%(name)s:%(message)s"
 _FILE_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -79,41 +81,54 @@ class RunLog(logging.Handler):
         Lässt sich die Datei nicht schreiben, steht eine Warnung auf der Konsole; der Lauf
         selbst gilt deshalb nicht als gescheitert.
         """
-        self._write(path, "w")
+        _write(path, self._encoded(), "wb")
 
     def append(self, path: Path, *, max_bytes: int) -> None:
-        """Hängt das gesammelte Log hinten an `path` an, das so etwa `max_bytes` groß bleibt.
+        """Hängt das gesammelte Log an `path` an, das so in der Regel etwa `max_bytes` groß bleibt.
 
-        Würde `path` dabei größer als `max_bytes`, wird es zur älteren Kopie `<path>.1`, und
-        das Log beginnt eine neue Datei; eine noch ältere Kopie fällt weg. Scheitern behandelt
-        es wie `save`.
+        Würde eine vorhandene Datei dabei größer, wird sie zur älteren Kopie `<path>.1`, und
+        das Log beginnt eine neue Datei; eine noch ältere Kopie fällt weg. Lässt sich die Kopie
+        nicht anlegen, hängt das Log mit einer Warnung doch an, damit nichts verloren geht.
+        Scheitern behandelt `append` wie `save`.
         """
-        older = path.with_name(path.name + ".1")
-        try:
-            size = path.stat().st_size
-        except OSError:
-            size = 0  # noch keine Datei, oder sie lässt sich nicht lesen; dann meldet `_write`
-        if size and size + self._size() > max_bytes:
-            try:
-                path.replace(older)
-            except OSError as error:
-                logging.getLogger(__name__).warning(
-                    "Ältere Kopie des Logs ließ sich nicht anlegen (datei=%s): %s", older, error
-                )
-        self._write(path, "a")
+        encoded = self._encoded()
+        size = _size_of(path)
+        if size and size + len(encoded) > max_bytes:
+            _keep_older_copy(path)
+        _write(path, encoded, "ab")
 
-    def _size(self) -> int:
-        return sum(len(line.encode("utf-8", errors="backslashreplace")) for line in self._lines)
+    def _encoded(self) -> bytes:
+        # Vorab kodiert wie eine Textdatei, damit `append` die Größe kennt.
+        text = "".join(self._lines).replace("\n", os.linesep)
+        return text.encode("utf-8", errors="backslashreplace")
 
-    def _write(self, path: Path, mode: str) -> None:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open(mode, encoding="utf-8", errors="backslashreplace") as file:
-                file.writelines(self._lines)
-        except OSError as error:
-            logging.getLogger(__name__).warning(
-                "Log-Datei ließ sich nicht schreiben (datei=%s): %s", path, error
-            )
+
+def _size_of(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0  # noch keine Datei; scheitert mehr, meldet es `_write`
+
+
+def _keep_older_copy(path: Path) -> None:
+    older = path.with_name(path.name + ".1")
+    try:
+        path.replace(older)
+    except OSError as error:
+        logging.getLogger(__name__).warning(
+            "Ältere Kopie des Logs ließ sich nicht anlegen (datei=%s): %s", older, error
+        )
+
+
+def _write(path: Path, data: bytes, mode: Literal["wb", "ab"]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open(mode) as file:
+            file.write(data)
+    except OSError as error:
+        logging.getLogger(__name__).warning(
+            "Log-Datei ließ sich nicht schreiben (datei=%s): %s", path, error
+        )
 
 
 def _only_own_debug(record: logging.LogRecord) -> bool:

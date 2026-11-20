@@ -246,7 +246,8 @@ bleibt dabei erhalten: Es liegt neben dem Report und heißt wie er
 (`output/YYYY-MM-DD.log`). Bricht ein Lauf ganz ab, gibt es keinen Report; sein Log
 samt Traceback landet dann in `output/abgebrochen.log`. Diese Datei wächst auf etwa
 1 MB; danach wird sie zu `output/abgebrochen.log.1`, und eine noch ältere Kopie
-fällt weg.
+fällt weg. Lässt sich diese Kopie nicht anlegen, wächst die Datei mit einer Warnung
+auf der Konsole weiter, statt ältere Läufe zu verlieren.
 
 Wer selbst `ANTHROPIC_LOG=debug` setzt, bekommt vom SDK von Anthropic dessen
 Anfragen samt Anzeigen-Volltext auf die Konsole. Die Log-Dateien des Agenten bleiben

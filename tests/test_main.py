@@ -289,7 +289,16 @@ def test_cli_keeps_traceback_of_abort_in_log_file_not_on_console(
     assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
 
 
-def test_cli_starts_new_log_of_aborted_runs_beyond_about_one_megabyte(
+def _aborted_log_of(output: Path, size: int) -> bytes:
+    """Legt `abgebrochen.log` mit `size` Bytes älterer Läufe an und gibt den Inhalt zurück."""
+    output.mkdir(exist_ok=True)
+    line = b"Log alter Laeufe\n"
+    content = line * (size // len(line)) + b"x" * (size % len(line))
+    (output / "abgebrochen.log").write_bytes(content)
+    return content
+
+
+def test_cli_starts_new_log_of_aborted_runs_when_this_run_would_exceed_the_limit(
     project: dict[str, Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -298,16 +307,15 @@ def test_cli_starts_new_log_of_aborted_runs_beyond_about_one_megabyte(
     monkeypatch.chdir(tmp_path)
     _no_profile(tmp_path)
     output = tmp_path / "output"
-    output.mkdir()
-    (output / "abgebrochen.log").write_text("Log alter Läufe\n" * 70_000, encoding="utf-8")
+    # Knapp unter der Grenze; erst das Log dieses Laufs brächte die Datei darüber.
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES - 100)
 
     assert main.cli([]) == 1
 
     log = (output / "abgebrochen.log").read_text(encoding="utf-8")
-    assert "Log alter Läufe" not in log
+    assert "Log alter Laeufe" not in log
     assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
-    older = (output / "abgebrochen.log.1").read_text(encoding="utf-8")
-    assert older == "Log alter Läufe\n" * 70_000
+    assert (output / "abgebrochen.log.1").read_bytes() == old
 
 
 def test_cli_keeps_only_one_older_copy_of_the_log_of_aborted_runs(
@@ -319,8 +327,7 @@ def test_cli_keeps_only_one_older_copy_of_the_log_of_aborted_runs(
     monkeypatch.chdir(tmp_path)
     _no_profile(tmp_path)
     output = tmp_path / "output"
-    output.mkdir()
-    (output / "abgebrochen.log").write_text("Log alter Läufe\n" * 70_000, encoding="utf-8")
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES + 100)
     (output / "abgebrochen.log.1").write_text("Log uralter Läufe\n", encoding="utf-8")
 
     assert main.cli([]) == 1
@@ -329,12 +336,10 @@ def test_cli_keeps_only_one_older_copy_of_the_log_of_aborted_runs(
         "abgebrochen.log",
         "abgebrochen.log.1",
     ]
-    older = (output / "abgebrochen.log.1").read_text(encoding="utf-8")
-    assert "Log uralter Läufe" not in older
-    assert older.startswith("Log alter Läufe\n")
+    assert (output / "abgebrochen.log.1").read_bytes() == old
 
 
-def test_cli_appends_to_log_of_aborted_runs_below_about_one_megabyte(
+def test_cli_appends_to_log_of_aborted_runs_below_the_limit(
     project: dict[str, Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -343,15 +348,35 @@ def test_cli_appends_to_log_of_aborted_runs_below_about_one_megabyte(
     monkeypatch.chdir(tmp_path)
     _no_profile(tmp_path)
     output = tmp_path / "output"
-    output.mkdir()
-    (output / "abgebrochen.log").write_text("Log alter Läufe\n" * 50_000, encoding="utf-8")
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES // 2)
 
     assert main.cli([]) == 1
 
-    log = (output / "abgebrochen.log").read_text(encoding="utf-8")
-    assert log.startswith("Log alter Läufe\n" * 50_000)
-    assert "SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+    log = (output / "abgebrochen.log").read_bytes()
+    assert log.startswith(old)
+    assert b"SearchProfileError: Suchprofil profile.md nicht gefunden" in log
     assert not (output / "abgebrochen.log.1").exists()
+
+
+def test_cli_keeps_log_of_aborted_runs_when_older_copy_cannot_be_made(
+    project: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _no_profile(tmp_path)
+    output = tmp_path / "output"
+    old = _aborted_log_of(output, main._ABORTED_LOG_MAX_BYTES + 100)
+    (output / "abgebrochen.log.1").mkdir()  # die ältere Kopie lässt sich nicht anlegen
+
+    assert main.cli([]) == 1
+
+    log = (output / "abgebrochen.log").read_bytes()
+    assert log.startswith(old)
+    assert b"SearchProfileError: Suchprofil profile.md nicht gefunden" in log
+    assert "Ältere Kopie des Logs ließ sich nicht anlegen" in capsys.readouterr().err
 
 
 def test_cli_logs_job_ad_ids_but_never_their_full_text(
