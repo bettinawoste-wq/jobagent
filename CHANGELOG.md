@@ -17,8 +17,14 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 - `output/abgebrochen.log` wächst nur noch auf etwa 1 MB; danach bleibt genau
   eine ältere Kopie `abgebrochen.log.1`. Das README weist darauf hin, dass
   `ANTHROPIC_LOG=debug` Anzeigen-Volltexte auf die Konsole bringt, nicht ins Log (#43)
+- Die Score-Skala 1 bis 5 ist an einer Stelle festgelegt; Bewertung,
+  Rückmeldung und Report richten sich danach, und der Bewerbungsstatus kommt
+  typisiert aus dem Store in den Report (#41)
 
 ### Behoben
+- Die Rückmeldung lehnt `--am` beim eigenen Score und eine riesige Zahl als
+  Score mit deutscher Meldung und Exit-Code 1 ab, statt `--am` still zu
+  ignorieren oder mit einem Traceback abzubrechen (#41)
 
 ## 0.6.0 – 2026-11-15
 

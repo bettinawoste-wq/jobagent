@@ -184,6 +184,16 @@ def test_update_application_changes_status_and_keeps_date_without_one(db: Store)
     )
 
 
+def test_current_application_returns_status_as_application_status(db: Store) -> None:
+    # Ein StrEnum ist gleich seinem Text; erst die Identität zeigt den Typ auf dem Rückweg.
+    db.create_application(_application(), ApplicationStatus.REJECTED, date(2026, 11, 1))
+
+    application = db.current_application("beispiel gmbh|dev")
+
+    assert application is not None
+    assert application.status is ApplicationStatus.REJECTED
+
+
 def test_update_application_sets_given_date(db: Store) -> None:
     db.create_application(_application(), ApplicationStatus.INTERVIEW, date(2026, 11, 1))
 
