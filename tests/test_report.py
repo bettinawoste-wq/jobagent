@@ -415,6 +415,11 @@ def test_without_open_feedback_no_hint(tmp_path: Path) -> None:
             "Suchzeitraum: 7 Tage (seit dem vollständigen Lauf vom 01.11., auf 7 Tage begrenzt)",
         ),
         (
+            SearchWindow(7, date(2026, 11, 25), False),
+            "Suchzeitraum: 7 Tage (wie beim ersten Lauf, der vollständige Lauf vom 25.11. liegt "
+            "in der Zukunft)",
+        ),
+        (
             SearchWindow(7, date(2025, 12, 30), True),
             "Suchzeitraum: 7 Tage (seit dem vollständigen Lauf vom 30.12.2025, auf 7 Tage "
             "begrenzt)",

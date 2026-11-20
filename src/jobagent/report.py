@@ -184,17 +184,19 @@ def _search_window_line(window: SearchWindow | None, day: date) -> str:
         length = "1 Tag" if window.days == 1 else f"{window.days} Tage"
     if window.since is None:
         reason = "erster Lauf"
+    elif window.since > day:  # etwa nach einer verstellten Uhr
+        since = _short_date(window.since, day)
+        reason = f"wie beim ersten Lauf, der vollständige Lauf vom {since} liegt in der Zukunft"
     else:
-        # Mit Jahr, wenn der Lauf nicht im Jahr des Reports liegt (Jahreswechsel).
-        since = (
-            f"{window.since:%d.%m.}"
-            if window.since.year == day.year
-            else f"{window.since:%d.%m.%Y}"
-        )
-        reason = f"seit dem vollständigen Lauf vom {since}"
+        reason = f"seit dem vollständigen Lauf vom {_short_date(window.since, day)}"
         if window.capped:
             reason += f", auf {length} begrenzt"
     return f"Suchzeitraum: {length} ({reason})\n\n"
+
+
+def _short_date(value: date, day: date) -> str:
+    # Mit Jahr, wenn es nicht das Jahr des Reports ist (Jahreswechsel).
+    return f"{value:%d.%m.}" if value.year == day.year else f"{value:%d.%m.%Y}"
 
 
 def _sources_block(sources: Sequence[SourceStatus]) -> str:

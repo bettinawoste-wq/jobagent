@@ -14,8 +14,8 @@ class SearchWindow:
 
     `days` ist None, wenn `veroeffentlichtseit` fehlt und es noch keinen vollständigen
     Lauf gibt: Dann suchen die Quellen ohne Begrenzung. `since` ist der Tag des letzten
-    vollständigen Laufs, None beim ersten Lauf; `capped` sagt, ob `veroeffentlichtseit`
-    oder die Obergrenze den Suchzeitraum begrenzt hat.
+    vollständigen Laufs, None beim ersten Lauf; liegt er in der Zukunft, gilt der Startwert.
+    `capped` sagt, ob `veroeffentlichtseit` oder die Obergrenze den Suchzeitraum begrenzt hat.
     """
 
     days: int | None
@@ -34,7 +34,7 @@ def search_window(
     höchstens `max_days` Tage; fehlt `max_days`, höchstens `MAX_SEARCH_WINDOW_DAYS`.
     """
     if last_complete_run is None or last_complete_run > today:
-        return SearchWindow(max_days, since=None, capped=False)
+        return SearchWindow(max_days, since=last_complete_run, capped=False)
     days = (today - last_complete_run).days + 1
     limit = MAX_SEARCH_WINDOW_DAYS if max_days is None else max_days
     if days > limit:

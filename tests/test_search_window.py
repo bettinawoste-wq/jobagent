@@ -52,7 +52,8 @@ def test_window_without_configured_days_is_capped_at_the_upper_limit() -> None:
 
 
 def test_complete_run_in_the_future_does_not_count() -> None:
-    # Etwa nach einer verstellten Uhr: Dann gilt der Startwert wie beim ersten Lauf.
-    window = search_window(date(2026, 11, 25), THURSDAY, max_days=7)
+    # Etwa nach einer verstellten Uhr: Dann gilt der Startwert wie beim ersten Lauf; der
+    # Lauf bleibt genannt, damit der Report nicht von einem ersten Lauf spricht.
+    future = date(2026, 11, 25)
 
-    assert window == SearchWindow(7, since=None, capped=False)
+    assert search_window(future, THURSDAY, max_days=7) == SearchWindow(7, future, capped=False)

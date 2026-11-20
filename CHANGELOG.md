@@ -72,7 +72,7 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 - Der Suchzeitraum wächst nie über 100 Tage, mehr nimmt die Bundesagentur nicht
   an; `veroeffentlichtseit` muss zwischen 1 und 100 liegen. Ein gemerkter
   vollständiger Lauf in der Zukunft (verstellte Uhr) zählt nicht, dann gilt der
-  Startwert
+  Startwert, und der Report nennt den Lauf statt „erster Lauf“
 - Der Suchzeitraum im Report nennt das Datum des letzten vollständigen Laufs mit
   Jahr, wenn es nicht im Jahr des Reports liegt, damit es über den Jahreswechsel
   eindeutig bleibt
