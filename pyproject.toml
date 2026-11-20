@@ -10,6 +10,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.414",
     "pytest>=8.0",
     "ruff>=0.8",
 ]
@@ -35,3 +36,9 @@ select = ["E", "F", "I", "UP", "B", "ANN"]
 [tool.ruff.lint.per-file-ignores]
 # Typannotationen gelten für den Produktivcode; Tests, Fixtures und Fakes bleiben schlank.
 "tests/**" = ["ANN"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+extraPaths = ["src"]

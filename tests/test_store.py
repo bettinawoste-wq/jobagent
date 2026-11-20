@@ -464,7 +464,7 @@ def test_store_closes_its_connection_on_exit(db_path: Path) -> None:
         opened.is_new("a-1")
 
 
-def _applications_on(db: Store, *applications: tuple[str, str, date]) -> None:
+def _applications_on(db: Store, *applications: tuple[str, ApplicationStatus, date]) -> None:
     """Legt Bewerbungen auf die Stelle "beispiel gmbh|dev" an: (Anzeigen-ID, Status, Datum)."""
     for job_ad_id, status, applied_on in applications:
         db.create_application(_application(job_ad_id), status, applied_on)
@@ -573,4 +573,6 @@ def test_transaction_keeps_everything_when_it_succeeds(db_path: Path) -> None:
         db.save_match_numbers("2026-11-05", {"a-1": 1})
 
     with Store(db_path) as reopened:
-        assert reopened.find_match("2026-11-05", 1).id == "a-1"
+        match = reopened.find_match("2026-11-05", 1)
+        assert match is not None
+        assert match.id == "a-1"

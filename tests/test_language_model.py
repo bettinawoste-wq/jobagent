@@ -1,10 +1,19 @@
 """Tests für den Anthropic-Adapter am Seam Sprachmodell, mit nachgebautem SDK-Client."""
 
+from typing import cast
+
 import anthropic
 import httpx2
 import pytest
-from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
-from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaThinkingBlock, BetaUsage
+from anthropic.types import ContentBlock, Message, StopReason, TextBlock, ToolUseBlock, Usage
+from anthropic.types.beta import (
+    BetaContentBlock,
+    BetaMessage,
+    BetaStopReason,
+    BetaTextBlock,
+    BetaThinkingBlock,
+    BetaUsage,
+)
 
 from jobagent.language_model import (
     AnthropicJsonLanguageModel,
@@ -20,7 +29,7 @@ _SCHEMA = {
 }
 
 
-def _message(*content: object, stop_reason: str = "tool_use") -> Message:
+def _message(*content: ContentBlock, stop_reason: StopReason = "tool_use") -> Message:
     return Message(
         id="msg_1",
         content=list(content),
@@ -48,6 +57,11 @@ class _FakeMessages:
             raise self._result
         return self._result
 
+    def sent(self) -> dict:
+        """Die Argumente der letzten Anfrage; es muss eine gegeben haben."""
+        assert self.last_kwargs is not None
+        return self.last_kwargs
+
 
 class _FakeBeta:
     def __init__(self, result: object) -> None:
@@ -59,9 +73,15 @@ class _FakeClient:
         self.messages = _FakeMessages(result)
         self.beta = _FakeBeta(result)
 
+    def as_anthropic(self) -> anthropic.Anthropic:
+        # Nachgebaut sind nur messages und beta.messages, mehr nutzen die Adapter nicht.
+        return cast(anthropic.Anthropic, self)
+
 
 def _ask(result: object) -> dict:
-    model = AnthropicToolLanguageModel("claude-haiku-4-5-20251001", client=_FakeClient(result))
+    model = AnthropicToolLanguageModel(
+        "claude-haiku-4-5-20251001", client=_FakeClient(result).as_anthropic()
+    )
     return model.ask("System", "Text", _SCHEMA)
 
 
@@ -75,9 +95,11 @@ def test_ask_returns_data_of_forced_tool() -> None:
 def test_ask_sends_model_system_text_and_schema_as_forced_tool() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
 
-    AnthropicToolLanguageModel("modell-x", client=client).ask("Sei knapp.", "Anzeige", _SCHEMA)
+    AnthropicToolLanguageModel("modell-x", client=client.as_anthropic()).ask(
+        "Sei knapp.", "Anzeige", _SCHEMA
+    )
 
-    kwargs = client.messages.last_kwargs
+    kwargs = client.messages.sent()
     assert kwargs["model"] == "modell-x"
     assert kwargs["system"] == "Sei knapp."
     assert kwargs["messages"] == [{"role": "user", "content": "Anzeige"}]
@@ -89,9 +111,11 @@ def test_schema_title_and_description_name_and_describe_the_tool() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
     schema = {"title": "bewertung_abgeben", "description": "Gibt die Bewertung zurück.", **_SCHEMA}
 
-    AnthropicToolLanguageModel("modell-x", client=client).ask("System", "Text", schema)
+    AnthropicToolLanguageModel("modell-x", client=client.as_anthropic()).ask(
+        "System", "Text", schema
+    )
 
-    kwargs = client.messages.last_kwargs
+    kwargs = client.messages.sent()
     assert kwargs["tools"] == [
         {
             "name": "bewertung_abgeben",
@@ -180,12 +204,16 @@ def test_tool_answer_that_is_no_object_becomes_language_model_error(tool_input: 
 def test_max_tokens_reaches_the_tool_request() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
 
-    AnthropicToolLanguageModel("modell-x", max_tokens=2048, client=client).ask("S", "T", _SCHEMA)
+    AnthropicToolLanguageModel("modell-x", max_tokens=2048, client=client.as_anthropic()).ask(
+        "S", "T", _SCHEMA
+    )
 
-    assert client.messages.last_kwargs["max_tokens"] == 2048
+    assert client.messages.sent()["max_tokens"] == 2048
 
 
-def _beta_message(*content: object, stop_reason: str = "end_turn") -> BetaMessage:
+def _beta_message(
+    *content: BetaContentBlock, stop_reason: BetaStopReason = "end_turn"
+) -> BetaMessage:
     return BetaMessage(
         id="msg_2",
         content=list(content),
@@ -198,7 +226,7 @@ def _beta_message(*content: object, stop_reason: str = "end_turn") -> BetaMessag
     )
 
 
-def _thought_and_text(text: str, stop_reason: str = "end_turn") -> BetaMessage:
+def _thought_and_text(text: str, stop_reason: BetaStopReason = "end_turn") -> BetaMessage:
     return _beta_message(
         BetaThinkingBlock(signature="sig", thinking="Erst nachdenken.", type="thinking"),
         BetaTextBlock(text=text, type="text"),
@@ -207,7 +235,9 @@ def _thought_and_text(text: str, stop_reason: str = "end_turn") -> BetaMessage:
 
 
 def _ask_json_model(result: object) -> dict:
-    model = AnthropicJsonLanguageModel("claude-sonnet-5-5", client=_FakeClient(result))
+    model = AnthropicJsonLanguageModel(
+        "claude-sonnet-5-5", client=_FakeClient(result).as_anthropic()
+    )
     return model.ask("System", "Text", _SCHEMA)
 
 
@@ -246,7 +276,7 @@ def test_json_answer_after_thinking_returns_its_data() -> None:
 
 def test_json_answer_is_asked_with_fallback_instead_of_tool() -> None:
     client = _FakeClient(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}'))
-    model = AnthropicJsonLanguageModel("modell-y", max_tokens=16000, client=client)
+    model = AnthropicJsonLanguageModel("modell-y", max_tokens=16000, client=client.as_anthropic())
 
     model.ask("Denk nach.", "Rückmeldungen", _SCHEMA)
 

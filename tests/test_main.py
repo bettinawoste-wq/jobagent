@@ -88,7 +88,9 @@ def test_main_runs_whole_run_from_files_into_sqlite_and_report(
     assert source.received == [["Softwareentwickler", "Data"]]
     assert all(_PROFILE in request.text for request in model.requests)
     with Store(project["db_path"]) as db:
-        assert db.find_match("2026-03-02", 1).id == "a-2"
+        match = db.find_match("2026-03-02", 1)
+        assert match is not None
+        assert match.id == "a-2"
         assert not db.is_new("a-1")
 
 

@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Protocol, cast
 
 import anthropic
-from anthropic.types import Message
+from anthropic.types import Message, ToolParam
 from anthropic.types.beta import BetaMessage
 
 from jobagent.text import encodable_data
@@ -88,7 +88,7 @@ class AnthropicToolLanguageModel(AnthropicLanguageModel[Message]):
             system=system,
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
-            messages=_messages(text),
+            messages=[{"role": "user", "content": text}],
         )
 
     def _answer_from(self, response: Message) -> dict:
@@ -112,15 +112,11 @@ class AnthropicJsonLanguageModel(AnthropicLanguageModel[BetaMessage]):
             fallbacks="default",
             system=system,
             output_config={"format": {"type": "json_schema", "schema": schema}},
-            messages=_messages(text),
+            messages=[{"role": "user", "content": text}],
         )
 
     def _answer_from(self, response: BetaMessage) -> dict:
         return _json_object_from(response)
-
-
-def _messages(text: str) -> list[dict]:
-    return [{"role": "user", "content": text}]
 
 
 def _tool_input_from(response: Message) -> dict:
@@ -152,13 +148,13 @@ def _json_object_from(response: BetaMessage) -> dict:
     return data
 
 
-def _tool_for(schema: dict) -> dict:
+def _tool_for(schema: dict) -> ToolParam:
     # Titel und Beschreibung des Schemas benennen und beschreiben das Werkzeug. So bleibt
     # die Anfrage der Bewertung, deren Prompt das Werkzeug beim Namen nennt, wie vor dem
     # Seam. Die API erlaubt als Name nur ^[a-zA-Z0-9_-]{1,64}$; ein anderer Titel
     # scheitert erst bei der API und kommt als LanguageModelError zurück.
     input_schema = {key: value for key, value in schema.items() if key not in _TOOL_ANNOTATIONS}
-    tool = {"name": schema.get("title", _TOOL_NAME), "input_schema": input_schema}
+    tool: ToolParam = {"name": schema.get("title", _TOOL_NAME), "input_schema": input_schema}
     if "description" in schema:
         tool["description"] = schema["description"]
     return tool

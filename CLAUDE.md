@@ -6,7 +6,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 - Python 3.12, Abhängigkeiten per `uv`
 - `httpx` für HTTP, `sqlite3` aus der Standardbibliothek
 - `anthropic` SDK für die Bewertung (Haiku) und den seltenen Profil-Vorschlag (Sonnet), API-Key aus der Umgebungsvariable `ANTHROPIC_API_KEY`, nie im Code oder Repo
-- `pytest` für Tests, `ruff` für Lint und Format
+- `pytest` für Tests, `ruff` für Lint und Format, `pyright` (Modus „standard“) für Typen
 
 ## Wegweiser
 - `src/jobagent/sources/`: Quellen als Adapter am Seam `Source`. Vor jeder Arbeit dort oder an den Fixtures: `docs/quellen.md`
@@ -25,6 +25,7 @@ Persönlicher Agent, der täglich neue, passende Stellenanzeigen sucht, gegen me
 ## Befehle
 - Tests: `pytest`
 - Lint/Format: `ruff check . && ruff format .`
+- Typprüfung: `pyright`
 - Gesamtprobe ohne API-Key und Netz: `python -m jobagent.main --demo`
 - Lauf: `python -m jobagent.main`
 - Rückmeldung: `python -m jobagent.feedback --help`

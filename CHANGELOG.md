@@ -10,6 +10,8 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 ### Neu
 - `CHANGELOG.md` beschreibt die Versionen ab 0.2.0; jedes Ticket trägt seine
   Änderung hier unter „Unveröffentlicht“ ein (#35)
+- Typprüfung mit pyright im Modus „standard“ über `src/` und `tests/`, lokal per
+  `uv run pyright` und als eigener Schritt in der CI (#36)
 
 ## 0.6.0 – 2026-11-15
 

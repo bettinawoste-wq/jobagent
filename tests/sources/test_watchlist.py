@@ -202,7 +202,7 @@ def test_search_without_companies_sends_no_requests() -> None:
     assert result.errors == []
 
 
-def _with_first_entry(fixture: object, **changes: object) -> object:
+def _with_first_entry(fixture: dict | list, **changes: object) -> dict | list:
     """Kopie der Beispielantwort, deren erster Eintrag geändert ist."""
     copied = deepcopy(fixture)
     entries = copied["jobs"] if isinstance(copied, dict) else copied

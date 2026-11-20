@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Self, cast
 
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
@@ -400,7 +400,10 @@ class Store:
 
     def count_open_feedback(self) -> int:
         """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
-        (count,) = self._conn.fetchone("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
+        # COUNT(*) liefert immer genau eine Zeile, sqlite3 typisiert sie aber als optional.
+        (count,) = cast(
+            tuple, self._conn.fetchone("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
+        )
         return count
 
     def mark_feedback_processed(self, job_ad_ids: list[str]) -> None:

@@ -126,8 +126,8 @@ noch liefert. Der Gesamtlauf bricht daran nicht ab.
 - `httpx` für HTTP-Zugriffe, `sqlite3` (Standardbibliothek) für Dedupe
 - [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) mit
   Claude Haiku für die Bewertung (strukturierte Antwort per Tool-Use)
-- `pytest` (alles gemockt/mit Fixtures, kein Live-Zugriff in Tests) und
-  `ruff` für Lint/Format
+- `pytest` (alles gemockt/mit Fixtures, kein Live-Zugriff in Tests),
+  `ruff` für Lint/Format und `pyright` (Modus „standard“) für die Typprüfung
 
 ## Setup
 
@@ -235,6 +235,7 @@ Rückmeldungen erinnert der Report daran.
 ```bash
 uv run pytest
 uv run ruff check . && uv run ruff format .
+uv run pyright
 ```
 
 ## Automatisierung

@@ -5,6 +5,7 @@ feste Uhr ein: `_days(n)` als Jetzt macht jede Fixture-Anzeige n Tage alt.
 """
 
 import json
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 
@@ -193,7 +194,9 @@ def _no_connection(request: httpx.Request) -> httpx.Response:
         ),
     ],
 )
-def test_search_keeps_job_ads_found_before_paging_aborts(response, expected: str) -> None:
+def test_search_keeps_job_ads_found_before_paging_aborts(
+    response: httpx.Response | Callable[[httpx.Request], httpx.Response], expected: str
+) -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

@@ -91,8 +91,9 @@ class ArbeitnowSource:
                 if not url:
                     return
                 data = get_json(client, url)
+                page = data if isinstance(data, dict) else {}
                 entries = entries_with_ids(
-                    data.get("data") if isinstance(data, dict) else None,
+                    page.get("data"),
                     "slug",
                     what="Arbeitnow-Antwort",
                     where=f"url={url!r}",
@@ -110,7 +111,7 @@ class ArbeitnowSource:
                     yield entry
                 if too_old_reached:
                     return
-                url = (data.get("links") or {}).get("next")
+                url = (page.get("links") or {}).get("next")
 
     def _matches(self, entry: dict, keywords: list[str]) -> bool:
         if not title_matches(entry.get("title"), keywords):

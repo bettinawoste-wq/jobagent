@@ -13,6 +13,7 @@ import stat
 from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
+from typing import cast
 
 import anthropic
 import pytest
@@ -618,6 +619,10 @@ class _RecordingClient:
         self.messages = _RecordingMessages(self, "messages")
         self.beta = type("Beta", (), {"messages": _RecordingMessages(self, "beta")})()
 
+    def as_anthropic(self) -> anthropic.Anthropic:
+        # Nachgebaut sind nur messages und beta.messages, mehr nutzen die Adapter nicht.
+        return cast(anthropic.Anthropic, self)
+
 
 class _RecordingMessages:
     def __init__(self, client: _RecordingClient, endpoint: str) -> None:
@@ -633,7 +638,7 @@ def test_suggestion_language_model_asks_sonnet_for_json_answer() -> None:
     client = _RecordingClient()
 
     with pytest.raises(LanguageModelError):
-        profile_suggestion.suggestion_language_model(client=client).ask(
+        profile_suggestion.suggestion_language_model(client=client.as_anthropic()).ask(
             "System", "Text", {"type": "object"}
         )
 

@@ -12,7 +12,7 @@ import pytest
 
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModelError
+from jobagent.language_model import LanguageModel, LanguageModelError
 from jobagent.position import position_key
 from jobagent.report import ReportError
 from jobagent.run import run
@@ -43,7 +43,7 @@ def _run(
     db: Store,
     output_dir: Path,
     *sources: Source,
-    model: FakeLanguageModel | None = None,
+    model: LanguageModel | None = None,
     config: Config = _CONFIG,
     today: date = TODAY,
 ) -> str:
@@ -217,8 +217,9 @@ def test_run_remembers_report_and_match_number(db: Store, output_dir: Path) -> N
 
     _run(db, output_dir, FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")]), model=model)
 
-    assert db.find_match("2026-03-02", 1).id == "a-2"
-    assert db.find_match("2026-03-02", 2).id == "a-1"
+    first, second = db.find_match("2026-03-02", 1), db.find_match("2026-03-02", 2)
+    assert first is not None and second is not None
+    assert (first.id, second.id) == ("a-2", "a-1")
 
 
 def test_run_skips_already_seen_job_ads(db: Store, output_dir: Path) -> None:
@@ -542,7 +543,9 @@ def _applied_days_ago(
     application = NewApplication(position_key("Firma X", "Dev"), "Firma X", "Dev", None)
     db.create_application(application, ApplicationStatus.APPLIED, TODAY - timedelta(days=days))
     if status != ApplicationStatus.APPLIED:
-        db.update_application(db.latest_application_id(application.position_key), status, None)
+        application_id = db.latest_application_id(application.position_key)
+        assert application_id is not None
+        db.update_application(application_id, status, None)
 
 
 @pytest.mark.parametrize(
@@ -588,6 +591,7 @@ def test_run_follow_up_reminder_does_not_change_status(db: Store, output_dir: Pa
     _run(db, output_dir, FakeSource())
 
     application = db.current_application(position_key("Firma X", "Dev"))
+    assert application is not None
     assert application.status == ApplicationStatus.APPLIED
 
 

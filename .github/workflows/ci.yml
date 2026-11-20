@@ -29,6 +29,10 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check .
 
+      - name: pyright
+        # Typprüfung im Modus "standard" über src/ und tests/, Konfiguration in pyproject.toml.
+        run: uv run pyright
+
       - name: pytest
         # Kein ANTHROPIC_API_KEY, kein Netz: alle Quellen und die Bewertung sind in den Tests gemockt.
         run: uv run pytest
