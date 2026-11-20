@@ -113,11 +113,8 @@ Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
     report.py ──►  output/YYYY-MM-DD.md (sortiert nach Score)
 ```
 
-Den Ablauf führt `run.py` aus; was er braucht (Quellen, Sprachmodell,
-Suchprofil, Datenbank, Konfiguration, Datum), baut `main.py` zusammen. Das
-Sprachmodell ist eine eigene Schnittstelle (`language_model.py`), hinter der
-je ein Anthropic-Adapter für Bewertung und Profil-Vorschlag steckt
-(`anthropic_language_model.py`), in Tests und im Demo-Lauf ein Ersatz.
+Den Ablauf führt `run.py` aus; was er braucht, baut `main.py` zusammen. Quellen
+und Sprachmodell sind Seams mit austauschbaren Adaptern, siehe [Aufbau](#aufbau).
 
 Jeder Schritt ist defensiv: Fällt eine Quelle aus, steht das im Quellenstatus
 des Reports. Scheitert die Bewertung einer Anzeige (API-Fehler, ungültige
