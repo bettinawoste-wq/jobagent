@@ -133,9 +133,11 @@ flowchart LR
         realRun["main.py: echter Lauf"]
         demoRun["main.py --demo: demo_run"]
         suggestion["profile_suggestion.py: Profil-Vorschlag"]
-        lock["run_lock.py: Sperre (RunLock)"]
-        window["search_window.py: Suchzeitraum"]
+        feedbackCli["feedback.py: Rückmeldung"]
     end
+
+    lock["run_lock.py: Sperre (RunLock)"]
+    window["search_window.py: Suchzeitraum"]
 
     tests["Tests (pytest)"]
 
@@ -174,6 +176,7 @@ flowchart LR
     realRun --> haiku & db
     demoRun --> demoSource & demoModel & tempDb
     suggestion --> sonnet & db
+    feedbackCli --> db
     tests --> fakeSource & fakeModel & tempDb
 
     realRun --> runNode
