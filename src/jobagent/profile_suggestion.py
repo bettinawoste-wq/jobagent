@@ -159,22 +159,42 @@ def _as_texts(value: object) -> list[str] | None:
     return None
 
 
-def apply_changes(
-    search_profile: str, changes: list[ProfileChange]
-) -> tuple[str, list[ProfileChange]]:
-    """Wendet Ersetzungen an und liefert den neuen Text plus die unbrauchbaren Änderungen.
+@dataclass(frozen=True, slots=True)
+class AppliedChanges:
+    """Das Suchprofil nach den Ersetzungen, die angewandten und die übersprungenen Änderungen.
 
-    Eine Änderung gilt nur, wenn ihr Auszug genau einmal vorkommt. So kann das
-    Modell nichts unbemerkt weglassen oder an der falschen Stelle ändern.
+    `unusable`: Auszug fehlt oder ist nicht eindeutig. `duplicates`: dieselbe Ersetzung
+    (gleiches `old` und `new`) wurde schon angewandt, der Grund zählt dabei nicht.
+    """
+
+    text: str
+    applied: list[ProfileChange]
+    unusable: list[ProfileChange]
+    duplicates: list[ProfileChange]
+
+
+def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedChanges:
+    """Wendet Ersetzungen an, jede gleiche Ersetzung nur einmal.
+
+    Eine Änderung gilt nur, wenn ihr Auszug im Suchprofil vor dem Vorschlag genau einmal
+    vorkommt und auch nach den vorigen Änderungen noch genau einmal. So kann das Modell
+    nichts unbemerkt weglassen oder an der falschen Stelle ändern.
     """
     text = search_profile
-    skipped: list[ProfileChange] = []
+    unusable: list[ProfileChange] = []
+    duplicates: list[ProfileChange] = []
+    applied: list[ProfileChange] = []
+    replacements: set[tuple[str, str]] = set()
     for change in changes:
-        if change.old and text.count(change.old) == 1:
+        if (change.old, change.new) in replacements:
+            duplicates.append(change)
+        elif change.old and search_profile.count(change.old) == text.count(change.old) == 1:
             text = text.replace(change.old, change.new)
+            applied.append(change)
+            replacements.add((change.old, change.new))
         else:
-            skipped.append(change)
-    return text, skipped
+            unusable.append(change)
+    return AppliedChanges(text, applied, unusable, duplicates)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,22 +242,24 @@ def suggest_and_decide(
         return Decision(1)
 
     ids = [entry.job_ad_id for entry in feedback]
-    new_search_profile, skipped = apply_changes(search_profile, suggestion.changes)
+    result = apply_changes(search_profile, suggestion.changes)
     _show_model_errors(suggestion.model_errors)
-    for change in skipped:
+    for change in result.unusable:
         print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
+    for change in result.duplicates:
+        print(f"Übersprungen, doppelter Vorschlag: {change.old}", file=sys.stderr)
 
     if not suggestion.changes:
         db.mark_feedback_processed(ids)
         print("Keine Änderung am Suchprofil nötig.")
         return Decision(0)
 
-    if new_search_profile == search_profile:
+    if result.text == search_profile:
         print("Fehler: Keine Änderung ließ sich anwenden, Feedback bleibt offen.", file=sys.stderr)
         return Decision(1)
 
-    _show_changes(search_profile, new_search_profile, suggestion.changes, skipped, profile_name)
-    return _decide(db, new_search_profile, ids, ask)
+    _show_changes(search_profile, result.text, result.applied, profile_name)
+    return _decide(db, result.text, ids, ask)
 
 
 def _decide(
@@ -269,14 +291,12 @@ def _show_model_errors(model_errors: list[str]) -> None:
 def _show_changes(
     search_profile: str,
     new_search_profile: str,
-    changes: list[ProfileChange],
-    skipped: list[ProfileChange],
+    applied: list[ProfileChange],
     file_name: str,
 ) -> None:
     print("Vorgeschlagene Änderungen:")
-    for change in changes:
-        if change not in skipped:
-            print(f"  - {change.reason}")
+    for change in applied:
+        print(f"  - {change.reason}")
     print()
     diff = difflib.unified_diff(
         search_profile.splitlines(),

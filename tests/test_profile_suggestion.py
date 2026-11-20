@@ -23,6 +23,7 @@ from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError
 from jobagent.profile_suggestion import (
     AcceptedSuggestion,
+    AppliedChanges,
     Decision,
     ProfileChange,
     apply_changes,
@@ -188,34 +189,57 @@ def test_suggestion_sends_feedback_with_german_keys() -> None:
 
 
 def test_apply_changes_replaces_exactly_the_excerpt() -> None:
-    new, skipped = apply_changes("a\nb\nc\n", [_change("b", "B")])
+    result = apply_changes("a\nb\nc\n", [_change("b", "B")])
 
-    assert new == "a\nB\nc\n"
-    assert skipped == []
+    assert result == AppliedChanges(
+        "a\nB\nc\n", applied=[_change("b", "B")], unusable=[], duplicates=[]
+    )
 
 
 def test_apply_changes_skips_missing_excerpt() -> None:
     change = _change("fehlt", "x")
 
-    assert apply_changes("a\n", [change]) == ("a\n", [change])
+    assert apply_changes("a\n", [change]) == AppliedChanges("a\n", [], [change], [])
 
 
 def test_apply_changes_skips_ambiguous_excerpt() -> None:
     change = _change("a", "x")
 
-    assert apply_changes("a a\n", [change]) == ("a a\n", [change])
+    assert apply_changes("a a\n", [change]) == AppliedChanges("a a\n", [], [change], [])
 
 
 def test_apply_changes_skips_empty_excerpt() -> None:
     change = _change("", "x")
 
-    assert apply_changes("a\n", [change]) == ("a\n", [change])
+    assert apply_changes("a\n", [change]) == AppliedChanges("a\n", [], [change], [])
 
 
 def test_apply_changes_applies_several_changes_in_order() -> None:
-    new, _ = apply_changes("a\nb\n", [_change("a", "A"), _change("b", "B")])
+    result = apply_changes("a\nb\n", [_change("a", "A"), _change("b", "B")])
 
-    assert new == "A\nB\n"
+    assert result.text == "A\nB\n"
+
+
+def test_apply_changes_applies_the_same_change_only_once() -> None:
+    # Eine Ergänzung enthält ihren Auszug wieder; doppelt angewandt stünde sie zweimal da.
+    change = _change("- Python", "- Python, gern FastAPI")
+    again = ProfileChange(old="- Python", new="- Python, gern FastAPI", reason="anders begründet")
+
+    result = apply_changes("- Python\n", [change, again])
+
+    assert result.text == "- Python, gern FastAPI\n"
+    assert result.duplicates == [again]
+    assert result.unusable == []
+
+
+def test_apply_changes_checks_excerpt_against_profile_before_suggestion() -> None:
+    # "b" steht erst nach der ersten Änderung im Text, nicht im Suchprofil davor.
+    later = _change("b", "B")
+
+    result = apply_changes("a\n", [_change("a", "a b"), later])
+
+    assert result.text == "a b\n"
+    assert result.unusable == [later]
 
 
 def test_suggestion_asks_for_changes_and_model_errors() -> None:
@@ -322,6 +346,22 @@ def test_accepting_returns_new_profile_and_leaves_saving_to_main(
     output = capsys.readouterr().out
     assert "-- Zeitarbeit: maximal Score 2\n" in output
     assert "Mehrfach falsch eingeordnet" in output
+
+
+def test_duplicate_change_is_applied_once_and_shown_as_skipped(
+    db: Store, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    decision = _decision(db, profile_path, FakeLanguageModel(_suggestion([_CHANGE, _CHANGE])))
+
+    assert decision.accepted is not None
+    assert decision.accepted.new_search_profile == (
+        "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2 "
+        "(Beratungsfirmen zählen nicht)\n"
+    )
+    output = capsys.readouterr()
+    assert f"Übersprungen, doppelter Vorschlag: {_CHANGE['alt']}" in output.err
+    assert "nicht eindeutig" not in output.err
+    assert output.out.count("Mehrfach falsch eingeordnet") == 1
 
 
 def test_rejecting_keeps_profile_and_processes(db: Store, profile_path: Path) -> None:
