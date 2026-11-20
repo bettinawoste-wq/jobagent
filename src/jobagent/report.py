@@ -98,7 +98,8 @@ def write_report(
     """
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
-        f"{_search_window_line(search_window, day)}{_sources_block(sources)}{_unassessed_line(unassessed)}"
+        f"{_search_window_line(search_window, day)}"
+        f"{_sources_block(sources)}{_unassessed_line(unassessed)}"
         f"{_follow_up_block(follow_ups, day)}"
         f"{_profile_hint(open_feedback)}"
     )

@@ -265,6 +265,85 @@ def test_load_config_rejects_search_window_outside_what_the_bundesagentur_accept
     assert "`[suche] veroeffentlichtseit` muss zwischen 1 und 100 liegen" in message
 
 
+@pytest.mark.parametrize(
+    ("toml", "expected"),
+    [
+        ("[report]\nmindest_score = 0", "`[report] mindest_score` muss zwischen 1 und 5 liegen"),
+        ("[report]\nmindest_score = 6", "`[report] mindest_score` muss zwischen 1 und 5 liegen"),
+        ("[report]\nnachfassen_ab_tag = -1", "`[report] nachfassen_ab_tag` muss mindestens 0 sein"),
+        (
+            "[report]\nnachfassen_ab_tag = -2\nnachfassen_bis_tag = -1",
+            "`[report] nachfassen_bis_tag` muss mindestens 0 sein",
+        ),
+        ("[bundesagentur]\numkreis = -5", "`[bundesagentur] umkreis` muss mindestens 0 sein"),
+    ],
+)
+def test_load_config_rejects_values_outside_their_range(
+    tmp_path: Path, toml: str, expected: str
+) -> None:
+    assert expected in _error_of(_write(tmp_path, toml + "\n"))
+
+
+def test_load_config_accepts_values_at_the_edges_of_their_range(tmp_path: Path) -> None:
+    config_path = _write(
+        tmp_path,
+        "[bundesagentur]\numkreis = 0\n\n"
+        "[report]\nmindest_score = 5\nnachfassen_ab_tag = 0\nnachfassen_bis_tag = 0\n",
+    )
+
+    config = load_config(config_path)
+
+    assert (config.radius, config.min_score, config.follow_up_min_days) == (0, 5, 0)
+
+
+def test_load_config_rejects_follow_up_start_after_its_end(tmp_path: Path) -> None:
+    message = _error_of(
+        _write(tmp_path, "[report]\nnachfassen_ab_tag = 30\nnachfassen_bis_tag = 20\n")
+    )
+
+    assert (
+        "`[report] nachfassen_ab_tag` darf nicht größer sein als `[report] nachfassen_bis_tag`"
+        in message
+    )
+
+
+def test_load_config_compares_follow_up_start_with_the_default_end(tmp_path: Path) -> None:
+    message = _error_of(_write(tmp_path, "[report]\nnachfassen_ab_tag = 30\n"))
+
+    assert (
+        "`[report] nachfassen_ab_tag` darf nicht größer sein als `[report] nachfassen_bis_tag` "
+        "(Standard 28)" in message
+    )
+
+
+@pytest.mark.parametrize(
+    ("ats", "expected"),
+    [
+        (
+            "greenhous",
+            "`[[watchlist.firmen]] ats` (Firma 1) muss `greenhouse` oder `lever` sein, "
+            "meintest du `greenhouse`?",
+        ),
+        ("workday", "`[[watchlist.firmen]] ats` (Firma 1) muss `greenhouse` oder `lever` sein."),
+    ],
+)
+def test_load_config_rejects_unknown_ats_with_similar_name(
+    tmp_path: Path, ats: str, expected: str
+) -> None:
+    toml = f'[[watchlist.firmen]]\nname = "GitLab"\nats = "{ats}"\nslug = "gitlab"\n'
+
+    assert expected in _error_of(_write(tmp_path, toml))
+
+
+def test_load_config_collects_range_problems_in_one_message(tmp_path: Path) -> None:
+    message = _error_of(
+        _write(tmp_path, "[suche]\nveroeffentlichtseit = 0\n\n[report]\nmindest_score = 9\n")
+    )
+
+    assert "`[suche] veroeffentlichtseit` muss zwischen 1 und 100 liegen" in message
+    assert "`[report] mindest_score` muss zwischen 1 und 5 liegen" in message
+
+
 def test_load_config_accepts_search_window_at_the_upper_limit(tmp_path: Path) -> None:
     config_path = _write(tmp_path, "[suche]\nveroeffentlichtseit = 100\n")
 

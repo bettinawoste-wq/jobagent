@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import NamedTuple, TypeGuard
 
 from jobagent.report import DEFAULT_MIN_SCORE
+from jobagent.score import SCORE_SCALE
 from jobagent.search_window import MAX_SEARCH_WINDOW_DAYS
-from jobagent.sources.watchlist import WatchlistCompany
+from jobagent.sources.watchlist import ATS_NAMES, WatchlistCompany
 
 
 @dataclass(frozen=True)
@@ -89,11 +90,13 @@ _TOML_KEYS = {
     ("suche", "veroeffentlichtseit"): _Key(
         "published_since", _WHOLE_NUMBER, _Bounds(1, MAX_SEARCH_WINDOW_DAYS)
     ),
-    ("bundesagentur", "umkreis"): _Key("radius", _WHOLE_NUMBER),
+    ("bundesagentur", "umkreis"): _Key("radius", _WHOLE_NUMBER, _Bounds(0)),
     ("watchlist", "firmen"): _Key("companies", _LIST_OF_TABLES),
-    ("report", "mindest_score"): _Key("min_score", _WHOLE_NUMBER),
-    ("report", "nachfassen_ab_tag"): _Key("follow_up_min_days", _WHOLE_NUMBER),
-    ("report", "nachfassen_bis_tag"): _Key("follow_up_max_days", _WHOLE_NUMBER),
+    ("report", "mindest_score"): _Key(
+        "min_score", _WHOLE_NUMBER, _Bounds(SCORE_SCALE[0], SCORE_SCALE[-1])
+    ),
+    ("report", "nachfassen_ab_tag"): _Key("follow_up_min_days", _WHOLE_NUMBER, _Bounds(0)),
+    ("report", "nachfassen_bis_tag"): _Key("follow_up_max_days", _WHOLE_NUMBER, _Bounds(0)),
 }
 # Platz der Firmen der Watchlist, des einzigen Eintrags, der eine Liste von Tabellen ist.
 _COMPANIES_KEY = ("watchlist", "firmen")
@@ -110,7 +113,8 @@ def load_config(path: Path) -> Config:
     Das Laden bricht mit `ConfigError` ab, wenn ein bekannter Schlüssel nicht an seinem Platz
     steht (oben in der Datei wie im alten flachen Format oder in einem anderen Abschnitt),
     ein Abschnitt oder Schlüssel unbekannt ist, ein Wert nicht den erwarteten Typ hat oder
-    außerhalb seines Wertebereichs liegt.
+    außerhalb seines Wertebereichs liegt (auch `nachfassen_ab_tag` nach `nachfassen_bis_tag`
+    und ein `ats` außer `ATS_NAMES`).
     Die Meldung sammelt alle Fehler der Datei und schlägt für unbekannte Namen den
     nächstliegenden bekannten vor. Fehlt die Datei, ist sie nicht lesbar oder kein gültiges
     TOML, wirft das Laden ebenfalls `ConfigError`.
@@ -153,6 +157,7 @@ def _reject_invalid(raw: dict, path: Path) -> None:
         *_unknown_keys(raw),
         *_wrong_value_types(raw),
         *_values_out_of_bounds(raw),
+        *_follow_up_out_of_order(raw),
         *_company_problems(raw),
     ]
     if problems:
@@ -258,6 +263,22 @@ def _values_out_of_bounds(raw: dict) -> list[str]:
     ]
 
 
+def _follow_up_out_of_order(raw: dict) -> list[str]:
+    # Ein fehlender Wert zählt mit seinem Standard; einen falschen Typ meldet schon
+    # `_wrong_value_types`.
+    table = raw.get("report")
+    table = table if isinstance(table, dict) else {}
+    start = table.get("nachfassen_ab_tag", Config.follow_up_min_days)
+    end = table.get("nachfassen_bis_tag", Config.follow_up_max_days)
+    if not (_is_whole_number(start) and _is_whole_number(end)) or start <= end:
+        return []
+    default = "" if "nachfassen_bis_tag" in table else f" (Standard {end})"
+    return [
+        "`[report] nachfassen_ab_tag` darf nicht größer sein als "
+        f"`[report] nachfassen_bis_tag`{default}"
+    ]
+
+
 def _company_problems(raw: dict) -> list[str]:
     section, german = _COMPANIES_KEY
     table = raw.get(section)
@@ -287,7 +308,18 @@ def _problems_of_company(number: int, company: dict) -> list[str]:
         for name, value in company.items()
         if name in _COMPANY_FIELDS and not _COMPANY_FIELDS[name].accepts(value)
     ]
-    return unknown + wrong_types
+    ats = company.get("ats")
+    unknown_ats = (
+        [_unknown_ats(label("ats"), ats)] if isinstance(ats, str) and ats not in ATS_NAMES else []
+    )
+    return unknown + wrong_types + unknown_ats
+
+
+def _unknown_ats(label: str, ats: str) -> str:
+    names = " oder ".join(f"`{name}`" for name in ATS_NAMES)
+    message = f"{label} muss {names} sein"
+    closest = _closest(ats, ATS_NAMES)
+    return message if closest is None else f"{message}, meintest du `{closest}`?"
 
 
 def _unknown(label: str, closest: str | None, spell: Callable[[str], str]) -> str:

@@ -29,6 +29,10 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 - `config.toml` wird streng geprüft: Unbekannte Abschnitte und Schlüssel brechen
   das Laden mit einem Vorschlag für den nächstliegenden Namen ab, falsche
   Werttypen mit dem erwarteten Typ; alle Fehler erscheinen in einer Meldung (#40)
+- `config.toml` prüft auch Wertebereiche: `mindest_score` auf der Score-Skala,
+  `nachfassen_ab_tag` und `nachfassen_bis_tag` ab 0 und in dieser Reihenfolge,
+  `umkreis` ab 0 und `ats` nur `greenhouse` oder `lever`, bei Tippfehlern mit
+  dem ähnlichen Namen
 - `output/abgebrochen.log` wächst nur noch auf etwa 1 MB; danach bleibt genau
   eine ältere Kopie `abgebrochen.log.1`. Das README weist darauf hin, dass
   `ANTHROPIC_LOG=debug` Anzeigen-Volltexte auf die Konsole bringt, nicht ins Log (#43)

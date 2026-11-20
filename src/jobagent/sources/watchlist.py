@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 _GREENHOUSE_URL = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
 _GREENHOUSE_DETAILS_URL = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{job_id}"
 _LEVER_URL = "https://api.lever.co/v0/postings/{slug}"
+# Die Jobboard-Anbieter, die `ats` einer Firma wählen kann.
+ATS_NAMES = ("greenhouse", "lever")
 
 
 @dataclass(frozen=True, slots=True)
