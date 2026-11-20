@@ -23,13 +23,14 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
   - Ort (`wo` unter `[suche]`)
   - Umkreis (`umkreis` unter `[bundesagentur]`, nur diese Quelle nutzt ihn)
   - Alter der Anzeige (`veroeffentlichtseit` der API) aus dem Suchzeitraum, siehe `GLOSSARY.md`; `veroeffentlichtseit` unter `[suche]` ist nur dessen Startwert und Höchstwert
+- Blättern laut Doku: `page` (ab 1) und `size`; die Antwort nennt die Gesamtzahl in `maxErgebnisse` (Doku: Text, Beispielantwort: Zahl). Je Suchbegriff blättert die Quelle mit 50 Ergebnissen je Seite, bis alle da sind oder eine Seite nicht voll ist, höchstens 5 Seiten. Bleiben danach Ergebnisse übrig, meldet sie „Ergebnisse abgeschnitten nach 5 Seiten“ als Fehler; der Lauf zählt dann nicht als vollständig. Die Grenze ist maßvoll gewählt, weil jede gefundene Anzeige noch einen Detail-Call kostet.
 - Die Beschreibung kommt per Detail-Call, einmal je Anzeige.
 - Die ID ist die rohe `referenznummer`.
 
 ## Arbeitnow (`ArbeitnowSource`)
 - Freie, öffentliche API ohne Key: `https://www.arbeitnow.com/api/job-board-api`. Sie sammelt Remote- und Europa-Jobs mit Tech-Schwerpunkt.
 - Es gibt keine serverseitige Suche nach Stichwort oder Ort. Gefiltert wird lokal, und alle Suchbegriffe teilen sich dieselben abgerufenen Seiten. Der Ort (`wo` unter `[suche]`) wird lokal im Ort-Feld gesucht. Ein `umkreis` ist nicht möglich, weil die API keine Geokoordinaten liefert.
-- Das Paging folgt `links.next` und stoppt, sobald Einträge auftauchen, die älter als der Suchzeitraum sind. Höchstens 10 Seiten pro Lauf, als Sicherheitsgrenze und zur maßvollen Nutzung der freien API.
+- Das Paging folgt `links.next` und stoppt, sobald Einträge auftauchen, die älter als der Suchzeitraum sind. Höchstens 10 Seiten pro Lauf, als Sicherheitsgrenze und zur maßvollen Nutzung der freien API. Gibt es nach der zehnten Seite noch eine nächste, meldet die Quelle „Ergebnisse abgeschnitten nach 10 Seiten“ als Fehler.
 - Das Veröffentlichungsdatum `created_at` zählt nur als Zahl. Fehlt es oder hat es einen anderen Typ, auch einen Wahrheitswert, oder ist es keine endliche Zahl (NaN, Infinity), gilt die Anzeige nicht als zu alt.
 - Die Uhr kommt über den Konstruktor (`now`).
 - Die ID hat die Form `arbeitnow:<slug>`.

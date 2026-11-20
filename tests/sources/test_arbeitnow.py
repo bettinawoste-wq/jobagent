@@ -97,13 +97,23 @@ def test_search_follows_next_link() -> None:
     ]
 
 
-def test_search_fetches_at_most_ten_pages_per_run() -> None:
+def test_search_fetches_at_most_ten_pages_and_reports_truncated_results() -> None:
     handler, requests = _pages(PAGE_1)  # verweist immer wieder auf eine naechste Seite
 
     result = _source(handler).search(["Data Scientist", "Python"])
 
     assert len(requests) == 10
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:data-scientist-berlin-200001"]
+    assert result.errors == ["Data Scientist, Python: Ergebnisse abgeschnitten nach 10 Seiten"]
+
+
+def test_search_ending_on_the_tenth_page_is_not_truncated() -> None:
+    last = {**PAGE_2, "links": {"next": None}}
+    handler, requests = _pages(*[PAGE_1] * 9, last)
+
+    result = _source(handler).search(["Data Scientist"])
+
+    assert len(requests) == 10
     assert result.errors == []
 
 
@@ -156,6 +166,7 @@ def test_unusual_published_date_does_not_count_as_too_old(value: float) -> None:
     # Ganzzahlen, die sich nicht in eine Gleitkommazahl wandeln lassen.
     page = deepcopy(PAGE_1)
     page["data"][0]["created_at"] = value
+    page["links"]["next"] = None  # eine einzige Seite, damit nichts abgeschnitten wird
     raw = json.dumps(page)
 
     def handler(request: httpx.Request) -> httpx.Response:

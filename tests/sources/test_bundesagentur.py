@@ -81,7 +81,7 @@ def test_search_sends_search_parameters_and_header() -> None:
     assert all(r.headers["X-API-Key"] == "jobboerse-jobsuche" for r in requests)
 
 
-def test_search_without_optional_parameters_sends_only_keyword() -> None:
+def test_search_without_optional_parameters_sends_only_keyword_and_page() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -90,7 +90,9 @@ def test_search_without_optional_parameters_sends_only_keyword() -> None:
 
     _source(handler).search(["Data Science"])
 
-    assert dict(requests[0].url.params) == {"was": "Data Science"}
+    assert set(requests[0].url.params) == {"was", "page", "size"}
+    assert requests[0].url.params["was"] == "Data Science"
+    assert requests[0].url.params["page"] == "1"
 
 
 def test_search_finds_job_ad_once_and_fetches_its_details_once_across_keywords() -> None:
@@ -265,3 +267,82 @@ def test_title_of_wrong_type_without_fallback_drops_the_entry() -> None:
 
     assert [job_ad.id for job_ad in result.job_ads] == ["10001-1003353507-S"]
     assert result.errors == ["Data Science: ungültige Antwort"]
+
+
+def _numbered_entry(number: int) -> dict:
+    return {**SEARCH_FIXTURE["ergebnisliste"][0], "referenznummer": f"10001-{number}-S"}
+
+
+def _paging_handler(total: int, requests: list[httpx.Request], *, with_count: bool = True):
+    """Handler, der `total` Anzeigen seitenweise nach `page` und `size` der Anfrage liefert."""
+    entries = [_numbered_entry(number) for number in range(1, total + 1)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != _SEARCH_PATH:
+            return httpx.Response(200, json={})
+        requests.append(request)
+        page = int(request.url.params["page"])
+        size = int(request.url.params["size"])
+        body: dict = {"ergebnisliste": entries[(page - 1) * size : page * size]}
+        if with_count:
+            body["maxErgebnisse"] = total
+        return httpx.Response(200, json=body)
+
+    return handler
+
+
+def _page_size() -> int:
+    """Die Seitengröße, die die Quelle anfragt."""
+    requests: list[httpx.Request] = []
+    _source(_paging_handler(1, requests)).search(["Data Science"])
+    return int(requests[0].url.params["size"])
+
+
+def test_search_pages_through_all_results_of_a_keyword() -> None:
+    requests: list[httpx.Request] = []
+    size = _page_size()
+
+    result = _source(_paging_handler(size + 1, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == size + 1
+    assert result.errors == []
+    assert [r.url.params["page"] for r in requests] == ["1", "2"]
+
+
+def test_search_stops_at_a_short_page_without_total_count() -> None:
+    requests: list[httpx.Request] = []
+
+    result = _source(_paging_handler(3, requests, with_count=False)).search(["Data Science"])
+
+    assert len(result.job_ads) == 3
+    assert result.errors == []
+    assert len(requests) == 1
+
+
+def test_search_reports_truncated_results_when_page_limit_is_reached() -> None:
+    requests: list[httpx.Request] = []
+
+    result = _source(_paging_handler(100_000, requests)).search(["Data Science", "Python"])
+
+    pages_per_keyword = len(requests) // 2
+    assert 1 < pages_per_keyword < 20  # eine Sicherheitsgrenze, maßvoll (ADR 0002)
+    assert len(result.job_ads) == pages_per_keyword * _page_size()
+    assert result.errors == [
+        f"Data Science: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
+        f"Python: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
+    ]
+
+
+def test_failed_later_page_keeps_job_ads_of_earlier_pages() -> None:
+    requests: list[httpx.Request] = []
+    paging = _paging_handler(100_000, requests)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("page") == "2":
+            return httpx.Response(503)
+        return paging(request)
+
+    result = _source(handler).search(["Data Science"])
+
+    assert len(result.job_ads) == _page_size()
+    assert result.errors == ["Data Science: HTTP 503"]

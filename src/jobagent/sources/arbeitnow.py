@@ -20,6 +20,7 @@ from jobagent.sources._http import (
     text_at,
     text_or_none,
     title_matches,
+    truncated,
 )
 
 _URL = "https://www.arbeitnow.com/api/job-board-api"
@@ -34,7 +35,8 @@ class ArbeitnowSource:
     der Ort clientseitig auf Titel bzw. Ort angewandt; einen Umkreis gibt es mangels
     Geokoordinaten nicht. Das Paging folgt `links.next`, endet nach höchstens 10 Seiten
     oder nach der Seite, auf der Anzeigen älter als `published_since` Tage auftauchen.
-    Bricht es ab, bleiben die bis dahin gefundenen Anzeigen erhalten.
+    Gäbe es nach 10 Seiten noch eine nächste, meldet es "Ergebnisse abgeschnitten" als
+    Fehler. Bricht es ab, bleiben die bis dahin gefundenen Anzeigen erhalten.
     """
 
     name = "Arbeitnow"
@@ -112,6 +114,8 @@ class ArbeitnowSource:
                 if too_old_reached:
                     return
                 url = (page.get("links") or {}).get("next")
+        if url:
+            raise FetchError(truncated(_MAX_PAGES))
 
     def _matches(self, entry: dict, keywords: list[str]) -> bool:
         if not title_matches(entry.get("title"), keywords):

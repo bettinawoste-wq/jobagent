@@ -1,7 +1,7 @@
 """Quelle Bundesagentur für Arbeit: Jobsuche-API (siehe CLAUDE.md, Quelle 1)."""
 
 import base64
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import httpx
 
@@ -19,15 +19,25 @@ from jobagent.sources._http import (
     required_text,
     text_at,
     text_or_none,
+    truncated,
 )
 
 _SEARCH_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
 _DETAILS_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobdetails/{code}"
 _HEADERS = {"X-API-Key": "jobboerse-jobsuche"}
+# Ergebnisse je Seite, wie im Beispiel der Doku von bundesAPI/jobsuche-api.
+_PAGE_SIZE = 50
+# Sicherheitsgrenze je Suchbegriff, zur maßvollen Nutzung der API (ADR 0002): Jede
+# gefundene Anzeige kostet noch einen Detail-Call.
+_MAX_PAGES = 5
 
 
 class BundesagenturSource:
     """Sucht je Suchbegriff in der Jobsuche-API und holt die Jobdetails je Anzeige einmal.
+
+    Je Suchbegriff blättert sie (`page` ab 1, `size`), bis alle Ergebnisse da sind, höchstens
+    `_MAX_PAGES` Seiten. Bleiben danach Ergebnisse übrig, meldet sie "Ergebnisse
+    abgeschnitten" als Fehler: Der Lauf zählt dann nicht als vollständig.
 
     Scheitert der Detail-Call einer Anzeige, bleibt nur deren Beschreibung leer; das gilt
     nicht als Fehler der Quelle.
@@ -53,14 +63,8 @@ class BundesagenturSource:
         errors: list[str] = []
         with httpx.Client(timeout=TIMEOUT, transport=self._transport) as client:
             for keyword in keywords:
-                try:
-                    converted = self._search_one(client, keyword)
-                except FetchError as error:
-                    errors.append(f"{keyword}: {error.reason}")
-                    continue
-                for job_ad in converted.job_ads:
+                for job_ad in self._search_keyword(client, keyword, errors):
                     found.setdefault(job_ad.id, job_ad)
-                errors.extend(converted.errors(keyword))
             # Die Details erst nach dem Zusammenführen holen: je Anzeige nur einmal.
             job_ads = [
                 replace(job_ad, description=_description(client, job_ad.id))
@@ -68,9 +72,35 @@ class BundesagenturSource:
             ]
         return SearchResult(job_ads, errors)
 
-    def _search_one(self, client: httpx.Client, keyword: str) -> ConvertedEntries:
-        """Die Anzeigen zu einem Suchbegriff, noch ohne Beschreibung."""
-        params: dict[str, str | int] = {"was": keyword}
+    def _search_keyword(self, client: httpx.Client, keyword: str, errors: list[str]) -> list[JobAd]:
+        """Blättert durch alle Seiten zu einem Suchbegriff, höchstens `_MAX_PAGES`.
+
+        Fehler hängt es an `errors` an. Scheitert eine Seite oder ist die Grenze erreicht,
+        bleiben die Anzeigen der Seiten davor erhalten.
+        """
+        job_ads: list[JobAd] = []
+        fetched = 0
+        for page in range(1, _MAX_PAGES + 1):
+            try:
+                result = self._search_page(client, keyword, page)
+            except FetchError as error:
+                errors.append(f"{keyword}: {error.reason}")
+                return job_ads
+            job_ads.extend(result.converted.job_ads)
+            errors.extend(
+                error for error in result.converted.errors(keyword) if error not in errors
+            )
+            fetched += result.entries
+            if result.entries < _PAGE_SIZE or (
+                result.total is not None and fetched >= result.total
+            ):
+                return job_ads
+        errors.append(f"{keyword}: {truncated(_MAX_PAGES)}")
+        return job_ads
+
+    def _search_page(self, client: httpx.Client, keyword: str, page: int) -> "_Page":
+        """Eine Ergebnisseite zu einem Suchbegriff, noch ohne Beschreibung."""
+        params: dict[str, str | int] = {"was": keyword, "page": page, "size": _PAGE_SIZE}
         if self._location is not None:
             params["wo"] = self._location
         if self._radius is not None:
@@ -90,9 +120,36 @@ class BundesagenturSource:
             where=f"was={keyword!r}",
         )
         with malformed_as_invalid("Jobsuche-Antwort", f"was={keyword!r}"):
-            return convert_entries(
+            converted = convert_entries(
                 entries, _to_job_ad, what="Jobsuche-Antwort", where=f"was={keyword!r}"
             )
+        total = data.get("maxErgebnisse") if isinstance(data, dict) else None
+        return _Page(converted, len(entries), _count_or_none(total))
+
+
+@dataclass(frozen=True, slots=True)
+class _Page:
+    """Eine Ergebnisseite: ihre Anzeigen, die Zahl ihrer Einträge und, falls die API sie
+    nennt, die Gesamtzahl der Ergebnisse (`maxErgebnisse`)."""
+
+    converted: ConvertedEntries
+    entries: int
+    total: int | None
+
+
+def _count_or_none(value: object) -> int | None:
+    """`maxErgebnisse` als Zahl; die Doku nennt einen Text, die Beispielantwort hat eine Zahl.
+
+    Hat es eine andere Form, ist die Gesamtzahl unbekannt, dann endet das Blättern erst an
+    einer nicht vollen Seite.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None
 
 
 def _to_job_ad(entry: dict) -> JobAd:

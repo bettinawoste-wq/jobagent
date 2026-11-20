@@ -275,6 +275,8 @@ def test_default_sources_search_with_location_radius_and_search_window() -> None
         "wo": "München",
         "umkreis": "30",
         "veroeffentlichtseit": "4",
+        "page": "1",
+        "size": requests[0].url.params["size"],
     }
     assert dict(requests[2].url.params) == {}  # die Watchlist kennt keinen Suchzeitraum
 

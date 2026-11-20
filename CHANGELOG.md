@@ -49,6 +49,10 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 - Die Rückmeldung lehnt `--am` beim eigenen Score und eine riesige Zahl als
   Score mit deutscher Meldung und Exit-Code 1 ab, statt `--am` still zu
   ignorieren oder mit einem Traceback abzubrechen (#41)
+- Die Bundesagentur blättert je Suchbegriff durch alle Ergebnisseiten statt nur
+  die erste zu holen, höchstens 5 Seiten. Erreicht sie oder Arbeitnow (10 Seiten)
+  die Grenze, steht „Ergebnisse abgeschnitten“ im Quellenstatus, und der Lauf
+  zählt nicht als vollständig, statt Anzeigen still zu verlieren
 
 ## 0.6.0 – 2026-11-15
 
