@@ -2,9 +2,8 @@
 
 Alle nennenswerten Änderungen am Job-Agenten, nach Versionen gegliedert und
 angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Die
-Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x): eine neue Quelle
-oder Funktion hebt die Minor-, reine Fehlerbehebungen heben die Patch-Version.
-Nummern wie (#12) verweisen auf die Issues im Repo.
+Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
+(#12) verweisen auf die Issues im Repo.
 
 ## Unveröffentlicht
 
@@ -54,8 +53,9 @@ Nummern wie (#12) verweisen auf die Issues im Repo.
   Verknüpfung, Schreibschutz oder Abbruch heil
 - Einzelne Surrogate (halbe Emojis) in Anzeigen und Modellantworten brechen
   Merken, Report und Profil-Vorschlag nicht mehr ab
-- Eine Bewerbung auf dieselbe Anzeige wird auch ohne Firma erkannt und nicht
-  mehr mit dem gerade gemerkten Text verglichen
+- Eine Bewerbung wird auch bei einer Anzeige ohne Firma über die Anzeigen-ID
+  erkannt, und die Textabweichung vergleicht nicht mehr mit dem gerade
+  gemerkten Text
 
 ## 0.5.1 – 2026-11-12
 
@@ -72,8 +72,10 @@ Nummern wie (#12) verweisen auf die Issues im Repo.
 
 ### Behoben
 - Quellen prüfen die Feldtypen jeder Anzeige: Ein Pflichtfeld mit falschem Typ
-  kostet nur diesen Eintrag, ein optionales Feld wird zu `None`, statt die
-  ganze Antwort ungültig zu machen (#21)
+  kostet nur diesen Eintrag, statt als falscher Wert in Bewertung und Report zu
+  landen
+- Ein optionales Feld mit falschem Typ wird zu `None`, statt die ganze Antwort
+  ungültig zu machen; der Vertragstest sichert das für alle Quellen ab (#21)
 
 ## 0.5.0 – 2026-11-12
 
@@ -88,7 +90,7 @@ Nummern wie (#12) verweisen auf die Issues im Repo.
   `python -m jobagent.profile_suggestion` (#11)
 - Quellen sind Adapter am Seam `Source`, zuerst die Bundesagentur (#12)
 - Arbeitnow blättert pro Lauf einmal über höchstens 10 Seiten und filtert die
-  Suchbegriffe lokal, statt das Paging für jeden Suchbegriff zu wiederholen
+  Suchbegriffe lokal, statt für jeden Suchbegriff erneut zu blättern
   (#13)
 - Die Firmen-Watchlist ist ein eigener Adapter mit Greenhouse- und Lever-Board
   (#14)
