@@ -179,7 +179,7 @@ vollständigen Lauf plus 1, also nach einem vollständigen Lauf am Montag am
 Donnerstag 4 Tage. `veroeffentlichtseit` gilt für den ersten Lauf und begrenzt
 den Suchzeitraum nach oben. Fällt ein Tag aus, eine Quelle aus oder bleibt eine
 Anzeige unbewertet, holt der nächste Lauf die Tage seither nach. Die Watchlist
-sucht ohne Zeitraum.
+sucht ohne Suchzeitraum.
 
 Fehlende Werte behalten ihren Standard. Das alte flache Format ohne
 Abschnitte wird nicht mehr gelesen; der Lauf nennt dann den neuen Platz

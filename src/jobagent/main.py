@@ -79,14 +79,14 @@ _ABORTED_LOG = "abgebrochen.log"
 
 
 def default_sources(
-    config: Config, search_window: SearchWindow, *, transport: httpx.BaseTransport | None = None
+    config: Config, window: SearchWindow, *, transport: httpx.BaseTransport | None = None
 ) -> list[Source]:
     """Die eingebauten Quellen; die Firmen-Watchlist nur, wenn `config.toml` Firmen nennt.
 
-    Bundesagentur und Arbeitnow suchen im Suchzeitraum, die Watchlist ohne Zeitraum.
+    Bundesagentur und Arbeitnow suchen im Suchzeitraum `window`, die Watchlist ohne Suchzeitraum.
     """
     location = config.location
-    since = search_window.days
+    since = window.days
 
     sources: list[Source] = [
         BundesagenturSource(location, config.radius, since, transport=transport),
