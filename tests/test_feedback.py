@@ -368,6 +368,25 @@ def test_invalid_score_is_rejected(db_path: Path, arguments: list[str]) -> None:
     assert _feedback(db_path) == []
 
 
+def test_huge_number_as_score_is_error_with_message(
+    db_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    assert _main(db_path, _REPORT, "2", "score", "9" * 5000) == 1
+
+    error = capsys.readouterr().err
+    assert error.startswith("Fehler: Nach score wird eine Zahl von 1 bis 5 erwartet.")
+    assert _feedback(db_path) == []
+
+
+def test_date_with_score_is_error_with_message(
+    db_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    assert _main(db_path, _REPORT, "2", "score", "4", "--am", "2026-11-01") == 1
+
+    assert capsys.readouterr().err == "Fehler: --am gibt es nur zusammen mit beworben.\n"
+    assert _feedback(db_path) == []
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

@@ -14,8 +14,14 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   `uv run pyright` und als eigener Schritt in der CI (#36)
 
 ### Geändert
+- Die Score-Skala 1 bis 5 ist an einer Stelle festgelegt; Bewertung,
+  Rückmeldung und Report richten sich danach, und der Bewerbungsstatus kommt
+  typisiert aus dem Store in den Report (#41)
 
 ### Behoben
+- Die Rückmeldung lehnt `--am` beim eigenen Score und eine riesige Zahl als
+  Score mit deutscher Meldung und Exit-Code 1 ab, statt `--am` still zu
+  ignorieren oder mit einem Traceback abzubrechen (#41)
 
 ## 0.6.0 – 2026-11-15
 

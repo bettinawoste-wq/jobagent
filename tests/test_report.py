@@ -8,7 +8,7 @@ import pytest
 from jobagent.job_ad import JobAd
 from jobagent.report import AlreadyApplied, SourceStatus, TextComparison, write_report
 from jobagent.score import Assessment
-from jobagent.store import FollowUpReminder
+from jobagent.store import ApplicationStatus, FollowUpReminder
 
 
 def _job_ad(id_: str, title: str) -> JobAd:
@@ -245,7 +245,7 @@ def test_without_matches_source_failure_is_still_reported(tmp_path: Path) -> Non
     assert "Keine neuen Treffer" in content
 
 
-_REJECTED = AlreadyApplied("absage", date(2026, 10, 1), TextComparison.IDENTICAL)
+_REJECTED = AlreadyApplied(ApplicationStatus.REJECTED, date(2026, 10, 1), TextComparison.IDENTICAL)
 
 
 def test_already_applied_is_in_own_block_at_end(tmp_path: Path) -> None:
