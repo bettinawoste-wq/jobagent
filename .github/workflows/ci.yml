@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   check:
-    name: Lint, Format und Tests
+    name: Lint, Format, Typen und Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -41,10 +41,11 @@ _DATE_ONLY_WITH_APPLIED = f"--am gibt es nur zusammen mit {ApplicationStatus.APP
 _REPORT_NAME = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 _USAGE = f"""python -m jobagent.feedback REPORT NUMMER AKTION
-       python -m jobagent.feedback REPORT NUMMER score {SCORE_SCALE[0]}-{SCORE_SCALE[-1]} [GRUND]
+       python -m jobagent.feedback REPORT NUMMER score SCORE [GRUND]
        python -m jobagent.feedback AKTION --firma FIRMA --titel TITEL
 
 AKTION: beworben, gespräch, absage, zusage, zurückgezogen, zurücknehmen
+SCORE: der eigene Score von {SCORE_SCALE_TEXT}
 Beispiele:
   python -m jobagent.feedback 2026-11-06 3 beworben --am 2026-11-01
   python -m jobagent.feedback 2026-11-06 2 score 4 "Dienstleister ist okay"

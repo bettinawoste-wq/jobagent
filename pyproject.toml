@@ -27,7 +27,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py312"
+# Die Python-Version liest ruff aus requires-python.
 line-length = 100
 
 [tool.ruff.lint]
@@ -39,6 +39,10 @@ select = ["E", "F", "I", "UP", "B", "ANN"]
 
 [tool.pyright]
 include = ["src", "tests"]
+# Die .venv von uv, damit `pyright` die Abhängigkeiten auch ohne `uv run` findet. Die
+# Python-Version steht trotzdem hier: Ohne `uv run` nähme pyright sonst die des Python im PATH.
+venvPath = "."
+venv = ".venv"
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 extraPaths = ["src"]

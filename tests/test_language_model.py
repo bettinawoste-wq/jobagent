@@ -2,7 +2,6 @@
 
 import subprocess
 import sys
-from typing import cast
 
 import anthropic
 import httpx2
@@ -26,6 +25,7 @@ from jobagent.language_model import (
     LanguageModelFailure,
     with_required_keys,
 )
+from tests.fakes import as_anthropic
 
 _SCHEMA = {
     "type": "object",
@@ -78,14 +78,10 @@ class _FakeClient:
         self.messages = _FakeMessages(result)
         self.beta = _FakeBeta(result)
 
-    def as_anthropic(self) -> anthropic.Anthropic:
-        # Nachgebaut sind nur messages und beta.messages, mehr nutzen die Adapter nicht.
-        return cast(anthropic.Anthropic, self)
-
 
 def _ask(result: object) -> dict:
     model = AnthropicToolLanguageModel(
-        "claude-haiku-4-5-20251001", client=_FakeClient(result).as_anthropic()
+        "claude-haiku-4-5-20251001", client=as_anthropic(_FakeClient(result))
     )
     return model.ask("System", "Text", _SCHEMA)
 
@@ -100,7 +96,7 @@ def test_ask_returns_data_of_forced_tool() -> None:
 def test_ask_sends_model_system_text_and_schema_as_forced_tool() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
 
-    AnthropicToolLanguageModel("modell-x", client=client.as_anthropic()).ask(
+    AnthropicToolLanguageModel("modell-x", client=as_anthropic(client)).ask(
         "Sei knapp.", "Anzeige", _SCHEMA
     )
 
@@ -116,7 +112,7 @@ def test_schema_title_and_description_name_and_describe_the_tool() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
     schema = {"title": "bewertung_abgeben", "description": "Gibt die Bewertung zurück.", **_SCHEMA}
 
-    AnthropicToolLanguageModel("modell-x", client=client.as_anthropic()).ask(
+    AnthropicToolLanguageModel("modell-x", client=as_anthropic(client)).ask(
         "System", "Text", schema
     )
 
@@ -284,7 +280,7 @@ def test_tool_answer_that_is_no_object_becomes_language_model_error(tool_input: 
 def test_max_tokens_reaches_the_tool_request() -> None:
     client = _FakeClient(_tool_answer({"score": 4, "kurzfazit": "Passt."}))
 
-    AnthropicToolLanguageModel("modell-x", max_tokens=2048, client=client.as_anthropic()).ask(
+    AnthropicToolLanguageModel("modell-x", max_tokens=2048, client=as_anthropic(client)).ask(
         "S", "T", _SCHEMA
     )
 
@@ -316,7 +312,7 @@ def _thought_and_text(text: str, stop_reason: BetaStopReason = "end_turn") -> Be
 
 def _ask_json_model(result: object) -> dict:
     model = AnthropicJsonLanguageModel(
-        "claude-sonnet-5-5", client=_FakeClient(result).as_anthropic()
+        "claude-sonnet-5-5", client=as_anthropic(_FakeClient(result))
     )
     return model.ask("System", "Text", _SCHEMA)
 
@@ -358,7 +354,7 @@ def test_json_answer_after_thinking_returns_its_data() -> None:
 
 def test_json_answer_is_asked_with_fallback_instead_of_tool() -> None:
     client = _FakeClient(_thought_and_text('{"score": 4, "kurzfazit": "Passt."}'))
-    model = AnthropicJsonLanguageModel("modell-y", max_tokens=16000, client=client.as_anthropic())
+    model = AnthropicJsonLanguageModel("modell-y", max_tokens=16000, client=as_anthropic(client))
 
     model.ask("Denk nach.", "Rückmeldungen", _SCHEMA)
 

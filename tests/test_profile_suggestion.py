@@ -13,7 +13,6 @@ import stat
 from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
-from typing import cast
 
 import anthropic
 import pytest
@@ -32,7 +31,7 @@ from jobagent.profile_suggestion import (
 )
 from jobagent.score import Assessment
 from jobagent.store import Feedback, Store
-from tests.fakes import FakeLanguageModel
+from tests.fakes import FakeLanguageModel, as_anthropic
 
 _PROFILE = "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2\n"
 _NOW = datetime(2026, 11, 8, 15, 1, 2)
@@ -748,10 +747,6 @@ class _RecordingClient:
         self.messages = _RecordingMessages(self, "messages")
         self.beta = type("Beta", (), {"messages": _RecordingMessages(self, "beta")})()
 
-    def as_anthropic(self) -> anthropic.Anthropic:
-        # Nachgebaut sind nur messages und beta.messages, mehr nutzen die Adapter nicht.
-        return cast(anthropic.Anthropic, self)
-
 
 class _RecordingMessages:
     def __init__(self, client: _RecordingClient, endpoint: str) -> None:
@@ -767,7 +762,7 @@ def test_suggestion_language_model_asks_sonnet_for_json_answer() -> None:
     client = _RecordingClient()
 
     with pytest.raises(LanguageModelError):
-        profile_suggestion.suggestion_language_model(client=client.as_anthropic()).ask(
+        profile_suggestion.suggestion_language_model(client=as_anthropic(client)).ask(
             "System", "Text", {"type": "object"}
         )
 

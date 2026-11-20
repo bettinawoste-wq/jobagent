@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import anthropic
 
@@ -182,6 +183,17 @@ class AppliedChanges:
     overlapping: list[ProfileChange] = field(default_factory=list)
 
 
+class _Span(NamedTuple):
+    """Die Fundstelle des Auszugs einer Änderung im Suchprofil: `text[start:end]`."""
+
+    start: int
+    end: int
+    change: ProfileChange
+
+    def overlaps(self, other: "_Span") -> bool:
+        return self.start < other.end and other.start < self.end
+
+
 def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedChanges:
     """Wendet Ersetzungen an, jede Stelle des Suchprofils höchstens einmal.
 
@@ -196,7 +208,7 @@ def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedC
     overlapping: list[ProfileChange] = []
     seen: set[tuple[str, str]] = set()
     applied: set[tuple[str, str]] = set()
-    spans: list[tuple[int, int, ProfileChange]] = []
+    spans: list[_Span] = []
     for change in changes:
         key = (change.old, change.new)
         if key in seen:
@@ -213,17 +225,16 @@ def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedC
         if len(starts) != 1:
             (ambiguous if starts else missing).append(change)
             continue
-        start = starts[0]
-        end = start + len(change.old)
-        if any(start < other_end and other_start < end for other_start, other_end, _ in spans):
+        span = _Span(starts[0], starts[0] + len(change.old), change)
+        if any(span.overlaps(other) for other in spans):
             overlapping.append(change)
             continue
-        spans.append((start, end, change))
+        spans.append(span)
         applied.add(key)
 
     return AppliedChanges(
         _replace_spans(search_profile, spans),
-        applied=[change for _, _, change in spans],
+        applied=[span.change for span in spans],
         missing=missing,
         ambiguous=ambiguous,
         unchanged=unchanged,
@@ -232,10 +243,10 @@ def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedC
     )
 
 
-def _replace_spans(text: str, spans: list[tuple[int, int, ProfileChange]]) -> str:
+def _replace_spans(text: str, spans: list[_Span]) -> str:
     # Von hinten ersetzen, damit die Positionen davor gültig bleiben.
-    for start, end, change in sorted(spans, key=lambda span: span[0], reverse=True):
-        text = text[:start] + change.new + text[end:]
+    for span in sorted(spans, key=lambda span: span.start, reverse=True):
+        text = text[: span.start] + span.change.new + text[span.end :]
     return text
 
 
