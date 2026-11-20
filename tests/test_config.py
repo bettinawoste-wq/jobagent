@@ -256,6 +256,21 @@ def test_load_config_collects_unknown_keys_and_wrong_types_in_one_message(
     assert "`[report] mindestscore` unbekannt" in message
 
 
+@pytest.mark.parametrize("days", [0, -3, 101])
+def test_load_config_rejects_search_window_outside_what_the_bundesagentur_accepts(
+    tmp_path: Path, days: int
+) -> None:
+    message = _error_of(_write(tmp_path, f"[suche]\nveroeffentlichtseit = {days}\n"))
+
+    assert "`[suche] veroeffentlichtseit` muss zwischen 1 und 100 liegen" in message
+
+
+def test_load_config_accepts_search_window_at_the_upper_limit(tmp_path: Path) -> None:
+    config_path = _write(tmp_path, "[suche]\nveroeffentlichtseit = 100\n")
+
+    assert load_config(config_path).published_since == 100
+
+
 def test_load_config_reads_config_toml_of_the_repo() -> None:
     config = load_config(Path(__file__).parent.parent / "config.toml")
 

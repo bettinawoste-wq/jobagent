@@ -3,6 +3,10 @@
 from dataclasses import dataclass
 from datetime import date
 
+# Obergrenze des Suchzeitraums: Mehr Tage nimmt die Jobsuche-API der Bundesagentur für
+# `veroeffentlichtseit` nicht an (Doku von bundesAPI/jobsuche-api: 0 bis 100 Tage).
+MAX_SEARCH_WINDOW_DAYS = 100
+
 
 @dataclass(frozen=True, slots=True)
 class SearchWindow:
@@ -11,7 +15,7 @@ class SearchWindow:
     `days` ist None, wenn `veroeffentlichtseit` fehlt und es noch keinen vollständigen
     Lauf gibt: Dann suchen die Quellen ohne Begrenzung. `since` ist der Tag des letzten
     vollständigen Laufs, None beim ersten Lauf; `capped` sagt, ob `veroeffentlichtseit`
-    den Suchzeitraum begrenzt hat.
+    oder die Obergrenze den Suchzeitraum begrenzt hat.
     """
 
     days: int | None
@@ -24,13 +28,15 @@ def search_window(
 ) -> SearchWindow:
     """Berechnet den Suchzeitraum; `max_days` ist `veroeffentlichtseit` aus `[suche]`.
 
-    Ohne vollständigen Lauf gilt `max_days` als Startwert. Sonst reicht der Suchzeitraum
-    bis zum Tag des letzten vollständigen Laufs zurück, mindestens 1 und höchstens
-    `max_days` Tage.
+    Ohne vollständigen Lauf gilt `max_days` als Startwert, ebenso, wenn der gemerkte
+    vollständige Lauf in der Zukunft liegt (etwa nach einer verstellten Uhr). Sonst reicht
+    der Suchzeitraum bis zum Tag des letzten vollständigen Laufs zurück, mindestens 1 und
+    höchstens `max_days` Tage; fehlt `max_days`, höchstens `MAX_SEARCH_WINDOW_DAYS`.
     """
-    if last_complete_run is None:
+    if last_complete_run is None or last_complete_run > today:
         return SearchWindow(max_days, since=None, capped=False)
-    days = max((today - last_complete_run).days + 1, 1)
-    if max_days is not None and days > max_days:
-        return SearchWindow(max_days, last_complete_run, capped=True)
+    days = (today - last_complete_run).days + 1
+    limit = MAX_SEARCH_WINDOW_DAYS if max_days is None else max_days
+    if days > limit:
+        return SearchWindow(limit, last_complete_run, capped=True)
     return SearchWindow(days, last_complete_run, capped=False)

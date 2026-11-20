@@ -9,10 +9,10 @@ was = [
     "Data Scientist",
 ]
 wo = "München"
-# Suchzeitraum in Tagen: Startwert fuer den ersten Lauf und Hoechstwert. Danach
-# suchen Bundesagentur und Arbeitnow ab dem letzten vollstaendigen Lauf (jede
-# Quelle fehlerfrei, keine Anzeige unbewertet), so gehen ausgefallene Tage nicht
-# verloren.
+# Suchzeitraum in Tagen (1 bis 100): Startwert fuer den ersten Lauf und
+# Hoechstwert. Danach suchen Bundesagentur und Arbeitnow ab dem letzten
+# vollstaendigen Lauf (jede Quelle fehlerfrei, keine Anzeige unbewertet), so
+# gehen ausgefallene Tage nicht verloren.
 veroeffentlichtseit = 7
 
 # Nur fuer die Jobsuche-API der Bundesagentur fuer Arbeit.

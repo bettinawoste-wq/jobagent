@@ -229,7 +229,7 @@ Suchparameter in `config.toml` anpassen. Die Datei ist in Abschnitte geteilt:
 [suche]                      # was für alle Quellen, wo/veroeffentlichtseit ohne Watchlist
 was = ["Data Scientist", "IT Consultant"]
 wo = "München"
-veroeffentlichtseit = 7      # Tage: Startwert und Höchstwert des Suchzeitraums
+veroeffentlichtseit = 7      # Tage (1 bis 100): Start- und Höchstwert des Suchzeitraums
 
 [bundesagentur]
 umkreis = 25                 # km
@@ -250,9 +250,11 @@ Quelle fehlerfrei geliefert hat und keine Anzeige unbewertet blieb. Bundesagentu
 und Arbeitnow suchen dann im Suchzeitraum: die Tage seit dem letzten
 vollständigen Lauf plus 1, also nach einem vollständigen Lauf am Montag am
 Donnerstag 4 Tage. `veroeffentlichtseit` gilt für den ersten Lauf und begrenzt
-den Suchzeitraum nach oben. Fällt ein Tag aus, eine Quelle aus oder bleibt eine
-Anzeige unbewertet, holt der nächste Lauf die Tage seither nach. Die Watchlist
-sucht ohne Suchzeitraum.
+den Suchzeitraum nach oben; fehlt es, sind es höchstens 100 Tage, mehr nimmt die
+Bundesagentur nicht an. Fällt ein Tag aus, eine Quelle aus oder bleibt eine
+Anzeige unbewertet, holt der nächste Lauf die Tage seither nach. Ein gemerkter
+Lauf mit einem Datum in der Zukunft, etwa nach einer verstellten Uhr, zählt
+nicht. Die Watchlist sucht ohne Suchzeitraum.
 
 Fehlende Werte behalten ihren Standard. Unbekannte Abschnitte und Schlüssel
 oder Werte vom falschen Typ brechen den Lauf ab; die Meldung nennt alle Fehler

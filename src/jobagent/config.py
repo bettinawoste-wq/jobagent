@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import NamedTuple, TypeGuard
 
 from jobagent.report import DEFAULT_MIN_SCORE
+from jobagent.search_window import MAX_SEARCH_WINDOW_DAYS
 from jobagent.sources.watchlist import WatchlistCompany
 
 
@@ -56,11 +57,28 @@ _LIST_OF_TEXTS = _ValueType("eine Liste von Texten", _is_list_of_texts)
 _LIST_OF_TABLES = _ValueType("eine Liste von Tabellen", _is_list_of_tables)
 
 
+class _Bounds(NamedTuple):
+    """Wertebereich einer ganzen Zahl; ohne `high` nach oben offen."""
+
+    low: int
+    high: int | None = None
+
+    def accepts(self, value: int) -> bool:
+        return self.low <= value and (self.high is None or value <= self.high)
+
+    def words(self) -> str:
+        if self.high is None:
+            return f"mindestens {self.low} sein"
+        return f"zwischen {self.low} und {self.high} liegen"
+
+
 class _Key(NamedTuple):
-    """Wohin ein deutscher Schlüssel übersetzt wird und welchen Typ sein Wert haben muss."""
+    """Wohin ein deutscher Schlüssel übersetzt wird, welchen Typ sein Wert haben muss und,
+    bei Zahlen, in welchem Bereich er liegen muss."""
 
     field: str
     value_type: _ValueType
+    bounds: _Bounds | None = None
 
 
 # Die einzige Stelle, an der die deutschen Schlüssel aus `config.toml` übersetzt werden:
@@ -68,7 +86,9 @@ class _Key(NamedTuple):
 _TOML_KEYS = {
     ("suche", "was"): _Key("keywords", _LIST_OF_TEXTS),
     ("suche", "wo"): _Key("location", _TEXT),
-    ("suche", "veroeffentlichtseit"): _Key("published_since", _WHOLE_NUMBER),
+    ("suche", "veroeffentlichtseit"): _Key(
+        "published_since", _WHOLE_NUMBER, _Bounds(1, MAX_SEARCH_WINDOW_DAYS)
+    ),
     ("bundesagentur", "umkreis"): _Key("radius", _WHOLE_NUMBER),
     ("watchlist", "firmen"): _Key("companies", _LIST_OF_TABLES),
     ("report", "mindest_score"): _Key("min_score", _WHOLE_NUMBER),
@@ -89,7 +109,8 @@ def load_config(path: Path) -> Config:
 
     Das Laden bricht mit `ConfigError` ab, wenn ein bekannter Schlüssel nicht an seinem Platz
     steht (oben in der Datei wie im alten flachen Format oder in einem anderen Abschnitt),
-    ein Abschnitt oder Schlüssel unbekannt ist oder ein Wert nicht den erwarteten Typ hat.
+    ein Abschnitt oder Schlüssel unbekannt ist, ein Wert nicht den erwarteten Typ hat oder
+    außerhalb seines Wertebereichs liegt.
     Die Meldung sammelt alle Fehler der Datei und schlägt für unbekannte Namen den
     nächstliegenden bekannten vor. Fehlt die Datei, ist sie nicht lesbar oder kein gültiges
     TOML, wirft das Laden ebenfalls `ConfigError`.
@@ -131,6 +152,7 @@ def _reject_invalid(raw: dict, path: Path) -> None:
         *_unknown_top_level(raw),
         *_unknown_keys(raw),
         *_wrong_value_types(raw),
+        *_values_out_of_bounds(raw),
         *_company_problems(raw),
     ]
     if problems:
@@ -221,6 +243,19 @@ def _wrong_value_type(section: str, german: str) -> str:
     if place != _spelling(section, german, list_of_tables=False):
         message += f", geschrieben als `{place}`"
     return message
+
+
+def _values_out_of_bounds(raw: dict) -> list[str]:
+    # Nur Werte vom richtigen Typ; einen falschen meldet schon `_wrong_value_types`.
+    return [
+        f"`[{section}] {german}` muss {bounds.words()}"
+        for section, german, value in _keys_in_sections(raw)
+        if _SECTION_OF_KEY.get(german) == section
+        and (bounds := _TOML_KEYS[(section, german)].bounds) is not None
+        and _TOML_KEYS[(section, german)].value_type.accepts(value)
+        and isinstance(value, int)
+        and not bounds.accepts(value)
+    ]
 
 
 def _company_problems(raw: dict) -> list[str]:

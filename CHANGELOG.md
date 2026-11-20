@@ -53,6 +53,10 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   die erste zu holen, höchstens 5 Seiten. Erreicht sie oder Arbeitnow (10 Seiten)
   die Grenze, steht „Ergebnisse abgeschnitten“ im Quellenstatus, und der Lauf
   zählt nicht als vollständig, statt Anzeigen still zu verlieren
+- Der Suchzeitraum wächst nie über 100 Tage, mehr nimmt die Bundesagentur nicht
+  an; `veroeffentlichtseit` muss zwischen 1 und 100 liegen. Ein gemerkter
+  vollständiger Lauf in der Zukunft (verstellte Uhr) zählt nicht, dann gilt der
+  Startwert
 
 ## 0.6.0 – 2026-11-15
 

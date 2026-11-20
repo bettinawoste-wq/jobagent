@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from jobagent.search_window import SearchWindow, search_window
+from jobagent.search_window import MAX_SEARCH_WINDOW_DAYS, SearchWindow, search_window
 
 THURSDAY = date(2026, 11, 19)
 MONDAY = date(2026, 11, 16)
@@ -34,12 +34,25 @@ def test_window_is_capped_at_configured_days() -> None:
     assert search_window(since, THURSDAY, max_days=7) == SearchWindow(7, since, capped=True)
 
 
-def test_window_without_configured_days_is_not_capped() -> None:
+def test_window_without_configured_days_is_not_capped_within_the_upper_limit() -> None:
     since = date(2026, 11, 1)
 
     assert search_window(since, THURSDAY, max_days=None) == SearchWindow(19, since, False)
 
 
-def test_complete_run_in_the_future_still_gives_one_day() -> None:
-    # Etwa nach einer verstellten Uhr: mindestens 1 Tag.
-    assert search_window(date(2026, 11, 25), THURSDAY, max_days=7).days == 1
+def test_upper_limit_matches_what_the_bundesagentur_accepts() -> None:
+    # Laut Doku von bundesAPI/jobsuche-api: veroeffentlichtseit zwischen 0 und 100 Tagen.
+    assert MAX_SEARCH_WINDOW_DAYS == 100
+
+
+def test_window_without_configured_days_is_capped_at_the_upper_limit() -> None:
+    since = date(2025, 1, 1)
+
+    assert search_window(since, THURSDAY, max_days=None) == SearchWindow(100, since, capped=True)
+
+
+def test_complete_run_in_the_future_does_not_count() -> None:
+    # Etwa nach einer verstellten Uhr: Dann gilt der Startwert wie beim ersten Lauf.
+    window = search_window(date(2026, 11, 25), THURSDAY, max_days=7)
+
+    assert window == SearchWindow(7, since=None, capped=False)
