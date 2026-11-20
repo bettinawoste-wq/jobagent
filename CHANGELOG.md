@@ -2,8 +2,9 @@
 
 Alle nennenswerten Änderungen am Job-Agenten, nach Versionen gegliedert und
 angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/). Die
-Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
-(#12) verweisen auf die Issues im Repo.
+Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x): Eine neue Quelle
+oder Funktion hebt die Minor-Version, reine Fehlerbehebungen heben die
+Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 
 ## Unveröffentlicht
 
@@ -115,9 +116,11 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   Verknüpfung, Schreibschutz oder Abbruch heil
 - Einzelne Surrogate (halbe Emojis) in Anzeigen und Modellantworten brechen
   Merken, Report und Profil-Vorschlag nicht mehr ab
-- Eine Bewerbung wird auch bei einer Anzeige ohne Firma über die Anzeigen-ID
-  erkannt, und die Textabweichung vergleicht nicht mehr mit dem gerade
-  gemerkten Text
+- Eine Bewerbung wird bei jeder Anzeige auch über deren Quell-ID erkannt, nicht
+  nur über Firma und Titel, also auch bei einer Anzeige ohne Firma. Die
+  Textabweichung vergleicht nicht mehr mit dem gerade gemerkten Text: Wo der
+  Text zum Zeitpunkt der Bewerbung fehlt, steht „Text nicht vergleichbar“ statt
+  eines falschen „Text identisch“
 
 ## 0.5.1 – 2026-11-12
 
@@ -137,7 +140,11 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   kostet nur diesen Eintrag, statt als falscher Wert in Bewertung und Report zu
   landen
 - Ein optionales Feld mit falschem Typ wird zu `None`, statt die ganze Antwort
-  ungültig zu machen; der Vertragstest sichert das für alle Quellen ab (#21)
+  ungültig zu machen
+- Der Vertragstest sichert optionale Felder für alle Quellen ab, auch in
+  Unterobjekten wie dem Ort der Bundesagentur; bei Arbeitnow lässt ein
+  Veröffentlichungsdatum als Wahrheitswert, NaN oder Infinity eine Anzeige
+  nicht mehr als zu alt verschwinden (#21)
 
 ## 0.5.0 – 2026-11-12
 
