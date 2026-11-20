@@ -199,19 +199,25 @@ def test_apply_changes_replaces_exactly_the_excerpt() -> None:
 def test_apply_changes_skips_missing_excerpt() -> None:
     change = _change("fehlt", "x")
 
-    assert apply_changes("a\n", [change]) == AppliedChanges("a\n", [], [change], [])
+    assert apply_changes("a\n", [change]) == AppliedChanges(
+        "a\n", applied=[], unusable=[change], duplicates=[]
+    )
 
 
 def test_apply_changes_skips_ambiguous_excerpt() -> None:
     change = _change("a", "x")
 
-    assert apply_changes("a a\n", [change]) == AppliedChanges("a a\n", [], [change], [])
+    assert apply_changes("a a\n", [change]) == AppliedChanges(
+        "a a\n", applied=[], unusable=[change], duplicates=[]
+    )
 
 
 def test_apply_changes_skips_empty_excerpt() -> None:
     change = _change("", "x")
 
-    assert apply_changes("a\n", [change]) == AppliedChanges("a\n", [], [change], [])
+    assert apply_changes("a\n", [change]) == AppliedChanges(
+        "a\n", applied=[], unusable=[change], duplicates=[]
+    )
 
 
 def test_apply_changes_applies_several_changes_in_order() -> None:
@@ -359,7 +365,7 @@ def test_duplicate_change_is_applied_once_and_shown_as_skipped(
         "(Beratungsfirmen zählen nicht)\n"
     )
     output = capsys.readouterr()
-    assert f"Übersprungen, doppelter Vorschlag: {_CHANGE['alt']}" in output.err
+    assert f"Übersprungen, doppelte Änderung: {_CHANGE['alt']}" in output.err
     assert "nicht eindeutig" not in output.err
     assert output.out.count("Mehrfach falsch eingeordnet") == 1
 

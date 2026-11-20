@@ -247,7 +247,7 @@ def suggest_and_decide(
     for change in result.unusable:
         print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
     for change in result.duplicates:
-        print(f"Übersprungen, doppelter Vorschlag: {change.old}", file=sys.stderr)
+        print(f"Übersprungen, doppelte Änderung: {change.old}", file=sys.stderr)
 
     if not suggestion.changes:
         db.mark_feedback_processed(ids)
