@@ -97,7 +97,7 @@ class NewApplication:
 
 @dataclass(frozen=True, slots=True)
 class KnownApplication:
-    status: str
+    status: ApplicationStatus
     applied_on: date
     description_hash: str | None
 
@@ -323,7 +323,7 @@ class Store:
         )
         if row is None:
             return None
-        return KnownApplication(row[0], date.fromisoformat(row[1]), row[2])
+        return KnownApplication(ApplicationStatus(row[0]), date.fromisoformat(row[1]), row[2])
 
     def latest_application_id(self, position_key: str) -> int | None:
         """ID der letzten Bewerbung auf diese Stelle, auch einer zurückgezogenen.

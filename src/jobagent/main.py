@@ -76,6 +76,8 @@ def main(
 # Fehler, die nicht eine Quelle oder Anzeige betreffen, sondern den ganzen Lauf abbrechen.
 _ABORTS = (ConfigError, SearchProfileError, StoreError, ReportError)
 _ABORTED_LOG = "abgebrochen.log"
+# Obergrenze für das Log der abgebrochenen Läufe; darüber bleibt eine ältere Kopie.
+_ABORTED_LOG_MAX_BYTES = 1_000_000
 
 
 def default_sources(
@@ -172,7 +174,7 @@ def _real_run() -> int:
         # Ohne Report gibt es keinen Namen für die Log-Datei; abgebrochene Läufe
         # sammeln sich deshalb in einer eigenen.
         if report_path is None:
-            run_log.save(report.OUTPUT_DIR / _ABORTED_LOG, append=True)
+            run_log.append(report.OUTPUT_DIR / _ABORTED_LOG, max_bytes=_ABORTED_LOG_MAX_BYTES)
         else:
             run_log.save(report_path.with_suffix(".log"))
     return 0
