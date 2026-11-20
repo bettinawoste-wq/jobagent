@@ -1,5 +1,7 @@
 """Tests für den Anthropic-Adapter am Seam Sprachmodell, mit nachgebautem SDK-Client."""
 
+import subprocess
+import sys
 from typing import cast
 
 import anthropic
@@ -15,9 +17,11 @@ from anthropic.types.beta import (
     BetaUsage,
 )
 
-from jobagent.language_model import (
+from jobagent.anthropic_language_model import (
     AnthropicJsonLanguageModel,
     AnthropicToolLanguageModel,
+)
+from jobagent.language_model import (
     LanguageModelError,
     LanguageModelFailure,
     with_required_keys,
@@ -406,3 +410,16 @@ def test_json_model_tells_failures_of_the_request_apart(
         _ask_json_model(error)
 
     assert caught.value.failure is failure
+
+
+def test_seam_report_and_config_do_not_load_the_anthropic_sdk() -> None:
+    # Nur der Zusammenbau braucht das SDK; Report, Konfiguration und Lauf kennen nur den Seam.
+    code = (
+        "import sys, jobagent.config, jobagent.report, jobagent.run, jobagent.language_model;"
+        "print('anthropic' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+
+    assert result.stdout.strip() == "False"

@@ -18,7 +18,8 @@ from pathlib import Path
 import anthropic
 
 from jobagent import store
-from jobagent.language_model import AnthropicJsonLanguageModel, LanguageModel, LanguageModelError
+from jobagent.anthropic_language_model import AnthropicJsonLanguageModel
+from jobagent.language_model import LanguageModel, LanguageModelError
 from jobagent.logs import abort, setup_logging
 from jobagent.search_profile import (
     SearchProfileError,

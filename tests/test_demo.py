@@ -12,8 +12,9 @@ import httpx
 import pytest
 
 from jobagent import demo, main
+from jobagent.anthropic_language_model import AnthropicLanguageModel
 from jobagent.job_ad import JobAd
-from jobagent.language_model import AnthropicLanguageModel, LanguageModelFailure
+from jobagent.language_model import LanguageModelFailure
 from jobagent.score import score_job_ad
 
 

@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 _PROFILE_SUGGESTION_MIN_FEEDBACK = 5
 
+# Woran eine Bewertung scheiterte: eine Fehlerart des Sprachmodells oder, als None, ein
+# unerwarteter Fehler wie ein Programmfehler in der Prüfung, der keine Fehlerart des
+# Sprachmodells ist.
+_Failure = LanguageModelFailure | None
+
 
 def run(
     *,
@@ -154,14 +159,14 @@ def _new_matches(
     job_ads: list[JobAd],
     language_model: LanguageModel,
     search_profile: str,
-) -> tuple[list[report.Match], list[LanguageModelFailure]]:
+) -> tuple[list[report.Match], list[_Failure]]:
     """Bewertet die neuen Anzeigen; gibt die Treffer zurück und je unbewerteter Anzeige,
     woran ihre Bewertung scheiterte.
 
     Gemerkt werden die Treffer erst zusammen mit dem Report, siehe `_report_and_remember`.
     """
     matches: list[report.Match] = []
-    failures: list[LanguageModelFailure] = []
+    failures: list[_Failure] = []
 
     for job_ad in job_ads:
         if not db.is_new(job_ad.id):
@@ -181,9 +186,10 @@ def _new_matches(
 
 
 def _common_cause(
-    matches: list[report.Match], failures: list[LanguageModelFailure]
+    matches: list[report.Match], failures: list[_Failure]
 ) -> LanguageModelFailure | None:
-    """Woran alle Bewertungen des Laufs scheiterten, wenn es bei allen dasselbe war."""
+    """Woran alle Bewertungen des Laufs scheiterten, wenn es bei allen dieselbe Fehlerart
+    des Sprachmodells war; bei unerwarteten Fehlern gibt es keine."""
     if matches or len(set(failures)) != 1:
         return None
     return failures[0]
@@ -191,15 +197,14 @@ def _common_cause(
 
 def _safe_score(
     job_ad: JobAd, search_profile: str, language_model: LanguageModel
-) -> Assessment | LanguageModelFailure:
+) -> Assessment | _Failure:
     # Bekannte Fehler des Sprachmodells behandelt die Bewertung selbst. Dieses Netz fängt
     # z.B. einen Programmfehler in der Prüfung ab: Eine Bewertung darf den Lauf nie abbrechen.
     try:
         return score_job_ad(job_ad, search_profile, language_model)
     except Exception:
         logger.exception("Unerwarteter Fehler in der Bewertung (anzeige=%r)", job_ad.id)
-        # Kein Fehler des Sprachmodells, aber wie ein sonstiger: ohne Ursache im Report.
-        return LanguageModelFailure.OTHER
+        return None
 
 
 def _open_feedback(db: Store) -> int:

@@ -18,9 +18,10 @@ import httpx
 import pytest
 
 from jobagent import feedback, main, profile_suggestion
+from jobagent.anthropic_language_model import AnthropicLanguageModel
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
+from jobagent.language_model import LanguageModelError
 from jobagent.search_window import SearchWindow
 from jobagent.sources.watchlist import WatchlistCompany
 from jobagent.store import Store

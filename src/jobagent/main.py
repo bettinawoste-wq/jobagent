@@ -16,8 +16,9 @@ from pathlib import Path
 import httpx
 
 from jobagent import demo, report
+from jobagent.anthropic_language_model import AnthropicToolLanguageModel
 from jobagent.config import Config, ConfigError, load_config
-from jobagent.language_model import AnthropicToolLanguageModel, LanguageModel
+from jobagent.language_model import LanguageModel
 from jobagent.logs import RunLog, abort, setup_logging
 from jobagent.report import ReportError
 from jobagent.run import run
