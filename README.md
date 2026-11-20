@@ -260,6 +260,12 @@ samt Traceback landet dann in `output/abgebrochen.log`. Diese Datei wächst auf 
 fällt weg. Lässt sich diese Kopie nicht anlegen, wächst die Datei mit einer Warnung
 auf der Konsole weiter, statt ältere Läufe zu verlieren.
 
+Startet ein Lauf, während noch einer läuft (etwa Zeitplan und Handstart), bricht der
+zweite mit einer Meldung und Exit-Code 1 ab, bevor er sucht oder bewertet. Die Sperre
+hängt an `jobagent.db.lock` neben der Datenbank und löst sich mit dem Ende des Laufs,
+auch nach einem Absturz; die Datei selbst darf liegen bleiben. Rückmeldung und
+Profil-Vorschlag sind währenddessen weiter möglich.
+
 Wer selbst `ANTHROPIC_LOG=debug` setzt, bekommt vom SDK von Anthropic dessen
 Anfragen samt Anzeigen-Volltext auf die Konsole. Die Log-Dateien des Agenten bleiben
 davon unberührt: Sie nehmen von fremden Bibliotheken nichts unter INFO auf

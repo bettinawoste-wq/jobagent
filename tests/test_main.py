@@ -10,14 +10,14 @@ import logging
 import os
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
 
 import httpx
 import pytest
 
-from jobagent import main
+from jobagent import feedback, main, profile_suggestion
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
 from jobagent.language_model import AnthropicLanguageModel, LanguageModelError
@@ -472,6 +472,128 @@ def test_command_writes_traceback_of_abort_into_log_file(tmp_path: Path) -> None
     log = (tmp_path / "output" / "abgebrochen.log").read_text(encoding="utf-8")
     assert "Abgebrochen\nTraceback (most recent call last):" in log
     assert "ConfigError: config.toml nicht gefunden" in log
+
+
+_REPO = Path(__file__).parents[1]
+
+# Ein Lauf in einem eigenen Prozess, dessen Quelle meldet, dass sie sucht, und dann wartet,
+# bis auf stdin eine Zeile kommt: "absturz" beendet den Prozess hart, ohne aufzuräumen, jede
+# andere lässt den Lauf zu Ende gehen. Er arbeitet mit den Standardpfaden in seinem Arbeitsordner.
+# Hart beendet er sich selbst: Unter Windows startet das Python einer venv das eigentliche
+# Python als Kindprozess, ein kill() von außen träfe nur den Starter.
+_WAITING_RUN = """
+import os
+import sys
+from jobagent import main
+from jobagent.sources import SearchResult
+from tests.fakes import FakeLanguageModel
+
+class WaitingSource:
+    name = "Wartende Quelle"
+
+    def search(self, keywords):
+        print("sucht", flush=True)
+        if sys.stdin.readline().strip() == "absturz":
+            os._exit(1)
+        return SearchResult([], [])
+
+main.main(sources=[WaitingSource()], language_model=FakeLanguageModel())
+"""
+
+
+@pytest.fixture
+def run_in_other_process(project: dict[str, Path], tmp_path: Path) -> Iterator[subprocess.Popen]:
+    """Ein Lauf in einem anderen Prozess, der gerade sucht, solange der Test läuft."""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join([str(_REPO / "src"), str(_REPO)])
+    process = subprocess.Popen(
+        [sys.executable, "-c", _WAITING_RUN],
+        cwd=tmp_path,
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert process.stdout is not None
+        assert process.stdout.readline() == "sucht\n"
+        yield process
+    finally:
+        if process.poll() is None:
+            process.communicate("absturz\n", timeout=60)
+
+
+def test_cli_aborts_second_run_while_another_runs(
+    run_in_other_process: subprocess.Popen,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_builtins: None,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    source = FakeSource()
+    monkeypatch.setattr(main, "default_sources", lambda config, search_window: [source])
+
+    exit_code = main.cli([])
+
+    assert exit_code == 1
+    assert capsys.readouterr().err == (
+        "Fehler: Es läuft schon ein anderer Lauf; dieser bricht ab. "
+        "Starte ihn erneut, wenn der andere fertig ist.\n"
+    )
+    assert source.received == []  # nichts gesucht, also auch nichts bewertet
+    assert list((tmp_path / "output").glob("*.md")) == []  # kein Report
+
+
+def test_cli_runs_after_other_run_was_killed(
+    run_in_other_process: subprocess.Popen,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fixed_today: Callable[[date], None],
+    no_builtins: None,
+) -> None:
+    fixed_today(TODAY)
+    monkeypatch.setattr(main, "default_sources", lambda config, search_window: [FakeSource()])
+    run_in_other_process.communicate("absturz\n", timeout=60)  # hart, ohne aufzuräumen
+    assert run_in_other_process.returncode == 1
+
+    assert main.cli([]) == 0
+    assert (tmp_path / "output" / "2026-03-02.md").exists()
+
+
+def test_cli_runs_after_other_run_finished(
+    run_in_other_process: subprocess.Popen,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fixed_today: Callable[[date], None],
+    no_builtins: None,
+) -> None:
+    fixed_today(TODAY)
+    monkeypatch.setattr(main, "default_sources", lambda config, search_window: [FakeSource()])
+    run_in_other_process.communicate("weiter\n", timeout=60)
+    assert run_in_other_process.returncode == 0
+
+    assert main.cli([]) == 0
+
+
+def test_feedback_profile_suggestion_and_demo_work_while_a_run_runs(
+    run_in_other_process: subprocess.Popen,
+    project: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = project["db_path"]
+
+    assert feedback.main(["beworben", "--firma", "Firma X", "--titel", "Dev"], db_path=db_path) == 0
+    assert (
+        profile_suggestion.main(
+            db_path=db_path,
+            profile_path=project["profile_path"],
+            language_model=FakeLanguageModel(),
+            ask=lambda question: "n",
+        )
+        == 0
+    )
+    assert main.demo_run().startswith("# Stellenvorschläge")
 
 
 def test_arbeitnow_from_default_sources_skips_job_ads_older_than_search_window() -> None:

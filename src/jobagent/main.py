@@ -21,6 +21,7 @@ from jobagent.language_model import AnthropicToolLanguageModel, LanguageModel
 from jobagent.logs import RunLog, abort, setup_logging
 from jobagent.report import ReportError
 from jobagent.run import run
+from jobagent.run_lock import RunLock, RunLockedError
 from jobagent.search_profile import SearchProfileError, read_search_profile
 from jobagent.search_window import SearchWindow, search_window
 from jobagent.sources import Source
@@ -52,29 +53,38 @@ def main(
     die im Suchzeitraum ab dem letzten vollständigen Lauf in `db_path` suchen, und Haiku
     von Anthropic; wer sie angibt, ersetzt sie, dann fragt der Lauf weder das Netz noch
     das echte Sprachmodell.
-    """
-    config = load_config(config_path)
-    if language_model is None:
-        language_model = AnthropicToolLanguageModel(_ASSESSMENT_MODEL)
-    search_profile = read_search_profile(profile_path)
-    today = date.today()
 
-    with Store(db_path) as db:
-        window = search_window(db.last_complete_run(), today, max_days=config.published_since)
-        return run(
-            sources=default_sources(config, window) if sources is None else sources,
-            language_model=language_model,
-            search_profile=search_profile,
-            db=db,
-            config=config,
-            today=today,
-            output_dir=output_dir,
-            search_window=window,
-        )
+    Läuft schon ein anderer Lauf mit derselben Datenbank, bricht dieser mit `RunLockedError` ab,
+    bevor er etwas liest, sucht oder bewertet.
+    """
+    with RunLock(_lock_path(db_path)):
+        config = load_config(config_path)
+        if language_model is None:
+            language_model = AnthropicToolLanguageModel(_ASSESSMENT_MODEL)
+        search_profile = read_search_profile(profile_path)
+        today = date.today()
+
+        with Store(db_path) as db:
+            window = search_window(db.last_complete_run(), today, max_days=config.published_since)
+            return run(
+                sources=default_sources(config, window) if sources is None else sources,
+                language_model=language_model,
+                search_profile=search_profile,
+                db=db,
+                config=config,
+                today=today,
+                output_dir=output_dir,
+                search_window=window,
+            )
+
+
+def _lock_path(db_path: Path) -> Path:
+    # Neben der Datenbank: Wer dieselbe Datenbank nutzt, nutzt auch dieselbe Sperre.
+    return db_path.with_name(db_path.name + ".lock")
 
 
 # Fehler, die nicht eine Quelle oder Anzeige betreffen, sondern den ganzen Lauf abbrechen.
-_ABORTS = (ConfigError, SearchProfileError, StoreError, ReportError)
+_ABORTS = (RunLockedError, ConfigError, SearchProfileError, StoreError, ReportError)
 _ABORTED_LOG = "abgebrochen.log"
 # Obergrenze für das Log der abgebrochenen Läufe; darüber bleibt eine ältere Kopie.
 _ABORTED_LOG_MAX_BYTES = 1_000_000

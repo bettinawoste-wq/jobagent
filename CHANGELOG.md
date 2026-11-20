@@ -17,6 +17,10 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
   unbewertete Anzeigen nichts verlieren; der Report nennt ihn über dem
   Quellenstatus, `veroeffentlichtseit` ist Start- und Höchstwert, in der
   mitgelieferten `config.toml` 7 Tage (#37)
+- Sperre gegen gleichzeitige Läufe: Ein zweiter Lauf bricht mit Meldung und
+  Exit-Code 1 ab, bevor er sucht oder bewertet. Die Sperre gibt das
+  Betriebssystem frei, auch nach Absturz; Rückmeldung, Profil-Vorschlag und
+  Demo-Lauf sperren nicht (#38)
 
 ### Geändert
 - `output/abgebrochen.log` wächst nur noch auf etwa 1 MB; danach bleibt genau
