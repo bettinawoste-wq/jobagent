@@ -11,7 +11,7 @@ import json
 import logging
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -165,16 +165,20 @@ def _as_texts(value: object) -> list[str] | None:
 class AppliedChanges:
     """Das Suchprofil nach den Ersetzungen, die angewandten und die übersprungenen Änderungen.
 
-    `unusable`: Auszug fehlt oder ist nicht eindeutig. `duplicates`: dieselbe Ersetzung
-    (gleiches `old` und `new`) kam schon vor, der Grund zählt dabei nicht. `overlapping`:
-    der Auszug überschneidet sich mit dem einer schon angewandten Änderung.
+    `missing`: Auszug leer oder nicht im Suchprofil. `ambiguous`: Auszug kommt mehrfach vor.
+    `unchanged`: `old` und `new` sind gleich, die Änderung bewirkt nichts. `duplicates`:
+    dieselbe Ersetzung (gleiches `old` und `new`) wurde schon angewandt, der Grund zählt
+    dabei nicht; die Wiederholung einer übersprungenen Änderung steht nirgends noch einmal.
+    `overlapping`: der Auszug überschneidet sich mit dem einer schon angewandten Änderung.
     """
 
     text: str
-    applied: list[ProfileChange]
-    unusable: list[ProfileChange]
-    duplicates: list[ProfileChange]
-    overlapping: list[ProfileChange]
+    applied: list[ProfileChange] = field(default_factory=list)
+    missing: list[ProfileChange] = field(default_factory=list)
+    ambiguous: list[ProfileChange] = field(default_factory=list)
+    unchanged: list[ProfileChange] = field(default_factory=list)
+    duplicates: list[ProfileChange] = field(default_factory=list)
+    overlapping: list[ProfileChange] = field(default_factory=list)
 
 
 def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedChanges:
@@ -184,19 +188,29 @@ def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedC
     einmal vorkommen. So kann das Modell nichts unbemerkt weglassen oder an der falschen
     Stelle ändern, auch nicht in Text, den eine vorige Änderung erst eingefügt hat.
     """
-    unusable: list[ProfileChange] = []
+    missing: list[ProfileChange] = []
+    ambiguous: list[ProfileChange] = []
+    unchanged: list[ProfileChange] = []
     duplicates: list[ProfileChange] = []
     overlapping: list[ProfileChange] = []
     seen: set[tuple[str, str]] = set()
+    applied: set[tuple[str, str]] = set()
     spans: list[tuple[int, int, ProfileChange]] = []
     for change in changes:
-        if (change.old, change.new) in seen:
-            duplicates.append(change)
+        key = (change.old, change.new)
+        if key in seen:
+            # Nur eine angewandte Änderung zeigt ihre Wiederholung; eine nicht angewandte
+            # steht schon mit ihrem Grund da.
+            if key in applied:
+                duplicates.append(change)
             continue
-        seen.add((change.old, change.new))
+        seen.add(key)
+        if change.old == change.new:
+            unchanged.append(change)
+            continue
         starts = _occurrences(search_profile, change.old)
         if len(starts) != 1:
-            unusable.append(change)
+            (ambiguous if starts else missing).append(change)
             continue
         start = starts[0]
         end = start + len(change.old)
@@ -204,11 +218,14 @@ def apply_changes(search_profile: str, changes: list[ProfileChange]) -> AppliedC
             overlapping.append(change)
             continue
         spans.append((start, end, change))
+        applied.add(key)
 
     return AppliedChanges(
         _replace_spans(search_profile, spans),
         applied=[change for _, _, change in spans],
-        unusable=unusable,
+        missing=missing,
+        ambiguous=ambiguous,
+        unchanged=unchanged,
         duplicates=duplicates,
         overlapping=overlapping,
     )
@@ -288,7 +305,7 @@ def suggest_and_decide(
         print("Keine Änderung am Suchprofil nötig.")
         return Decision(0)
 
-    if result.text == search_profile:
+    if not result.applied:
         print("Fehler: Keine Änderung ließ sich anwenden, Feedback bleibt offen.", file=sys.stderr)
         return Decision(1)
 
@@ -323,8 +340,12 @@ def _show_model_errors(model_errors: list[str]) -> None:
 
 
 def _show_skipped(result: AppliedChanges) -> None:
-    for change in result.unusable:
+    for change in result.missing:
+        print(f"Übersprungen, Auszug fehlt: {change.old}", file=sys.stderr)
+    for change in result.ambiguous:
         print(f"Übersprungen, Auszug nicht eindeutig: {change.old}", file=sys.stderr)
+    for change in result.unchanged:
+        print(f"Übersprungen, ändert nichts: {change.old}", file=sys.stderr)
     for change in result.duplicates:
         print(f"Übersprungen, doppelte Änderung: {change.old}", file=sys.stderr)
     for change in result.overlapping:

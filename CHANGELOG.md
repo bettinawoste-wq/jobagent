@@ -64,6 +64,11 @@ Versionen folgen [SemVer](https://semver.org/lang/de/) (0.x). Nummern wie
 - Der Suchzeitraum im Report nennt das Datum des letzten vollständigen Laufs mit
   Jahr, wenn es nicht im Jahr des Reports liegt, damit es über den Jahreswechsel
   eindeutig bleibt
+- Profil-Vorschlag: Eine Änderung, die nicht angewandt wird, erscheint auch bei
+  mehrfachem Vorschlag nur einmal; eine Änderung ohne Wirkung (alter gleich
+  neuer Text) gilt als nicht angewandt und blockiert keine andere an derselben
+  Stelle; ein leerer oder im Suchprofil fehlender Auszug heißt „Auszug fehlt“
+  statt „nicht eindeutig“
 
 ## 0.6.0 – 2026-11-15
 
