@@ -4,16 +4,20 @@ import logging
 from dataclasses import dataclass
 
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModel, LanguageModelError
+from jobagent.language_model import LanguageModel, LanguageModelError, LanguageModelFailure
 
 logger = logging.getLogger(__name__)
+
+# Die Score-Skala: Bewertung, Rückmeldung und Report richten sich danach.
+SCORE_SCALE = range(1, 6)
+SCORE_SCALE_TEXT = f"{SCORE_SCALE[0]} bis {SCORE_SCALE[-1]}"
 
 _SCHEMA = {
     "title": "bewertung_abgeben",
     "description": "Gibt die Bewertung einer Stellenanzeige gegen das Suchprofil zurueck.",
     "type": "object",
     "properties": {
-        "score": {"type": "integer", "minimum": 1, "maximum": 5},
+        "score": {"type": "integer", "minimum": SCORE_SCALE[0], "maximum": SCORE_SCALE[-1]},
         "passt": {"type": "array", "items": {"type": "string"}},
         "passt_nicht": {"type": "array", "items": {"type": "string"}},
         "luecken": {"type": "array", "items": {"type": "string"}},
@@ -77,24 +81,25 @@ def score_job_ad(
     job_ad: JobAd,
     search_profile: str,
     language_model: LanguageModel,
-) -> Assessment | None:
+) -> Assessment | LanguageModelFailure:
     """Bewertet eine Anzeige gegen das Suchprofil.
 
-    Gibt None zurück und loggt, wenn das Sprachmodell scheitert oder eine ungültige
-    Antwort liefert, statt den Lauf abzubrechen; die Anzeige bleibt dann unbewertet.
+    Scheitert das Sprachmodell oder liefert es eine ungültige Antwort, loggt sie das und
+    gibt statt einer Bewertung zurück, woran es lag, statt den Lauf abzubrechen; die
+    Anzeige bleibt dann unbewertet.
     """
     user_text = f"Suchprofil:\n{search_profile}\n\nStellenanzeige:\n{job_ad_as_text(job_ad)}"
     try:
         data = language_model.ask(_SYSTEM_PROMPT, user_text, _SCHEMA)
-    except LanguageModelError:
+    except LanguageModelError as error:
         logger.exception("Bewertung beim Sprachmodell fehlgeschlagen (anzeige=%r)", job_ad.id)
-        return None
+        return error.failure
 
     try:
         return _validate(data)
     except (KeyError, TypeError, ValueError):
         logger.exception("Ungültige Bewertungsantwort (anzeige=%r): %r", job_ad.id, data)
-        return None
+        return LanguageModelFailure.UNUSABLE_ANSWER
 
 
 def job_ad_as_text(job_ad: JobAd) -> str:
@@ -111,8 +116,8 @@ def job_ad_as_text(job_ad: JobAd) -> str:
 
 def _validate(data: dict) -> Assessment:
     score = int(data["score"])
-    if not 1 <= score <= 5:
-        raise ValueError(f"score außerhalb 1-5: {score}")
+    if score not in SCORE_SCALE:
+        raise ValueError(f"score außerhalb {SCORE_SCALE_TEXT}: {score}")
 
     assessment = Assessment.from_model_data(score, data)
     return Assessment(

@@ -22,6 +22,7 @@ from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError
 from jobagent.profile_suggestion import (
     AcceptedSuggestion,
+    AppliedChanges,
     Decision,
     ProfileChange,
     apply_changes,
@@ -30,7 +31,7 @@ from jobagent.profile_suggestion import (
 )
 from jobagent.score import Assessment
 from jobagent.store import Feedback, Store
-from tests.fakes import FakeLanguageModel
+from tests.fakes import FakeLanguageModel, as_anthropic
 
 _PROFILE = "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2\n"
 _NOW = datetime(2026, 11, 8, 15, 1, 2)
@@ -187,34 +188,105 @@ def test_suggestion_sends_feedback_with_german_keys() -> None:
 
 
 def test_apply_changes_replaces_exactly_the_excerpt() -> None:
-    new, skipped = apply_changes("a\nb\nc\n", [_change("b", "B")])
+    result = apply_changes("a\nb\nc\n", [_change("b", "B")])
 
-    assert new == "a\nB\nc\n"
-    assert skipped == []
+    assert result == AppliedChanges("a\nB\nc\n", applied=[_change("b", "B")])
 
 
-def test_apply_changes_skips_missing_excerpt() -> None:
+def test_apply_changes_does_not_apply_missing_excerpt() -> None:
     change = _change("fehlt", "x")
 
-    assert apply_changes("a\n", [change]) == ("a\n", [change])
+    assert apply_changes("a\n", [change]) == AppliedChanges("a\n", missing=[change])
 
 
-def test_apply_changes_skips_ambiguous_excerpt() -> None:
+def test_apply_changes_does_not_apply_ambiguous_excerpt() -> None:
     change = _change("a", "x")
 
-    assert apply_changes("a a\n", [change]) == ("a a\n", [change])
+    assert apply_changes("a a\n", [change]) == AppliedChanges("a a\n", ambiguous=[change])
 
 
-def test_apply_changes_skips_empty_excerpt() -> None:
+def test_apply_changes_counts_empty_excerpt_as_missing() -> None:
     change = _change("", "x")
 
-    assert apply_changes("a\n", [change]) == ("a\n", [change])
+    assert apply_changes("a\n", [change]) == AppliedChanges("a\n", missing=[change])
+
+
+def test_apply_changes_does_not_apply_change_without_effect_and_keeps_its_place_free() -> None:
+    same = _change("a", "a")
+
+    result = apply_changes("a\nb\n", [same, _change("a", "A")])
+
+    assert result == AppliedChanges("A\nb\n", applied=[_change("a", "A")], unchanged=[same])
 
 
 def test_apply_changes_applies_several_changes_in_order() -> None:
-    new, _ = apply_changes("a\nb\n", [_change("a", "A"), _change("b", "B")])
+    result = apply_changes("a\nb\n", [_change("a", "A"), _change("b", "B")])
 
-    assert new == "A\nB\n"
+    assert result.text == "A\nB\n"
+
+
+def test_apply_changes_applies_the_same_change_only_once() -> None:
+    # Eine Ergänzung enthält ihren Auszug wieder; doppelt angewandt stünde sie zweimal da.
+    change = _change("- Python", "- Python, gern FastAPI")
+    again = ProfileChange(old="- Python", new="- Python, gern FastAPI", reason="anders begründet")
+
+    result = apply_changes("- Python\n", [change, again])
+
+    assert result.text == "- Python, gern FastAPI\n"
+    assert result.duplicates == [again]
+    assert result.missing == []
+
+
+def test_apply_changes_checks_excerpt_against_profile_before_suggestion() -> None:
+    # "b" steht erst nach der ersten Änderung im Text, nicht im Suchprofil davor.
+    later = _change("b", "B")
+
+    result = apply_changes("a\n", [_change("a", "a b"), later])
+
+    assert result.text == "a b\n"
+    assert result.missing == [later]
+
+
+def test_apply_changes_ignores_occurrences_created_by_earlier_changes() -> None:
+    # "b" kommt im Suchprofil genau einmal vor; dass "a b" ein zweites "b" bringt, zählt nicht.
+    result = apply_changes("a\nb\n", [_change("a", "a b"), _change("b", "B")])
+
+    assert result.text == "a b\nB\n"
+    assert result.ambiguous == []
+
+
+def test_apply_changes_skips_other_change_at_the_same_excerpt() -> None:
+    # Wie ein Duplikat mit leicht anderem neuen Text; angewandt stünde die Ergänzung doppelt.
+    second = _change("- Python", "- Python, gern FastAPI.")
+
+    result = apply_changes("- Python\n", [_change("- Python", "- Python, gern FastAPI"), second])
+
+    assert result.text == "- Python, gern FastAPI\n"
+    assert result.overlapping == [second]
+
+
+def test_apply_changes_skips_change_inside_an_earlier_excerpt() -> None:
+    inner = _change("foo", "qux")
+
+    result = apply_changes("foo bar\n", [_change("foo bar", "baz foo"), inner])
+
+    assert result.text == "baz foo\n"
+    assert result.overlapping == [inner]
+
+
+def test_apply_changes_skips_excerpt_that_overlaps_itself() -> None:
+    # "ja ja" steht an Position 8 und 11; str.count zählt nur eine davon.
+    change = _change("ja ja", "nein")
+
+    assert apply_changes("Remote: ja ja ja\n", [change]).ambiguous == [change]
+
+
+def test_apply_changes_reports_repeated_change_that_was_not_applied_only_once() -> None:
+    broken = _change("fehlt", "x")
+
+    result = apply_changes("a\n", [broken, broken])
+
+    assert result == AppliedChanges("a\n", missing=[broken])
 
 
 def test_suggestion_asks_for_changes_and_model_errors() -> None:
@@ -222,6 +294,7 @@ def test_suggestion_asks_for_changes_and_model_errors() -> None:
 
     create_suggestion(_PROFILE, [_feedback()], model)
 
+    assert "zu einer Aenderung zusammen" in model.requests[0].system
     schema = model.requests[0].schema
     assert schema["required"] == ["aenderungen", "modellfehler"]
     assert schema["properties"]["aenderungen"]["items"]["required"] == ["alt", "neu", "grund"]
@@ -323,6 +396,38 @@ def test_accepting_returns_new_profile_and_leaves_saving_to_main(
     assert "Mehrfach falsch eingeordnet" in output
 
 
+def test_duplicate_change_is_applied_once_and_shown_as_not_applied(
+    db: Store, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    decision = _decision(db, profile_path, FakeLanguageModel(_suggestion([_CHANGE, _CHANGE])))
+
+    assert decision.accepted is not None
+    assert decision.accepted.new_search_profile == (
+        "# Suchprofil\n\n## Ausschlüsse\n- Zeitarbeit: maximal Score 2 "
+        "(Beratungsfirmen zählen nicht)\n"
+    )
+    output = capsys.readouterr()
+    assert f"Nicht angewandt, doppelte Änderung: {_CHANGE['alt']}" in output.err
+    assert "nicht eindeutig" not in output.err
+    assert output.out.count("Mehrfach falsch eingeordnet") == 1
+
+
+def test_overlapping_change_is_shown_as_not_applied(
+    db: Store, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    other = {**_CHANGE, "neu": _CHANGE["neu"] + ".", "grund": "Anders formuliert"}
+
+    decision = _decision(db, profile_path, FakeLanguageModel(_suggestion([_CHANGE, other])))
+
+    assert decision.accepted is not None
+    output = capsys.readouterr()
+    assert (
+        f"Nicht angewandt, überschneidet sich mit einer anderen Änderung: {_CHANGE['alt']} "
+        "(Anders formuliert)"
+    ) in output.err
+    assert "Anders formuliert" not in output.out
+
+
 def test_rejecting_keeps_profile_and_processes(db: Store, profile_path: Path) -> None:
     assert _decide(db, profile_path, FakeLanguageModel(_suggestion()), "n") == 0
 
@@ -363,7 +468,31 @@ def test_only_unusable_changes_stay_unprocessed(
 
     assert profile_path.read_text(encoding="utf-8") == _PROFILE
     assert _open_feedback(db) == ["a-1"]
-    assert "gibt es nicht" in capsys.readouterr().err
+    assert "Auszug fehlt: gibt es nicht" in capsys.readouterr().err
+
+
+def test_ambiguous_change_is_shown_with_its_own_message(
+    db: Store, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    ambiguous = {"alt": "Score", "neu": "x", "grund": "g"}
+    profile_path.write_text(_PROFILE + "- Score\n", encoding="utf-8")
+
+    _decide(db, profile_path, FakeLanguageModel(_suggestion([ambiguous])), "n")
+
+    err = capsys.readouterr().err
+    assert "Auszug nicht eindeutig: Score" in err
+    assert "Auszug fehlt" not in err
+
+
+def test_change_without_effect_is_shown_as_not_applied(
+    db: Store, profile_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    same = {**_CHANGE, "neu": _CHANGE["alt"]}
+
+    assert _decide(db, profile_path, FakeLanguageModel(_suggestion([same]))) == 1
+
+    assert f"ändert nichts: {_CHANGE['alt']}" in capsys.readouterr().err
+    assert _open_feedback(db) == ["a-1"]
 
 
 def test_language_model_error_changes_nothing(
@@ -633,7 +762,7 @@ def test_suggestion_language_model_asks_sonnet_for_json_answer() -> None:
     client = _RecordingClient()
 
     with pytest.raises(LanguageModelError):
-        profile_suggestion.suggestion_language_model(client=client).ask(
+        profile_suggestion.suggestion_language_model(client=as_anthropic(client)).ask(
             "System", "Text", {"type": "object"}
         )
 

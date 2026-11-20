@@ -16,12 +16,15 @@ from pathlib import Path
 import httpx
 
 from jobagent import demo, report
+from jobagent.anthropic_language_model import AnthropicToolLanguageModel
 from jobagent.config import Config, ConfigError, load_config
-from jobagent.language_model import AnthropicToolLanguageModel, LanguageModel
+from jobagent.language_model import LanguageModel
 from jobagent.logs import RunLog, abort, setup_logging
 from jobagent.report import ReportError
 from jobagent.run import run
+from jobagent.run_lock import RunLock, RunLockedError, RunLockFileError
 from jobagent.search_profile import SearchProfileError, read_search_profile
+from jobagent.search_window import SearchWindow, search_window
 from jobagent.sources import Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
@@ -47,44 +50,63 @@ def main(
 ) -> Path:
     """Baut einen echten Lauf zusammen, führt ihn aus und gibt den Pfad des Reports zurück.
 
-    Ohne `sources` und `language_model` gelten die eingebauten Quellen aus `config_path`
-    und Haiku von Anthropic; wer sie angibt, ersetzt sie, dann fragt der Lauf weder das
-    Netz noch das echte Sprachmodell.
-    """
-    config = load_config(config_path)
-    if sources is None:
-        sources = default_sources(config)
-    if language_model is None:
-        language_model = AnthropicToolLanguageModel(_ASSESSMENT_MODEL)
-    search_profile = read_search_profile(profile_path)
+    Ohne `sources` und `language_model` gelten die eingebauten Quellen aus `config_path`,
+    die im Suchzeitraum ab dem letzten vollständigen Lauf in `db_path` suchen, und Haiku
+    von Anthropic; wer sie angibt, ersetzt sie, dann fragt der Lauf weder das Netz noch
+    das echte Sprachmodell.
 
-    with Store(db_path) as db:
-        return run(
-            sources=sources,
-            language_model=language_model,
-            search_profile=search_profile,
-            db=db,
-            config=config,
-            today=date.today(),
-            output_dir=output_dir,
-        )
+    Läuft schon ein anderer Lauf mit derselben Datenbank, bricht dieser Lauf mit
+    `RunLockedError` ab, bevor er etwas liest, sucht oder bewertet; lässt sich die Sperrdatei
+    nicht nutzen, mit `RunLockFileError`.
+    """
+    with RunLock(db_path):
+        config = load_config(config_path)
+        if language_model is None:
+            language_model = AnthropicToolLanguageModel(_ASSESSMENT_MODEL)
+        search_profile = read_search_profile(profile_path)
+        today = date.today()
+
+        with Store(db_path) as db:
+            window = search_window(db.last_complete_run(), today, max_days=config.max_search_window)
+            return run(
+                sources=default_sources(config, window) if sources is None else sources,
+                language_model=language_model,
+                search_profile=search_profile,
+                db=db,
+                config=config,
+                today=today,
+                output_dir=output_dir,
+                search_window=window,
+            )
 
 
 # Fehler, die nicht eine Quelle oder Anzeige betreffen, sondern den ganzen Lauf abbrechen.
-_ABORTS = (ConfigError, SearchProfileError, StoreError, ReportError)
+_ABORTS = (
+    RunLockedError,
+    RunLockFileError,
+    ConfigError,
+    SearchProfileError,
+    StoreError,
+    ReportError,
+)
 _ABORTED_LOG = "abgebrochen.log"
+# Obergrenze für das Log der abgebrochenen Läufe; darüber bleibt eine ältere Kopie.
+_ABORTED_LOG_MAX_BYTES = 1_000_000
 
 
 def default_sources(
-    config: Config, *, transport: httpx.BaseTransport | None = None
+    config: Config, window: SearchWindow, *, transport: httpx.BaseTransport | None = None
 ) -> list[Source]:
-    """Die eingebauten Quellen; die Firmen-Watchlist nur, wenn `config.toml` Firmen nennt."""
+    """Die eingebauten Quellen; die Firmen-Watchlist nur, wenn `config.toml` Firmen nennt.
+
+    Bundesagentur und Arbeitnow suchen im Suchzeitraum `window`, die Watchlist ohne Suchzeitraum.
+    """
     location = config.location
-    since = config.published_since
+    days = window.days
 
     sources: list[Source] = [
-        BundesagenturSource(location, config.radius, since, transport=transport),
-        ArbeitnowSource(location, since, transport=transport),
+        BundesagenturSource(location, config.radius, days, transport=transport),
+        ArbeitnowSource(location, days, transport=transport),
     ]
     if config.companies:
         sources.append(WatchlistSource(config.companies, transport=transport))
@@ -99,6 +121,7 @@ def demo_run(output_dir: Path | None = None) -> str:
     """
     today = date.today()
     with tempfile.TemporaryDirectory(prefix="jobagent-demo-") as temp:
+        # Eigene, leere Datenbank: Ein Demo-Lauf zählt nie als Lauf in der echten.
         with Store(Path(temp) / "demo.db") as db:
             demo.create_applications(db, today)
             path = run(
@@ -109,6 +132,7 @@ def demo_run(output_dir: Path | None = None) -> str:
                 config=demo.CONFIG,
                 today=today,
                 output_dir=output_dir or Path(temp),
+                search_window=search_window(None, today, max_days=demo.CONFIG.max_search_window),
             )
         return path.read_text(encoding="utf-8")
 
@@ -164,7 +188,7 @@ def _real_run() -> int:
         # Ohne Report gibt es keinen Namen für die Log-Datei; abgebrochene Läufe
         # sammeln sich deshalb in einer eigenen.
         if report_path is None:
-            run_log.save(report.OUTPUT_DIR / _ABORTED_LOG, append=True)
+            run_log.append(report.OUTPUT_DIR / _ABORTED_LOG, max_bytes=_ABORTED_LOG_MAX_BYTES)
         else:
             run_log.save(report_path.with_suffix(".log"))
     return 0

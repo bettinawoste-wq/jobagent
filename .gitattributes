@@ -4,3 +4,6 @@
 # Binärdateien nie umwandeln.
 *.db binary
 *.png binary
+
+# Parallele Tickets schreiben alle unter „Unveröffentlicht“; union behält beim Merge beide Seiten.
+CHANGELOG.md merge=union

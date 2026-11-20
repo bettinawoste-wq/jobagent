@@ -1,15 +1,16 @@
 [project]
 name = "jobagent"
-version = "0.6.0"
+version = "0.7.0"
 description = "Persoenlicher Agent, der taeglich neue Stellenanzeigen sucht, bewertet und als Markdown-Report liefert."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "httpx>=0.27",
-    "anthropic>=0.40",
+    "anthropic>=2.5",
 ]
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.414",
     "pytest>=8.0",
     "ruff>=0.8",
 ]
@@ -26,7 +27,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py312"
+# Die Python-Version liest ruff aus requires-python.
 line-length = 100
 
 [tool.ruff.lint]
@@ -35,3 +36,13 @@ select = ["E", "F", "I", "UP", "B", "ANN"]
 [tool.ruff.lint.per-file-ignores]
 # Typannotationen gelten für den Produktivcode; Tests, Fixtures und Fakes bleiben schlank.
 "tests/**" = ["ANN"]
+
+[tool.pyright]
+include = ["src", "tests"]
+# Die .venv von uv, damit `pyright` die Abhängigkeiten auch ohne `uv run` findet. Die
+# Python-Version steht trotzdem hier: Ohne `uv run` nähme pyright sonst die des Python im PATH.
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+extraPaths = ["src"]

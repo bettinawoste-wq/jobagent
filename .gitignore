@@ -9,6 +9,8 @@ dist/
 # Projektdaten (persoenlich, nicht ins Repo)
 output/
 *.db
+# Sperrdatei neben der Datenbank (jobagent.db.runlock)
+*.db.runlock
 .env
 profile.md
 *.md.*.neu

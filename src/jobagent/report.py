@@ -6,16 +6,20 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum, auto
 from pathlib import Path
-from typing import TextIO
+from typing import TextIO, assert_never
 
 from jobagent.job_ad import JobAd
-from jobagent.score import Assessment
-from jobagent.store import FollowUpReminder
+from jobagent.language_model import LanguageModelFailure
+from jobagent.score import SCORE_SCALE, Assessment
+from jobagent.search_window import SearchWindow
+from jobagent.store import ApplicationStatus, FollowUpReminder
 
 OUTPUT_DIR = Path("output")
 DEFAULT_MIN_SCORE = 3
 
 Match = tuple[JobAd, Assessment]
+
+_SCORE_MAX = SCORE_SCALE[-1]
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +29,21 @@ class SourceStatus:
     name: str
     count: int
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Unassessed:
+    """Die unbewerteten Anzeigen eines Laufs.
+
+    `cause` ist gesetzt, wenn alle Bewertungen des Laufs auf dieselbe Art gescheitert sind;
+    der Report nennt sie, außer bei einem sonstigen Fehler (`LanguageModelFailure.OTHER`).
+    """
+
+    count: int = 0
+    cause: LanguageModelFailure | None = None
+
+
+_NONE_UNASSESSED = Unassessed()
 
 
 class ReportError(Exception):
@@ -54,7 +73,7 @@ _TEXT_COMPARISON = {
 
 @dataclass(frozen=True, slots=True)
 class AlreadyApplied:
-    status: str
+    status: ApplicationStatus
     applied_on: date
     text_differs: TextComparison
 
@@ -68,7 +87,8 @@ def write_report(
     applications: Mapping[str, AlreadyApplied] | None = None,
     follow_ups: Sequence[FollowUpReminder] = (),
     open_feedback: int = 0,
-    unassessed: int = 0,
+    unassessed: Unassessed = _NONE_UNASSESSED,
+    search_window: SearchWindow | None = None,
 ) -> WrittenReport:
     """Schreibt die Treffer sortiert nach Score und nummeriert in output/YYYY-MM-DD.md.
 
@@ -78,6 +98,7 @@ def write_report(
     """
     header = (
         f"# Stellenvorschläge {day.isoformat()}\n\n"
+        f"{_search_window_line(search_window, day)}"
         f"{_sources_block(sources)}{_unassessed_line(unassessed)}"
         f"{_follow_up_block(follow_ups, day)}"
         f"{_profile_hint(open_feedback)}"
@@ -154,6 +175,27 @@ def _report_error(output_dir: Path, error: OSError) -> ReportError:
     )
 
 
+def _search_window_line(window: SearchWindow | None, day: date) -> str:
+    if window is None:
+        return ""
+    length = "1 Tag" if window.days == 1 else f"{window.days} Tage"
+    if window.since is None:
+        reason = "erster Lauf"
+    elif window.since > day:  # etwa nach einer verstellten Uhr
+        since = _short_date(window.since, day)
+        reason = f"wie beim ersten Lauf, der vollständige Lauf vom {since} liegt in der Zukunft"
+    else:
+        reason = f"seit dem vollständigen Lauf vom {_short_date(window.since, day)}"
+        if window.capped:
+            reason += f", auf {length} begrenzt"
+    return f"Suchzeitraum: {length} ({reason})\n\n"
+
+
+def _short_date(value: date, day: date) -> str:
+    # Mit Jahr, wenn es nicht das Jahr des Reports ist (Jahreswechsel).
+    return f"{value:%d.%m.}" if value.year == day.year else f"{value:%d.%m.%Y}"
+
+
 def _sources_block(sources: Sequence[SourceStatus]) -> str:
     if not sources:
         return ""
@@ -168,11 +210,33 @@ def _source_line(source: SourceStatus) -> str:
     return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
 
 
-def _unassessed_line(unassessed: int) -> str:
-    if not unassessed:
+def _cause_text(cause: LanguageModelFailure) -> str | None:
+    # match mit assert_never: Kommt eine Fehlerart hinzu, meldet pyright die Lücke hier.
+    match cause:
+        case LanguageModelFailure.MISSING_API_KEY:
+            return "API-Key fehlt"
+        case LanguageModelFailure.UNREACHABLE:
+            return "Sprachmodell nicht erreichbar"
+        case LanguageModelFailure.UNUSABLE_ANSWER:
+            return "Antworten unbrauchbar"
+        case LanguageModelFailure.OTHER:
+            return None  # sonstiger Fehler, ohne Ursache im Report
+        case _:
+            assert_never(cause)
+
+
+def _unassessed_line(unassessed: Unassessed) -> str:
+    if not unassessed.count:
         return ""
-    count = "1 unbewertete Anzeige" if unassessed == 1 else f"{unassessed} unbewertete Anzeigen"
-    return f"{count} – der nächste Lauf versucht es erneut.\n\n"
+    text = (
+        "1 unbewertete Anzeige"
+        if unassessed.count == 1
+        else f"{unassessed.count} unbewertete Anzeigen"
+    )
+    cause = _cause_text(unassessed.cause) if unassessed.cause else None
+    if cause:
+        text += f" ({cause})"
+    return f"{text} – der nächste Lauf versucht es erneut.\n\n"
 
 
 def _profile_hint(open_feedback: int) -> str:
@@ -210,7 +274,7 @@ def _compact_block(compact: list[tuple[int, Match]], min_score: int) -> str:
 def _compact_line(number: int, job_ad: JobAd, assessment: Assessment) -> str:
     return (
         f"{_line_start(number, job_ad)} – "
-        f"Score {assessment.score}/5: {assessment.summary} – {job_ad.link}"
+        f"Score {assessment.score}/{_SCORE_MAX}: {assessment.summary} – {job_ad.link}"
     )
 
 
@@ -228,7 +292,7 @@ def _applied_line(
     number: int, job_ad: JobAd, assessment: Assessment, application: AlreadyApplied
 ) -> str:
     return (
-        f"{_line_start(number, job_ad)} – Score {assessment.score}/5 – "
+        f"{_line_start(number, job_ad)} – Score {assessment.score}/{_SCORE_MAX} – "
         f"{application.status}, beworben am {application.applied_on:%d.%m.%Y} – "
         f"{_TEXT_COMPARISON[application.text_differs]} – {job_ad.link}"
     )
@@ -242,7 +306,7 @@ def _line_start(number: int, job_ad: JobAd) -> str:
 
 def _section(number: int, job_ad: JobAd, assessment: Assessment) -> str:
     lines = [
-        f"## {number}. {job_ad.title} – Score {assessment.score}/5",
+        f"## {number}. {job_ad.title} – Score {assessment.score}/{_SCORE_MAX}",
         f"- Firma: {job_ad.company or 'unbekannt'}",
         f"- Ort: {job_ad.location or 'unbekannt'}",
         f"- Link: {job_ad.link}",

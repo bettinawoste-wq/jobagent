@@ -21,6 +21,7 @@ from jobagent.store import Store
 
 CONFIG = Config(
     keywords=["Full-Stack-Entwickler", "IT Consultant", "Embedded Entwickler", "Data Scientist"],
+    max_search_window=7,
     min_score=3,
     follow_up_min_days=14,
     follow_up_max_days=28,

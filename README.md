@@ -4,7 +4,10 @@
 boards for new postings, has Claude rate each one against a personal search
 profile and writes a ranked Markdown report. It never applies or sends
 anything on its own: it only makes suggestions, and every decision stays with
-the human. Try it in one command with `--demo`, no API key or network needed.*
+the human. Try it in one command with `--demo`, no API key or network needed.
+A small pipeline sits in the middle and talks only to three seams (job sources,
+language model, SQLite store), so tests and the demo swap in stand-ins instead
+of network and model calls.*
 
 # Job-Agent
 
@@ -31,6 +34,8 @@ Auszug aus der Ausgabe (gekürzt, `…` markiert Auslassungen):
 
 ```markdown
 # Stellenvorschläge 2026-11-11
+
+Suchzeitraum: 7 Tage (erster Lauf)
 
 ## Quellen
 - Bundesagentur für Arbeit (Demo): 3 Anzeigen
@@ -108,11 +113,8 @@ Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
     report.py ──►  output/YYYY-MM-DD.md (sortiert nach Score)
 ```
 
-Den Ablauf führt `run.py` aus; was er braucht (Quellen, Sprachmodell,
-Suchprofil, Datenbank, Konfiguration, Datum), baut `main.py` zusammen. Das
-Sprachmodell ist eine eigene Schnittstelle (`language_model.py`), hinter der
-je ein Anthropic-Adapter für Bewertung und Profil-Vorschlag steckt, in Tests
-und im Demo-Lauf ein Ersatz.
+Den Ablauf führt `run.py` aus; was er braucht, baut `main.py` zusammen. Quellen
+und Sprachmodell sind Seams mit austauschbaren Adaptern, siehe [Aufbau](#aufbau).
 
 Jeder Schritt ist defensiv: Fällt eine Quelle aus, steht das im Quellenstatus
 des Reports. Scheitert die Bewertung einer Anzeige (API-Fehler, ungültige
@@ -120,14 +122,84 @@ Antwort des Sprachmodells), wird das geloggt. Der Report zählt die Anzeige dann
 als unbewertet, und der nächste Lauf versucht es erneut, sofern eine Quelle sie
 noch liefert. Der Gesamtlauf bricht daran nicht ab.
 
+## Aufbau
+
+```mermaid
+flowchart LR
+    subgraph cli["Kommandozeile: Zusammenbau"]
+        realRun["main.py: echter Lauf"]
+        demoRun["main.py --demo: demo_run"]
+        suggestion["profile_suggestion.py: Profil-Vorschlag"]
+        feedbackCli["feedback.py: Rückmeldung"]
+    end
+
+    lock["run_lock.py: Sperre (RunLock)"]
+    window["search_window.py: Suchzeitraum"]
+
+    tests["Tests (pytest)"]
+
+    runNode(["run.py: Lauf (run)<br/>suchen, deduplizieren, bewerten, Report"])
+    reportFile["report.py: Report<br/>output/YYYY-MM-DD.md"]
+
+    subgraph sourceSeam["Seam Source: Quelle"]
+        ba["BundesagenturSource"]
+        an["ArbeitnowSource"]
+        wl["WatchlistSource<br/>mit GreenhouseBoard, LeverBoard"]
+        fakeSource["FakeSource (Tests)"]
+        demoSource["DemoSource (Demo-Lauf)"]
+    end
+
+    subgraph modelSeam["Seam LanguageModel: Sprachmodell"]
+        haiku["AnthropicToolLanguageModel<br/>Haiku, Bewertung"]
+        sonnet["AnthropicJsonLanguageModel<br/>Sonnet, Profil-Vorschlag"]
+        fakeModel["FakeLanguageModel (Tests)"]
+        demoModel["DemoLanguageModel (Demo-Lauf)"]
+    end
+
+    subgraph storeSeam["Store: SQLite"]
+        db["jobagent.db"]
+        tempDb["temporäre Datenbank<br/>(Tests, Demo-Lauf)"]
+    end
+
+    realRun -- "zuerst" --> lock
+    realRun --> window
+    demoRun --> window
+    db -. "letzter vollständiger Lauf" .-> window
+    window -. "Tage" .-> ba
+    window -. "Tage" .-> an
+    realRun -- "default_sources" --> ba
+    realRun -- "default_sources" --> an
+    realRun -- "default_sources" --> wl
+    realRun --> haiku & db
+    demoRun --> demoSource & demoModel & tempDb
+    suggestion --> sonnet & db
+    feedbackCli --> db
+    tests --> fakeSource & fakeModel & tempDb
+
+    realRun --> runNode
+    demoRun --> runNode
+    runNode -- "Anzeigen holen" --> sourceSeam
+    runNode -- "score.py: Bewertung" --> modelSeam
+    runNode -- "deduplizieren, merken" --> storeSeam
+    runNode --> reportFile
+```
+
+Weil der Lauf `run` alles übergeben bekommt und nur die Seams kennt, geben ihm die
+Tests statt der echten Adapter `FakeSource` und `FakeLanguageModel` aus
+`tests/fakes.py` und einen `Store` auf einer temporären SQLite-Datei. So prüfen sie
+Suchen, Bewerten, Merken und Report ohne Netz, ohne echtes Sprachmodell und ohne
+persönliche Daten. Die echten Quellen testen sie getrennt mit nachgestellten
+HTTP-Antworten aus `tests/fixtures/`, und ein Vertragstest am Seam `Source` stellt
+sicher, dass keine Quelle wirft.
+
 ## Stack
 
 - Python 3.12, Abhängigkeitsverwaltung per [`uv`](https://docs.astral.sh/uv/)
 - `httpx` für HTTP-Zugriffe, `sqlite3` (Standardbibliothek) für Dedupe
 - [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) mit
   Claude Haiku für die Bewertung (strukturierte Antwort per Tool-Use)
-- `pytest` (alles gemockt/mit Fixtures, kein Live-Zugriff in Tests) und
-  `ruff` für Lint/Format
+- `pytest` (alles gemockt/mit Fixtures, kein Live-Zugriff in Tests),
+  `ruff` für Lint/Format und `pyright` (Modus „standard“) für die Typprüfung
 
 ## Setup
 
@@ -154,7 +226,7 @@ Suchparameter in `config.toml` anpassen. Die Datei ist in Abschnitte geteilt:
 [suche]                      # was für alle Quellen, wo/veroeffentlichtseit ohne Watchlist
 was = ["Data Scientist", "IT Consultant"]
 wo = "München"
-veroeffentlichtseit = 7      # Tage
+veroeffentlichtseit = 7      # Tage (1 bis 100): Start- und Höchstwert des Suchzeitraums
 
 [bundesagentur]
 umkreis = 25                 # km
@@ -170,9 +242,24 @@ nachfassen_ab_tag = 14
 nachfassen_bis_tag = 28
 ```
 
-Fehlende Werte behalten ihren Standard. Das alte flache Format ohne
-Abschnitte wird nicht mehr gelesen; der Lauf nennt dann den neuen Platz
-jedes alten Schlüssels.
+Der Agent merkt sich jeden vollständigen Lauf, also einen Lauf, in dem jede
+Quelle fehlerfrei geliefert hat und keine Anzeige unbewertet blieb. Bundesagentur
+und Arbeitnow suchen dann im Suchzeitraum: die Tage seit dem letzten
+vollständigen Lauf plus 1, also nach einem vollständigen Lauf am Montag am
+Donnerstag 4 Tage. `veroeffentlichtseit` gilt für den ersten Lauf und begrenzt
+den Suchzeitraum nach oben; fehlt es, sind es höchstens 100 Tage, mehr nimmt die
+Bundesagentur nicht an. Fällt ein Tag aus, eine Quelle aus oder bleibt eine
+Anzeige unbewertet, holt der nächste Lauf die Tage seither nach. Ein gemerkter
+Lauf mit einem Datum in der Zukunft, etwa nach einer verstellten Uhr, zählt
+nicht. Die Watchlist sucht ohne Suchzeitraum.
+
+Fehlende Werte behalten ihren Standard. Unbekannte Abschnitte und Schlüssel,
+Werte vom falschen Typ oder außerhalb ihres Bereichs (etwa `mindest_score`
+außerhalb der Score-Skala, `nachfassen_ab_tag` nach `nachfassen_bis_tag`, ein
+`ats` außer `greenhouse` und `lever`) brechen den Lauf ab; die Meldung nennt
+alle Fehler der Datei auf einmal und fragt bei Tippfehlern „meintest du …?“
+mit dem ähnlichsten Namen. Das alte flache Format ohne Abschnitte wird nicht
+mehr gelesen; der Lauf nennt dann den neuen Platz jedes alten Schlüssels.
 
 ## Verwenden
 
@@ -182,8 +269,8 @@ uv run python -m jobagent.main
 
 Ergebnis landet in `output/YYYY-MM-DD.md`, weitere Läufe am selben Tag in
 `output/YYYY-MM-DD-2.md` usw. Ein vorhandener Report wird nie überschrieben.
-Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht je
-Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
+Die Treffer sind je Report ab 1 durchnummeriert. Oben im Report steht der
+Suchzeitraum und je Quelle, wie viele Anzeigen sie geliefert hat und ob sie ausgefallen ist.
 Treffer unter `mindest_score` (`[report]` in `config.toml`, Standard 3) erscheinen nur
 einzeilig am Ende.
 Ohne neue Treffer wird eine kurze Notiz statt einer leeren Datei geschrieben.
@@ -235,6 +322,7 @@ Rückmeldungen erinnert der Report daran.
 ```bash
 uv run pytest
 uv run ruff check . && uv run ruff format .
+uv run pyright
 ```
 
 ## Automatisierung
@@ -243,7 +331,28 @@ Lässt sich z. B. per Windows Task Scheduler (`Register-ScheduledTask`) oder
 cron an bestimmten Wochentagen morgens automatisch starten. Das Log eines Laufs
 bleibt dabei erhalten: Es liegt neben dem Report und heißt wie er
 (`output/YYYY-MM-DD.log`). Bricht ein Lauf ganz ab, gibt es keinen Report; sein Log
-samt Traceback landet dann in `output/abgebrochen.log`.
+samt Traceback landet dann in `output/abgebrochen.log`. Diese Datei wächst auf etwa
+1 MB; danach wird sie zu `output/abgebrochen.log.1`, und eine noch ältere Kopie
+fällt weg. Lässt sich diese Kopie nicht anlegen, wächst die Datei mit einer Warnung
+auf der Konsole weiter, statt ältere Läufe zu verlieren.
+
+Startet ein Lauf, während noch einer läuft (etwa Zeitplan und Handstart), bricht der
+zweite mit einer Meldung und Exit-Code 1 ab, bevor er sucht oder bewertet. Die Sperre
+hängt an `jobagent.db.runlock` neben der Datenbank und löst sich mit dem Ende des Laufs,
+auch nach einem Absturz; die Datei selbst darf liegen bleiben. Die Meldung nennt
+die Sperrdatei: Unter Windows erscheint auch eine kaputte Sperrdatei so, die man
+dann löschen kann, wenn sicher kein anderer Lauf läuft. Rückmeldung und
+Profil-Vorschlag sind währenddessen weiter möglich.
+
+Wer selbst `ANTHROPIC_LOG=debug` setzt, bekommt vom SDK von Anthropic dessen
+Anfragen samt Anzeigen-Volltext auf die Konsole. Die Log-Dateien des Agenten bleiben
+davon unberührt: Sie nehmen von fremden Bibliotheken nichts unter INFO auf
+([ADR 0001](docs/adr/0001-datensparsamkeit.md)).
+
+## Änderungen
+
+Was sich von Version zu Version geändert hat, steht im
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ## Hinweis zur Entstehung
 

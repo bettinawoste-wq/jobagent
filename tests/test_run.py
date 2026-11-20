@@ -12,11 +12,12 @@ import pytest
 
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModelError
+from jobagent.language_model import LanguageModel, LanguageModelError, LanguageModelFailure
 from jobagent.position import position_key
 from jobagent.report import ReportError
 from jobagent.run import run
 from jobagent.score import Assessment
+from jobagent.search_window import SearchWindow
 from jobagent.sources import SearchResult, Source
 from jobagent.store import ApplicationStatus, NewApplication, Store, StoreError
 from tests.fakes import FakeLanguageModel, FakeSource, assessment_answer, fake_job_ad
@@ -26,6 +27,8 @@ TODAY = date(2026, 3, 2)
 _CONFIG = Config(keywords=["Softwareentwickler"])
 
 _PROFILE = "# Suchprofil\nPython, München, Hybrid bevorzugt."
+
+_WINDOW = SearchWindow(7, since=None, capped=False)
 
 
 @pytest.fixture
@@ -43,9 +46,10 @@ def _run(
     db: Store,
     output_dir: Path,
     *sources: Source,
-    model: FakeLanguageModel | None = None,
+    model: LanguageModel | None = None,
     config: Config = _CONFIG,
     today: date = TODAY,
+    window: SearchWindow = _WINDOW,
 ) -> str:
     """Lauf mit Fake-Quellen; ohne `model` bewertet ein Sprachmodell jede Anzeige mit 4.
 
@@ -59,6 +63,7 @@ def _run(
         config=config,
         today=today,
         output_dir=output_dir,
+        search_window=window,
     )
     return path.read_text(encoding="utf-8")
 
@@ -108,6 +113,7 @@ def test_run_writes_report_dated_today_into_output_dir(db: Store, output_dir: Pa
         config=_CONFIG,
         today=TODAY,
         output_dir=output_dir,
+        search_window=_WINDOW,
     )
 
     assert path == output_dir / "2026-03-02.md"
@@ -217,8 +223,12 @@ def test_run_remembers_report_and_match_number(db: Store, output_dir: Path) -> N
 
     _run(db, output_dir, FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")]), model=model)
 
-    assert db.find_match("2026-03-02", 1).id == "a-2"
-    assert db.find_match("2026-03-02", 2).id == "a-1"
+    first = db.find_match("2026-03-02", 1)
+    second = db.find_match("2026-03-02", 2)
+    assert first is not None
+    assert second is not None
+    assert first.id == "a-2"
+    assert second.id == "a-1"
 
 
 def test_run_skips_already_seen_job_ads(db: Store, output_dir: Path) -> None:
@@ -306,9 +316,98 @@ def test_run_reports_unassessed_job_ads_under_source_status(db: Store, output_di
 
     assert content.startswith(
         "# Stellenvorschläge 2026-03-02\n\n"
+        "Suchzeitraum: 7 Tage (erster Lauf)\n\n"
         "## Quellen\n- Bundesagentur für Arbeit: 4 Anzeigen\n\n"
         "3 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n\n"
     )
+
+
+@pytest.mark.parametrize(
+    ("failure", "cause"),
+    [
+        (LanguageModelFailure.MISSING_API_KEY, "API-Key fehlt"),
+        (LanguageModelFailure.UNREACHABLE, "Sprachmodell nicht erreichbar"),
+        (LanguageModelFailure.UNUSABLE_ANSWER, "Antworten unbrauchbar"),
+    ],
+)
+def test_run_names_cause_when_all_assessments_fail_alike(
+    db: Store, output_dir: Path, failure: LanguageModelFailure, cause: str
+) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(LanguageModelError("weg", failure))
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert f"\n2 unbewertete Anzeigen ({cause}) – der nächste Lauf versucht es erneut.\n" in content
+
+
+def test_run_names_cause_when_some_answers_fail_the_check(db: Store, output_dir: Path) -> None:
+    # Eine Antwort ohne Pflichtschlüssel scheitert am Seam, eine mit Score 7 erst in der
+    # Bewertung: Beides sind unbrauchbare Antworten.
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel({"score": 4}, assessment_answer(score=7))
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n2 unbewertete Anzeigen (Antworten unbrauchbar) – der nächste Lauf" in content
+
+
+@pytest.mark.parametrize("failure", list(LanguageModelFailure))
+def test_run_writes_report_for_every_kind_of_failure(
+    db: Store, output_dir: Path, failure: LanguageModelFailure
+) -> None:
+    # Keine Fehlerart darf das Schreiben des Reports abbrechen.
+    model = FakeLanguageModel(LanguageModelError("weg", failure))
+
+    content = _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), model=model)
+
+    assert "\n1 unbewertete Anzeige" in content
+
+
+def test_run_names_no_cause_when_all_assessments_fail_otherwise(
+    db: Store, output_dir: Path
+) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(LanguageModelError("401", LanguageModelFailure.OTHER))
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n2 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n" in content
+
+
+def test_run_names_no_cause_for_mixed_failures(db: Store, output_dir: Path) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(
+        LanguageModelError("weg", LanguageModelFailure.UNREACHABLE),
+        LanguageModelError("kaputt", LanguageModelFailure.UNUSABLE_ANSWER),
+    )
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n2 unbewertete Anzeigen – der nächste Lauf versucht es erneut.\n" in content
+
+
+def test_run_names_no_cause_when_only_some_job_ads_are_unassessed(
+    db: Store, output_dir: Path
+) -> None:
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+    model = FakeLanguageModel(
+        LanguageModelError("weg", LanguageModelFailure.MISSING_API_KEY), assessment_answer()
+    )
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert "\n1 unbewertete Anzeige – der nächste Lauf versucht es erneut.\n" in content
+
+
+def test_run_names_no_cause_when_an_unexpected_error_is_among_failures(
+    db: Store, output_dir: Path
+) -> None:
+    source = FakeSource([fake_job_ad("a-1")])
+
+    content = _run(db, output_dir, source, model=LanguageModelWithBug("Stelle a-1"))
+
+    assert "\n1 unbewertete Anzeige – der nächste Lauf versucht es erneut.\n" in content
 
 
 def test_run_without_unassessed_job_ads_has_no_such_line(db: Store, output_dir: Path) -> None:
@@ -542,7 +641,9 @@ def _applied_days_ago(
     application = NewApplication(position_key("Firma X", "Dev"), "Firma X", "Dev", None)
     db.create_application(application, ApplicationStatus.APPLIED, TODAY - timedelta(days=days))
     if status != ApplicationStatus.APPLIED:
-        db.update_application(db.latest_application_id(application.position_key), status, None)
+        application_id = db.latest_application_id(application.position_key)
+        assert application_id is not None
+        db.update_application(application_id, status, None)
 
 
 @pytest.mark.parametrize(
@@ -588,6 +689,7 @@ def test_run_follow_up_reminder_does_not_change_status(db: Store, output_dir: Pa
     _run(db, output_dir, FakeSource())
 
     application = db.current_application(position_key("Firma X", "Dev"))
+    assert application is not None
     assert application.status == ApplicationStatus.APPLIED
 
 
@@ -619,3 +721,68 @@ def test_run_processed_feedback_does_not_count(db: Store, output_dir: Path) -> N
     db.mark_feedback_processed(["f-0"])
 
     assert "Profil-Vorschlag" not in _run(db, output_dir, FakeSource())
+
+
+# Vollständige Läufe und Suchzeitraum
+
+
+def test_complete_run_is_remembered(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1")]))
+
+    assert db.last_complete_run() == TODAY
+
+
+def test_complete_run_without_matches_is_remembered(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource())
+
+    assert db.last_complete_run() == TODAY
+
+
+def test_run_with_source_error_is_not_complete(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), FakeSource(errors=["A: Timeout"]))
+
+    assert db.last_complete_run() is None
+
+
+def test_run_with_unexpected_source_error_is_not_complete(db: Store, output_dir: Path) -> None:
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), BrokenSource())
+
+    assert db.last_complete_run() is None
+
+
+def test_run_with_unassessed_job_ad_is_not_complete(db: Store, output_dir: Path) -> None:
+    model = FakeLanguageModel(assessment_answer(), LanguageModelError("weg"))
+
+    _run(db, output_dir, FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")]), model=model)
+
+    assert db.last_complete_run() is None
+
+
+def test_incomplete_run_keeps_last_complete_run(db: Store, output_dir: Path) -> None:
+    source = FakeSource([fake_job_ad("a-1")])
+    _run(db, output_dir, source, today=TODAY)
+
+    later = TODAY + timedelta(days=3)
+    _run(db, output_dir, source, FakeSource(errors=["A: Timeout"]), today=later)
+
+    assert db.last_complete_run() == TODAY
+
+
+def test_failed_report_is_no_complete_run(db: Store, tmp_path: Path) -> None:
+    blocked = tmp_path / "keinordner"
+    blocked.write_text("eine Datei, wo der Report-Ordner hin soll", encoding="utf-8")
+
+    with pytest.raises(ReportError):
+        _run(db, blocked, FakeSource([fake_job_ad("a-1")]))
+
+    assert db.last_complete_run() is None
+
+
+def test_report_shows_search_window_above_source_status(db: Store, output_dir: Path) -> None:
+    window = SearchWindow(4, since=date(2026, 2, 27), capped=False)
+
+    content = _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), window=window)
+
+    line = "Suchzeitraum: 4 Tage (seit dem vollständigen Lauf vom 27.02.)"
+    assert line in content
+    assert content.index(line) < content.index("## Quellen")

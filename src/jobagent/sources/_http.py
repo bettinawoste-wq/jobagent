@@ -25,11 +25,20 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class FetchError(Exception):
-    """Abruf gescheitert; `reason` ist der Grund für den Quellenstatus."""
+    """Abruf gescheitert oder abgeschnitten; `reason` ist der Grund für den Quellenstatus."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+def truncated_reason(max_pages: int) -> str:
+    """Grund für den Quellenstatus, wenn das Blättern an der Sicherheitsgrenze endet.
+
+    Als Fehler der Quelle zählt der Lauf dann nicht als vollständig: Der nächste Suchzeitraum
+    reicht weiter zurück, statt die übrigen Anzeigen still zu verlieren.
+    """
+    return f"Ergebnisse abgeschnitten nach {max_pages} Seiten"
 
 
 @contextmanager

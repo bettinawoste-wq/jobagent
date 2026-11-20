@@ -8,7 +8,8 @@ import pytest
 from jobagent.job_ad import JobAd
 from jobagent.report import AlreadyApplied, SourceStatus, TextComparison, write_report
 from jobagent.score import Assessment
-from jobagent.store import FollowUpReminder
+from jobagent.search_window import SearchWindow
+from jobagent.store import ApplicationStatus, FollowUpReminder
 
 
 def _job_ad(id_: str, title: str) -> JobAd:
@@ -245,7 +246,7 @@ def test_without_matches_source_failure_is_still_reported(tmp_path: Path) -> Non
     assert "Keine neuen Treffer" in content
 
 
-_REJECTED = AlreadyApplied("absage", date(2026, 10, 1), TextComparison.IDENTICAL)
+_REJECTED = AlreadyApplied(ApplicationStatus.REJECTED, date(2026, 10, 1), TextComparison.IDENTICAL)
 
 
 def test_already_applied_is_in_own_block_at_end(tmp_path: Path) -> None:
@@ -394,3 +395,44 @@ def test_without_open_feedback_no_hint(tmp_path: Path) -> None:
     path = _write_path([], date(2026, 11, 20), output_dir=tmp_path)
 
     assert "Profil-Vorschlag" not in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("window", "line"),
+    [
+        (SearchWindow(7, None, False), "Suchzeitraum: 7 Tage (erster Lauf)"),
+        (
+            SearchWindow(4, date(2026, 11, 15), False),
+            "Suchzeitraum: 4 Tage (seit dem vollständigen Lauf vom 15.11.)",
+        ),
+        (
+            SearchWindow(1, date(2026, 11, 18), False),
+            "Suchzeitraum: 1 Tag (seit dem vollständigen Lauf vom 18.11.)",
+        ),
+        (
+            SearchWindow(7, date(2026, 11, 1), True),
+            "Suchzeitraum: 7 Tage (seit dem vollständigen Lauf vom 01.11., auf 7 Tage begrenzt)",
+        ),
+        (
+            SearchWindow(7, date(2026, 11, 25), False),
+            "Suchzeitraum: 7 Tage (wie beim ersten Lauf, der vollständige Lauf vom 25.11. liegt "
+            "in der Zukunft)",
+        ),
+        (
+            SearchWindow(7, date(2025, 12, 30), True),
+            "Suchzeitraum: 7 Tage (seit dem vollständigen Lauf vom 30.12.2025, auf 7 Tage "
+            "begrenzt)",
+        ),
+    ],
+)
+def test_search_window_line_comes_first(tmp_path: Path, window: SearchWindow, line: str) -> None:
+    path = _write_path(
+        [],
+        date(2026, 11, 18),
+        output_dir=tmp_path,
+        sources=[SourceStatus("Arbeitnow", 0, [])],
+        search_window=window,
+    )
+
+    content = path.read_text(encoding="utf-8")
+    assert content.startswith(f"# Stellenvorschläge 2026-11-18\n\n{line}\n\n## Quellen\n")

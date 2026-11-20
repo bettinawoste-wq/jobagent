@@ -12,16 +12,22 @@ from pathlib import Path
 from jobagent import report
 from jobagent.config import Config
 from jobagent.job_ad import JobAd
-from jobagent.language_model import LanguageModel
+from jobagent.language_model import LanguageModel, LanguageModelFailure
 from jobagent.position import position_key
 from jobagent.report import SourceStatus
 from jobagent.score import Assessment, score_job_ad
+from jobagent.search_window import SearchWindow
 from jobagent.sources import SearchResult, Source
 from jobagent.store import Store, description_hash
 
 logger = logging.getLogger(__name__)
 
 _PROFILE_SUGGESTION_MIN_FEEDBACK = 5
+
+# Woran eine Bewertung scheiterte: eine Fehlerart des Sprachmodells oder, als None, ein
+# unerwarteter Fehler wie ein Programmfehler in der Prüfung, der keine Fehlerart des
+# Sprachmodells ist.
+_Failure = LanguageModelFailure | None
 
 
 def run(
@@ -33,18 +39,31 @@ def run(
     config: Config,
     today: date,
     output_dir: Path,
+    search_window: SearchWindow,
 ) -> Path:
     """Führt einen Lauf aus und gibt den Pfad des geschriebenen Reports zurück.
 
-    Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil `search_profile`.
-    In `db` merkt sich der Lauf die bewerteten Anzeigen und die Treffernummern des Reports.
+    Die `sources` suchen bereits im Suchzeitraum `search_window`; der Lauf nennt ihn im
+    Report. Bewertet wird jede neue Anzeige mit `language_model` gegen das Suchprofil
+    `search_profile`. In `db` merkt sich der Lauf die bewerteten Anzeigen, die
+    Treffernummern des Reports und, wenn er vollständig war, sich selbst.
     Scheitert der Report (`ReportError`) oder das Merken (`StoreError`), merkt er sich
     nichts und lässt keinen Report liegen: Die Treffer kommen im nächsten Lauf wieder.
     """
     job_ads, source_status = _search_all(sources, config.keywords)
-    new_matches, unassessed = _new_matches(db, job_ads, language_model, search_profile)
+    new_matches, failures = _new_matches(db, job_ads, language_model, search_profile)
+    unassessed = report.Unassessed(len(failures), _common_cause(new_matches, failures))
+    complete = not failures and not any(status.errors for status in source_status)
     return _report_and_remember(
-        db, new_matches, source_status, unassessed, config, today, output_dir
+        db,
+        new_matches,
+        source_status,
+        unassessed,
+        config,
+        today,
+        output_dir,
+        search_window,
+        complete=complete,
     )
 
 
@@ -52,12 +71,18 @@ def _report_and_remember(
     db: Store,
     new_matches: list[report.Match],
     source_status: list[SourceStatus],
-    unassessed: int,
+    unassessed: report.Unassessed,
     config: Config,
     today: date,
     output_dir: Path,
+    search_window: SearchWindow,
+    *,
+    complete: bool,
 ) -> Path:
-    """Schreibt den Report und merkt Treffer samt Treffernummern: alles oder nichts."""
+    """Schreibt den Report und merkt Treffer samt Treffernummern: alles oder nichts.
+
+    Ein vollständiger Lauf merkt sich mit, damit der nächste Suchzeitraum ab ihm rechnet.
+    """
     written: report.WrittenReport | None = None
     # Vor dem Merken: Sonst verglich eine Bewerbung auf genau diese Anzeige deren Text
     # mit sich selbst statt mit dem Text zum Zeitpunkt der Bewerbung.
@@ -67,9 +92,19 @@ def _report_and_remember(
             for job_ad, assessment in new_matches:
                 db.remember_job_ad(job_ad, assessment, today)
             written = _write_report(
-                db, new_matches, source_status, unassessed, applications, config, today, output_dir
+                db,
+                new_matches,
+                source_status,
+                unassessed,
+                applications,
+                config,
+                today,
+                output_dir,
+                search_window,
             )
             db.save_match_numbers(written.path.stem, written.match_numbers)
+            if complete:
+                db.remember_complete_run(today, written.path.stem)
     except BaseException:
         # Ohne gemerkte Treffernummern liefen die Nummern dieses Reports ins Leere.
         if written is not None:
@@ -94,16 +129,18 @@ def _write_report(
     db: Store,
     new_matches: list[report.Match],
     source_status: list[SourceStatus],
-    unassessed: int,
+    unassessed: report.Unassessed,
     applications: dict[str, report.AlreadyApplied],
     config: Config,
     today: date,
     output_dir: Path,
+    search_window: SearchWindow,
 ) -> report.WrittenReport:
     return report.write_report(
         new_matches,
         today,
         output_dir,
+        search_window=search_window,
         sources=source_status,
         unassessed=unassessed,
         min_score=config.min_score,
@@ -122,34 +159,45 @@ def _new_matches(
     job_ads: list[JobAd],
     language_model: LanguageModel,
     search_profile: str,
-) -> tuple[list[report.Match], int]:
-    """Bewertet die neuen Anzeigen; gibt die Treffer und die Zahl der unbewerteten zurück.
+) -> tuple[list[report.Match], list[_Failure]]:
+    """Bewertet die neuen Anzeigen; gibt die Treffer zurück und je unbewerteter Anzeige,
+    woran ihre Bewertung scheiterte.
 
     Gemerkt werden die Treffer erst zusammen mit dem Report, siehe `_report_and_remember`.
     """
     matches: list[report.Match] = []
-    unassessed = 0
+    failures: list[_Failure] = []
 
     for job_ad in job_ads:
         if not db.is_new(job_ad.id):
             continue
 
         assessment = _safe_score(job_ad, search_profile, language_model)
-        if assessment is None:
+        if not isinstance(assessment, Assessment):
             logger.warning(
                 "Anzeige unbewertet, der nächste Lauf versucht es erneut (anzeige=%r)", job_ad.id
             )
-            unassessed += 1
+            failures.append(assessment)
             continue
 
         matches.append((job_ad, assessment))
 
-    return matches, unassessed
+    return matches, failures
+
+
+def _common_cause(
+    matches: list[report.Match], failures: list[_Failure]
+) -> LanguageModelFailure | None:
+    """Woran alle Bewertungen des Laufs scheiterten, wenn es bei allen dieselbe Fehlerart
+    des Sprachmodells war; bei unerwarteten Fehlern gibt es keine."""
+    if matches or len(set(failures)) != 1:
+        return None
+    return failures[0]
 
 
 def _safe_score(
     job_ad: JobAd, search_profile: str, language_model: LanguageModel
-) -> Assessment | None:
+) -> Assessment | _Failure:
     # Bekannte Fehler des Sprachmodells behandelt die Bewertung selbst. Dieses Netz fängt
     # z.B. einen Programmfehler in der Prüfung ab: Eine Bewertung darf den Lauf nie abbrechen.
     try:

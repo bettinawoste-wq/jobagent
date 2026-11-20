@@ -19,6 +19,7 @@ from typing import Final, Literal, get_args
 from jobagent import store
 from jobagent.logs import abort, setup_logging
 from jobagent.position import position_key
+from jobagent.score import SCORE_SCALE, SCORE_SCALE_TEXT
 from jobagent.store import ApplicationStatus, Store, StoreError
 
 logger = logging.getLogger(__name__)
@@ -35,13 +36,16 @@ type Action = ApplicationStatus | _Withdraw
 _STATUSES = [str(status) for status in ApplicationStatus]
 _SCORE = "score"
 
+_DATE_ONLY_WITH_APPLIED = f"--am gibt es nur zusammen mit {ApplicationStatus.APPLIED}."
+
 _REPORT_NAME = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-_USAGE = """python -m jobagent.feedback REPORT NUMMER AKTION
-       python -m jobagent.feedback REPORT NUMMER score 1-5 [GRUND]
+_USAGE = f"""python -m jobagent.feedback REPORT NUMMER AKTION
+       python -m jobagent.feedback REPORT NUMMER score SCORE [GRUND]
        python -m jobagent.feedback AKTION --firma FIRMA --titel TITEL
 
 AKTION: beworben, gespräch, absage, zusage, zurückgezogen, zurücknehmen
+SCORE: der eigene Score von {SCORE_SCALE_TEXT}
 Beispiele:
   python -m jobagent.feedback 2026-11-06 3 beworben --am 2026-11-01
   python -m jobagent.feedback 2026-11-06 2 score 4 "Dienstleister ist okay"
@@ -120,6 +124,8 @@ def _manual_parser() -> argparse.ArgumentParser:
 def _match_command(db: Store, args: argparse.Namespace, today: date) -> str:
     report_name = args.report.removesuffix(".md")
     if args.action == _SCORE:
+        if args.applied_on is not None:
+            raise FeedbackError(_DATE_ONLY_WITH_APPLIED)
         score = _parse_score(args.values)
         reason = " ".join(args.values[1:]) or None
         return save_feedback_for_match(
@@ -154,9 +160,16 @@ def _parse_action(text: str) -> Action:
 
 
 def _parse_score(values: list[str]) -> int:
-    if not values or not values[0].isdecimal() or not 1 <= int(values[0]) <= 5:
-        raise FeedbackError("Nach score wird eine Zahl von 1 bis 5 erwartet.")
-    return int(values[0])
+    error = FeedbackError(f"Nach score wird eine Zahl von {SCORE_SCALE_TEXT} erwartet.")
+    if not values or not values[0].isdecimal():
+        raise error
+    try:
+        score = int(values[0])
+    except ValueError:  # int() lehnt sehr lange Zahlen ab
+        raise error from None
+    if score not in SCORE_SCALE:
+        raise error
+    return score
 
 
 def _parse_date(text: str | None) -> date | None:
@@ -232,10 +245,10 @@ def save_feedback_for_match(
     """Speichert den eigenen Score zu einem Treffer; das Feedback gilt wieder als offen.
 
     Gibt die Meldung für die Nutzerin zurück; wirft `FeedbackError`, wenn der Score nicht
-    auf der Skala von 1 bis 5 liegt oder der Treffer nicht gefunden wird.
+    auf der Score-Skala liegt oder der Treffer nicht gefunden wird.
     """
-    if score not in range(1, 6):
-        raise FeedbackError(f"Der Score liegt zwischen 1 und 5, bekam: {score}")
+    if score not in SCORE_SCALE:
+        raise FeedbackError(f"Der Score liegt auf der Skala von {SCORE_SCALE_TEXT}, bekam: {score}")
     match = _find_match(db, report_name, match_number)
     db.save_feedback(match.id, score, reason, today)
     return f"Feedback gespeichert: {match.title} bekommt von dir Score {score}"
@@ -260,7 +273,7 @@ def _change_application(
     today: date,
 ) -> str:
     if applied_on is not None and action != ApplicationStatus.APPLIED:
-        raise FeedbackError("--am gibt es nur zusammen mit beworben.")
+        raise FeedbackError(_DATE_ONLY_WITH_APPLIED)
 
     label = f"{application.title} ({application.company or 'unbekannt'})"
 

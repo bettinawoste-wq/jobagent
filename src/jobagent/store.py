@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Self, cast
 
 from jobagent.job_ad import JobAd
 from jobagent.score import Assessment
@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS feedback (
 )
 """
 
+# Seit 0.7.0: Datum und Report-Name jedes vollständigen Laufs (Glossar), für den Suchzeitraum.
+_SCHEMA_COMPLETE_RUNS = """
+CREATE TABLE IF NOT EXISTS vollstaendige_laeufe (
+    datum TEXT NOT NULL,
+    report TEXT NOT NULL
+)
+"""
+
 # Seit 0.3.0. Bestehende Datenbanken bekommen die Spalten beim Öffnen ergänzt,
 # ihre Zeilen bleiben dort leer.
 _ADDED_COLUMNS = {
@@ -89,7 +97,7 @@ class NewApplication:
 
 @dataclass(frozen=True, slots=True)
 class KnownApplication:
-    status: str
+    status: ApplicationStatus
     applied_on: date
     description_hash: str | None
 
@@ -150,6 +158,16 @@ class _Connection:
         with self._errors():
             return self._raw.execute(sql, parameters).fetchone()
 
+    def fetch_value(self, sql: str, parameters: tuple = ()) -> object:
+        """Der Wert einer Abfrage, die genau eine Zeile liefert, etwa mit COUNT oder MAX.
+
+        Kommt doch keine Zeile, ist die Datenbank nicht so, wie der Store sie kennt.
+        """
+        row = self.fetchone(sql, parameters)
+        if row is None:
+            raise StoreError(f"Datenbank {self._path} nicht nutzbar: Abfrage ohne Ergebnis")
+        return row[0]
+
     def fetchall(self, sql: str, parameters: tuple = ()) -> list[tuple]:
         with self._errors():
             return self._raw.execute(sql, parameters).fetchall()
@@ -189,6 +207,7 @@ class Store:
             self._conn.execute(_SCHEMA_SEEN)
             self._conn.execute(_SCHEMA_APPLICATIONS)
             self._conn.execute(_SCHEMA_FEEDBACK)
+            self._conn.execute(_SCHEMA_COMPLETE_RUNS)
             self._add_missing_columns()
             self._conn.commit()
         except BaseException:
@@ -279,6 +298,22 @@ class Store:
         )
         return StoredMatch(*row) if row else None
 
+    # Vollständige Läufe
+
+    def remember_complete_run(self, day: date, report_name: str) -> None:
+        """Merkt einen vollständigen Lauf; ab seinem Tag rechnet der nächste Suchzeitraum."""
+        self._conn.execute(
+            "INSERT INTO vollstaendige_laeufe (datum, report) VALUES (?, ?)",
+            (day.isoformat(), report_name),
+        )
+        self._commit()
+
+    def last_complete_run(self) -> date | None:
+        """Tag des letzten vollständigen Laufs; None, wenn es noch keinen gab."""
+        # Ohne vollständigen Lauf liefert MAX NULL.
+        day = self._conn.fetch_value("SELECT MAX(datum) FROM vollstaendige_laeufe")
+        return date.fromisoformat(cast(str, day)) if day else None
+
     # Bewerbungen
 
     def current_application(
@@ -298,7 +333,7 @@ class Store:
         )
         if row is None:
             return None
-        return KnownApplication(row[0], date.fromisoformat(row[1]), row[2])
+        return KnownApplication(ApplicationStatus(row[0]), date.fromisoformat(row[1]), row[2])
 
     def latest_application_id(self, position_key: str) -> int | None:
         """ID der letzten Bewerbung auf diese Stelle, auch einer zurückgezogenen.
@@ -400,8 +435,8 @@ class Store:
 
     def count_open_feedback(self) -> int:
         """Wie viel Feedback noch in keinen Profil-Vorschlag eingeflossen ist."""
-        (count,) = self._conn.fetchone("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
-        return count
+        count = self._conn.fetch_value("SELECT COUNT(*) FROM feedback WHERE verarbeitet = 0")
+        return cast(int, count)
 
     def mark_feedback_processed(self, job_ad_ids: list[str]) -> None:
         self._conn.executemany(

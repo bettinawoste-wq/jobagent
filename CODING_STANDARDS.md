@@ -1,6 +1,6 @@
 # Coding Standards
 
-Gelesen beim Review. Was ein Werkzeug prüfen kann, prüft das Werkzeug (`ruff` mit Typannotationen für `src/`, CI). Hier stehen nur Ermessensfragen.
+Gelesen beim Review. Was ein Werkzeug prüfen kann, prüft das Werkzeug (`ruff` mit Typannotationen für `src/`, `pyright` für die Typen in `src/` und `tests/`, CI). Hier stehen nur Ermessensfragen.
 
 - **Kleine Funktionen**: Eine Funktion erledigt einen Schritt, den ihr Name benennt. Wächst sie über einen Bildschirm oder mischt sie Ablauf mit Detailarbeit, wird sie geteilt.
 - **Sichtbare Seiteneffekte**: Netz, Dateien, Datenbank und Uhrzeit kommen über Parameter oder klar benannte Funktionen herein (für die Uhr prüft das `tests/test_clock_calls.py`). Eine Funktion, die rechnet, schreibt nicht nebenbei.

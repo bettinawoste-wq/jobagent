@@ -68,7 +68,7 @@ def test_search_sends_search_parameters_and_header() -> None:
         requests.append(request)
         return _successful_handler(request)
 
-    _source(handler, location="München", radius=30, published_since=7).search(
+    _source(handler, location="München", radius=30, search_window=7).search(
         ["Softwareentwicklerin"]
     )
 
@@ -81,7 +81,7 @@ def test_search_sends_search_parameters_and_header() -> None:
     assert all(r.headers["X-API-Key"] == "jobboerse-jobsuche" for r in requests)
 
 
-def test_search_without_optional_parameters_sends_only_keyword() -> None:
+def test_search_without_optional_parameters_sends_only_keyword_and_page() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -90,7 +90,9 @@ def test_search_without_optional_parameters_sends_only_keyword() -> None:
 
     _source(handler).search(["Data Science"])
 
-    assert dict(requests[0].url.params) == {"was": "Data Science"}
+    assert set(requests[0].url.params) == {"was", "page", "size"}
+    assert requests[0].url.params["was"] == "Data Science"
+    assert requests[0].url.params["page"] == "1"
 
 
 def test_search_finds_job_ad_once_and_fetches_its_details_once_across_keywords() -> None:
@@ -265,3 +267,164 @@ def test_title_of_wrong_type_without_fallback_drops_the_entry() -> None:
 
     assert [job_ad.id for job_ad in result.job_ads] == ["10001-1003353507-S"]
     assert result.errors == ["Data Science: ungültige Antwort"]
+
+
+def _numbered_entry(number: int) -> dict:
+    return {**SEARCH_FIXTURE["ergebnisliste"][0], "referenznummer": f"10001-{number}-S"}
+
+
+def _paging_handler(total: int, requests: list[httpx.Request], *, with_count: bool = True):
+    """Handler, der `total` Anzeigen seitenweise nach `page` und `size` der Anfrage liefert."""
+    entries = [_numbered_entry(number) for number in range(1, total + 1)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != _SEARCH_PATH:
+            return httpx.Response(200, json={})
+        requests.append(request)
+        page = int(request.url.params["page"])
+        size = int(request.url.params["size"])
+        body: dict = {"ergebnisliste": entries[(page - 1) * size : page * size]}
+        if with_count:
+            body["maxErgebnisse"] = total
+        return httpx.Response(200, json=body)
+
+    return handler
+
+
+def _page_size() -> int:
+    """Die Seitengröße, die die Quelle anfragt."""
+    requests: list[httpx.Request] = []
+    _source(_paging_handler(1, requests)).search(["Data Science"])
+    return int(requests[0].url.params["size"])
+
+
+def test_search_pages_through_all_results_of_a_keyword() -> None:
+    requests: list[httpx.Request] = []
+    size = _page_size()
+
+    result = _source(_paging_handler(size + 1, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == size + 1
+    assert result.errors == []
+    assert [r.url.params["page"] for r in requests] == ["1", "2"]
+
+
+def test_search_follows_the_total_count_when_the_api_sends_smaller_pages() -> None:
+    # Hält sich die API nicht an `size`, ist eine kürzere Seite noch nicht die letzte.
+    entries = [_numbered_entry(number) for number in range(1, 61)]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != _SEARCH_PATH:
+            return httpx.Response(200, json={})
+        requests.append(request)
+        page = int(request.url.params["page"])
+        body = {"ergebnisliste": entries[(page - 1) * 25 : page * 25], "maxErgebnisse": 60}
+        return httpx.Response(200, json=body)
+
+    result = _source(handler).search(["Data Science"])
+
+    assert len(result.job_ads) == 60
+    assert result.errors == []
+    assert len(requests) == 3
+
+
+def _pages_handler(pages: list[list[dict]], total: int, requests: list[httpx.Request]):
+    """Handler, der feste Seiten mit der Gesamtzahl `total` liefert, danach leere."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != _SEARCH_PATH:
+            return httpx.Response(200, json={})
+        requests.append(request)
+        page = int(request.url.params["page"])
+        entries = pages[page - 1] if page <= len(pages) else []
+        return httpx.Response(200, json={"ergebnisliste": entries, "maxErgebnisse": total})
+
+    return handler
+
+
+def test_search_ends_at_an_empty_page_if_the_total_count_is_too_high() -> None:
+    numbered = [_numbered_entry(number) for number in range(1, 116)]
+    pages = [numbered[:50], numbered[50:100], numbered[100:]]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler(pages, 120, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 115
+    assert result.errors == []
+    assert len(requests) == 4
+
+
+def test_search_goes_on_after_a_short_later_page_while_the_total_is_not_reached() -> None:
+    # Verschwinden zwischen zwei Abrufen Anzeigen, ist eine Seite kürzer, aber nicht die letzte.
+    numbered = [_numbered_entry(number) for number in range(1, 141)]
+    pages = [numbered[:50], numbered[50:98], numbered[98:140]]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler(pages, 140, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 140
+    assert result.errors == []
+
+
+def test_search_ends_at_a_page_that_only_repeats_job_ads() -> None:
+    # Wiederholt die API für Seiten hinter dem Ende die letzte, ist nichts abgeschnitten.
+    numbered = [_numbered_entry(number) for number in range(1, 31)]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler([numbered] * 5, 120, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 30
+    assert result.errors == []
+    assert len(requests) == 2
+
+
+def test_search_counts_job_ads_repeated_across_pages_only_once() -> None:
+    # Verschieben sich die Ergebnisse zwischen zwei Abrufen, wiederholt die API Einträge.
+    numbered = [_numbered_entry(number) for number in range(1, 101)]
+    pages = [numbered[:50], numbered[40:90], numbered[90:]]
+    requests: list[httpx.Request] = []
+
+    result = _source(_pages_handler(pages, 100, requests)).search(["Data Science"])
+
+    assert len(result.job_ads) == 100
+    assert result.errors == []
+
+
+def test_search_stops_at_a_short_page_without_total_count() -> None:
+    requests: list[httpx.Request] = []
+
+    result = _source(_paging_handler(3, requests, with_count=False)).search(["Data Science"])
+
+    assert len(result.job_ads) == 3
+    assert result.errors == []
+    assert len(requests) == 1
+
+
+def test_search_reports_truncated_results_when_page_limit_is_reached() -> None:
+    requests: list[httpx.Request] = []
+
+    result = _source(_paging_handler(100_000, requests)).search(["Data Science", "Python"])
+
+    pages_per_keyword = len(requests) // 2
+    assert 1 < pages_per_keyword < 20  # eine Sicherheitsgrenze, maßvoll (ADR 0002)
+    assert len(result.job_ads) == pages_per_keyword * _page_size()
+    assert result.errors == [
+        f"Data Science: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
+        f"Python: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
+    ]
+
+
+def test_failed_later_page_keeps_job_ads_of_earlier_pages() -> None:
+    requests: list[httpx.Request] = []
+    paging = _paging_handler(100_000, requests)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("page") == "2":
+            return httpx.Response(503)
+        return paging(request)
+
+    result = _source(handler).search(["Data Science"])
+
+    assert len(result.job_ads) == _page_size()
+    assert result.errors == ["Data Science: HTTP 503"]

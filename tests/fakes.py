@@ -1,6 +1,9 @@
 """Gemeinsame Fakes für Tests: `from tests.fakes import FakeLanguageModel`."""
 
 from dataclasses import dataclass, field
+from typing import cast
+
+import anthropic
 
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError, with_required_keys
@@ -71,3 +74,11 @@ class FakeLanguageModel:
         if isinstance(answer, LanguageModelError):
             raise answer
         return with_required_keys(schema, dict(answer))
+
+
+def as_anthropic(client: object) -> anthropic.Anthropic:
+    """Ein nachgebauter Anthropic-Client in der Rolle des echten.
+
+    Nachgebaut müssen nur `messages` und `beta.messages` sein, mehr nutzen die Adapter nicht.
+    """
+    return cast(anthropic.Anthropic, client)

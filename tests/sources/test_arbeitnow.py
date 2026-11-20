@@ -5,6 +5,7 @@ feste Uhr ein: `_days(n)` als Jetzt macht jede Fixture-Anzeige n Tage alt.
 """
 
 import json
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def test_search_filters_by_title_and_location_and_maps_job_ad() -> None:
     # in Muenchen, Eintrag 2 ist in Berlin aber ohne "(m/w/d)" im Titel.
     handler, _ = _pages(FIXTURE)
 
-    result = _source(handler, location="Berlin", published_since=14).search(["(m/w/d)"])
+    result = _source(handler, location="Berlin", search_window=14).search(["(m/w/d)"])
 
     assert result.job_ads == [
         JobAd(
@@ -76,7 +77,7 @@ def test_search_matches_any_keyword_case_insensitively() -> None:
 def test_search_fetches_each_page_once_for_several_keywords() -> None:
     handler, requests = _pages(PAGE_1, PAGE_2)
 
-    result = _source(handler, published_since=14).search(["Data Scientist", "Python", "Data"])
+    result = _source(handler, search_window=14).search(["Data Scientist", "Python", "Data"])
 
     assert len(requests) == 2
     assert [job_ad.id for job_ad in result.job_ads] == [
@@ -96,26 +97,36 @@ def test_search_follows_next_link() -> None:
     ]
 
 
-def test_search_fetches_at_most_ten_pages_per_run() -> None:
+def test_search_fetches_at_most_ten_pages_and_reports_truncated_results() -> None:
     handler, requests = _pages(PAGE_1)  # verweist immer wieder auf eine naechste Seite
 
     result = _source(handler).search(["Data Scientist", "Python"])
 
     assert len(requests) == 10
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:data-scientist-berlin-200001"]
+    assert result.errors == ["Data Scientist, Python: Ergebnisse abgeschnitten nach 10 Seiten"]
+
+
+def test_search_ending_on_the_tenth_page_is_not_truncated() -> None:
+    last = {**PAGE_2, "links": {"next": None}}
+    handler, requests = _pages(*[PAGE_1] * 9, last)
+
+    result = _source(handler).search(["Data Scientist"])
+
+    assert len(requests) == 10
     assert result.errors == []
 
 
-def test_search_stops_paging_at_job_ads_older_than_published_since() -> None:
+def test_search_stops_paging_at_job_ads_older_than_search_window() -> None:
     handler, requests = _pages(PAGE_1, PAGE_2)
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert result.job_ads == []
     assert len(requests) == 1
 
 
-def test_search_without_published_since_ignores_age() -> None:
+def test_search_without_search_window_ignores_age() -> None:
     handler, requests = _pages(PAGE_1, PAGE_2)
 
     result = _source(handler, today=365).search(["Data Scientist"])
@@ -129,7 +140,7 @@ def test_search_keeps_young_job_ads_of_the_page_that_stops_paging() -> None:
     page["data"].append({**page["data"][0], "slug": "neu-200009", "created_at": _days(59)})
     handler, requests = _pages(page, PAGE_2)
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:neu-200009"]
     assert len(requests) == 1
@@ -140,7 +151,7 @@ def test_published_date_as_boolean_does_not_count_as_too_old() -> None:
     page["data"][0]["created_at"] = True
     handler, _ = _pages(page, PAGE_2)
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert [job_ad.id for job_ad in result.job_ads] == [f"arbeitnow:{page['data'][0]['slug']}"]
 
@@ -155,12 +166,13 @@ def test_unusual_published_date_does_not_count_as_too_old(value: float) -> None:
     # Ganzzahlen, die sich nicht in eine Gleitkommazahl wandeln lassen.
     page = deepcopy(PAGE_1)
     page["data"][0]["created_at"] = value
+    page["links"]["next"] = None  # eine einzige Seite, damit nichts abgeschnitten wird
     raw = json.dumps(page)
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
 
-    result = _source(handler, today=60, published_since=7).search(["Data Scientist"])
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert [job_ad.id for job_ad in result.job_ads] == [f"arbeitnow:{page['data'][0]['slug']}"]
     assert result.errors == []
@@ -193,7 +205,9 @@ def _no_connection(request: httpx.Request) -> httpx.Response:
         ),
     ],
 )
-def test_search_keeps_job_ads_found_before_paging_aborts(response, expected: str) -> None:
+def test_search_keeps_job_ads_found_before_paging_aborts(
+    response: httpx.Response | Callable[[httpx.Request], httpx.Response], expected: str
+) -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

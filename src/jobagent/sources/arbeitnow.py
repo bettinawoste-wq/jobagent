@@ -20,6 +20,7 @@ from jobagent.sources._http import (
     text_at,
     text_or_none,
     title_matches,
+    truncated_reason,
 )
 
 _URL = "https://www.arbeitnow.com/api/job-board-api"
@@ -33,8 +34,10 @@ class ArbeitnowSource:
     Die API kennt weder Stichwort- noch Ortssuche, daher werden alle Suchbegriffe und
     der Ort clientseitig auf Titel bzw. Ort angewandt; einen Umkreis gibt es mangels
     Geokoordinaten nicht. Das Paging folgt `links.next`, endet nach höchstens 10 Seiten
-    oder nach der Seite, auf der Anzeigen älter als `published_since` Tage auftauchen.
-    Bricht es ab, bleiben die bis dahin gefundenen Anzeigen erhalten.
+    oder nach der Seite, auf der Anzeigen älter als der Suchzeitraum (`search_window` Tage)
+    auftauchen. Gäbe es nach 10 Seiten noch eine nächste, meldet es "Ergebnisse
+    abgeschnitten" als Fehler. Bricht es ab, bleiben die bis dahin gefundenen Anzeigen
+    erhalten.
     """
 
     name = "Arbeitnow"
@@ -42,13 +45,13 @@ class ArbeitnowSource:
     def __init__(
         self,
         location: str | None = None,
-        published_since: int | None = None,
+        search_window: int | None = None,
         *,
         transport: httpx.BaseTransport | None = None,
         now: Callable[[], float] = time.time,
     ) -> None:
         self._location = location
-        self._published_since = published_since
+        self._search_window = search_window
         self._transport = transport
         self._now = now
 
@@ -81,9 +84,7 @@ class ArbeitnowSource:
     def _recent_entries(self) -> Iterator[dict]:
         """Liefert die Einträge Seite für Seite, solange sie jung genug sind."""
         cutoff = (
-            self._now() - self._published_since * 86400
-            if self._published_since is not None
-            else None
+            self._now() - self._search_window * 86400 if self._search_window is not None else None
         )
         url: str | None = _URL
         with httpx.Client(timeout=TIMEOUT, transport=self._transport) as client:
@@ -91,8 +92,9 @@ class ArbeitnowSource:
                 if not url:
                     return
                 data = get_json(client, url)
+                page = data if isinstance(data, dict) else {}
                 entries = entries_with_ids(
-                    data.get("data") if isinstance(data, dict) else None,
+                    page.get("data"),
                     "slug",
                     what="Arbeitnow-Antwort",
                     where=f"url={url!r}",
@@ -110,7 +112,9 @@ class ArbeitnowSource:
                     yield entry
                 if too_old_reached:
                     return
-                url = (data.get("links") or {}).get("next")
+                url = (page.get("links") or {}).get("next")
+        if url:
+            raise FetchError(truncated_reason(_MAX_PAGES))
 
     def _matches(self, entry: dict, keywords: list[str]) -> bool:
         if not title_matches(entry.get("title"), keywords):
