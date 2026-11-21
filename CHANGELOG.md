@@ -14,6 +14,9 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
   und der Suchzeitraum nicht dauerhaft beim Höchstwert bleibt (#46)
 
 ### Geändert
+- Bundesagentur und Arbeitnow lassen zwischen zwei Anfragen mindestens 0,5 s
+  Abstand; Arbeitnow lehnte bei einer Messung nach rund 17 schnellen Aufrufen ab
+  (#47)
 - Schneidet die Bundesagentur Ergebnisse ab, rät die Meldung, den Suchbegriff
   enger zu fassen (#46)
 

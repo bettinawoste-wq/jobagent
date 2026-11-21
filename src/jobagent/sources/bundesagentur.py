@@ -1,6 +1,8 @@
 """Quelle Bundesagentur für Arbeit: Jobsuche-API (siehe CLAUDE.md, Quelle 1)."""
 
 import base64
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 import httpx
@@ -8,10 +10,10 @@ import httpx
 from jobagent.job_ad import JobAd
 from jobagent.sources import SearchResult
 from jobagent.sources._http import (
-    TIMEOUT,
     ConvertedEntries,
     FetchError,
     InvalidEntry,
+    Pacer,
     convert_entries,
     entries_with_ids,
     get_json,
@@ -57,16 +59,18 @@ class BundesagenturSource:
         search_window: int | None = None,
         *,
         transport: httpx.BaseTransport | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._location = location
         self._radius = radius
         self._search_window = search_window
         self._transport = transport
+        self._pacer = Pacer(sleep)
 
     def search(self, keywords: list[str]) -> SearchResult:
         found: dict[str, JobAd] = {}
         errors: list[str] = []
-        with httpx.Client(timeout=TIMEOUT, transport=self._transport) as client:
+        with self._pacer.client(self._transport) as client:
             for keyword in keywords:
                 result = self._search_keyword(client, keyword)
                 for job_ad in result.job_ads:

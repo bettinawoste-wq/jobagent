@@ -30,7 +30,19 @@ def _successful_handler(request: httpx.Request) -> httpx.Response:
 
 
 def _source(handler, **kwargs) -> Source:
+    kwargs.setdefault("sleep", lambda seconds: None)
     return BundesagenturSource(transport=httpx.MockTransport(handler), **kwargs)
+
+
+def test_search_pauses_half_a_second_between_requests() -> None:
+    # Maßvolle Nutzung (ADR 0002): Die Antworten kommen hier sofort, also wartet die
+    # Quelle vor jeder Anfrage außer der ersten fast die ganze Pause.
+    pauses: list[float] = []
+
+    _source(_successful_handler, sleep=pauses.append).search(["Softwareentwicklerin"])
+
+    assert len(pauses) == 2  # eine Suchseite, zwei Detail-Abrufe
+    assert all(0.4 < pause <= 0.5 for pause in pauses)
 
 
 def test_search_maps_response_to_job_ads_including_details() -> None:

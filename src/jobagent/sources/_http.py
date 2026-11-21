@@ -8,6 +8,7 @@ Intern im Quellen-Paket, gehört nicht zum Interface `Source`.
 import html
 import logging
 import re
+import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from jobagent.job_ad import JobAd
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 30.0
+# Mindestabstand zwischen zwei Anfragen derselben Quelle, zur maßvollen Nutzung (ADR 0002).
+PAUSE = 0.5
 INVALID_RESPONSE = "ungültige Antwort"
 _TAG_PATTERN = re.compile(r"<[^>]+>")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -30,6 +33,31 @@ class FetchError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+class Pacer:
+    """Hält zwischen zwei Anfragen einer Quelle mindestens `PAUSE` Sekunden Abstand.
+
+    Eine Quelle behält ihren Taktgeber über alle ihre Clients; `sleep` ist in Tests
+    ersetzt, damit sie nicht wirklich warten.
+    """
+
+    def __init__(self, sleep: Callable[[float], None]) -> None:
+        self._sleep = sleep
+        self._last: float | None = None
+
+    def client(self, transport: httpx.BaseTransport | None) -> httpx.Client:
+        """Ein Client, der vor jeder Anfrage den Abstand zur letzten einhält."""
+        return httpx.Client(
+            timeout=TIMEOUT, transport=transport, event_hooks={"request": [self._wait]}
+        )
+
+    def _wait(self, request: httpx.Request) -> None:
+        if self._last is not None:
+            remaining = PAUSE - (time.monotonic() - self._last)
+            if remaining > 0:
+                self._sleep(remaining)
+        self._last = time.monotonic()
 
 
 @contextmanager

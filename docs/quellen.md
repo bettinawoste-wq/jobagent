@@ -13,7 +13,7 @@ Jede Quelle ist ein Adapter am Seam `Source` und erfüllt `name` und `search(key
 
 Der Vertragstest `tests/sources/test_contract.py` prüft das für jeden Adapter: Jeder nennt dort seine optionalen Pfade als Präfixe (`("ergebnisliste", 0, "stellenlokationen")` deckt alles darunter), auch Felder mit Ersatz und aus Detail-Abrufen. Eine neue Quelle trägt ihre optionalen Pfade dort ein.
 
-Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für Textfelder unter einem Pfad durch Unterobjekte und Listen) und die HTML-zu-Text-Umwandlung liegen einmal in `_http.py`. Die IDs der Anzeigen bleiben stabil, weil die Datenbank an ihnen hängt.
+Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für Textfelder unter einem Pfad durch Unterobjekte und Listen) und die HTML-zu-Text-Umwandlung liegen einmal in `_http.py`, ebenso der Taktgeber `Pacer`, der zwischen zwei Anfragen einer Quelle 0,5 s Abstand hält (Bundesagentur und Arbeitnow; die Watchlist fragt je Firma nur einmal). Tests ersetzen sein Warten über `sleep`. Die IDs der Anzeigen bleiben stabil, weil die Datenbank an ihnen hängt.
 
 ## Bundesagentur für Arbeit (`BundesagenturSource`)
 - Doku und Beispiele stehen im GitHub-Projekt `bundesAPI/jobsuche-api`. Endpunkt, Header und Parameter immer dort gegenprüfen.

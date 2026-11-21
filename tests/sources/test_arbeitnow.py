@@ -27,9 +27,22 @@ def _days(days: float) -> float:
 
 
 def _source(handler, *, today: float = 1, **kwargs) -> Source:
+    kwargs.setdefault("sleep", lambda seconds: None)
     return ArbeitnowSource(
         transport=httpx.MockTransport(handler), now=lambda: _days(today), **kwargs
     )
+
+
+def test_search_pauses_half_a_second_between_pages() -> None:
+    # Maßvolle Nutzung (ADR 0002): Die Antworten kommen hier sofort.
+    pauses: list[float] = []
+    handler, requests = _pages(PAGE_1, PAGE_2)
+
+    _source(handler, sleep=pauses.append).search(["Data Scientist"])
+
+    assert len(requests) == 2
+    assert len(pauses) == 1
+    assert 0.4 < pauses[0] <= 0.5
 
 
 def _pages(*pages: dict):

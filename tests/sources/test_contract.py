@@ -28,6 +28,12 @@ from jobagent.sources.watchlist import WatchlistCompany, WatchlistSource
 _KEYWORD = "Entwickler"
 _TWO_KEYWORDS = [_KEYWORD, "Data Scientist"]
 _NOW = 1_700_000_000
+
+
+def _no_pause(seconds: float) -> None:
+    """Ersetzt das Warten des Taktgebers: Die Antworten hier sind nachgebaut."""
+
+
 # Nur die Gründe, die `_http.py` vergibt; ein Auffanggrund wie "unerwarteter Fehler"
 # hieße, dass ein Adapter eine verformte Antwort nicht selbst erkennt.
 _KNOWN_REASONS = r"HTTP \d{3}|keine Verbindung|ungültige Antwort"
@@ -64,7 +70,9 @@ _LEVER = WatchlistCompany(name="Beispiel GmbH (Lever)", ats="lever", slug="beisp
 ADAPTERS = [
     Adapter(
         name="Bundesagentur",
-        build=lambda transport: BundesagenturSource("München", 25, 7, transport=transport),
+        build=lambda transport: BundesagenturSource(
+            "München", 25, 7, transport=transport, sleep=_no_pause
+        ),
         # Je Suchbegriff eine Anfrage, also je Suchbegriff ein Fehler.
         subjects=lambda keywords: keywords,
         search_body={
@@ -101,7 +109,9 @@ ADAPTERS = [
         name="Arbeitnow",
         # Ohne Ort, also ohne lokalen Abgleich mit dem Ort: Dass ein Ort mit falschem Typ
         # dabei nicht passt, prüft der Arbeitnow-Test.
-        build=lambda transport: ArbeitnowSource(None, 7, transport=transport, now=lambda: _NOW),
+        build=lambda transport: ArbeitnowSource(
+            None, 7, transport=transport, now=lambda: _NOW, sleep=_no_pause
+        ),
         # Eine Anfrage für alle Suchbegriffe, also ein Fehler mit allen Begriffen.
         subjects=lambda keywords: [", ".join(keywords)],
         search_body={

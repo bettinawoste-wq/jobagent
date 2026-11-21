@@ -9,7 +9,8 @@ import io
 import logging
 import sys
 import tempfile
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
 
@@ -97,18 +98,23 @@ _ABORTED_LOG_MAX_BYTES = 1_000_000
 
 
 def default_sources(
-    config: Config, window: SearchWindow, *, transport: httpx.BaseTransport | None = None
+    config: Config,
+    window: SearchWindow,
+    *,
+    transport: httpx.BaseTransport | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> list[Source]:
     """Die eingebauten Quellen; die Firmen-Watchlist nur, wenn `config.toml` Firmen nennt.
 
     Bundesagentur und Arbeitnow suchen im Suchzeitraum `window`, die Watchlist ohne Suchzeitraum.
+    Mit `sleep` warten Bundesagentur und Arbeitnow zwischen ihren Anfragen.
     """
     location = config.location
     days = window.days
 
     sources: list[Source] = [
-        BundesagenturSource(location, config.radius, days, transport=transport),
-        ArbeitnowSource(location, days, transport=transport),
+        BundesagenturSource(location, config.radius, days, transport=transport, sleep=sleep),
+        ArbeitnowSource(location, days, transport=transport, sleep=sleep),
     ]
     if config.companies:
         sources.append(WatchlistSource(config.companies, transport=transport))

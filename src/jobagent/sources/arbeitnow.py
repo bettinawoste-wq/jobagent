@@ -9,8 +9,8 @@ import httpx
 from jobagent.job_ad import JobAd
 from jobagent.sources import SearchResult
 from jobagent.sources._http import (
-    TIMEOUT,
     FetchError,
+    Pacer,
     convert_entries,
     entries_with_ids,
     get_json,
@@ -52,11 +52,13 @@ class ArbeitnowSource:
         *,
         transport: httpx.BaseTransport | None = None,
         now: Callable[[], float] = time.time,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._location = location
         self._search_window = search_window
         self._transport = transport
         self._now = now
+        self._pacer = Pacer(sleep)
 
     def search(self, keywords: list[str]) -> SearchResult:
         if not keywords:
@@ -94,7 +96,7 @@ class ArbeitnowSource:
             self._now() - self._search_window * 86400 if self._search_window is not None else None
         )
         url: str | None = _URL
-        with httpx.Client(timeout=TIMEOUT, transport=self._transport) as client:
+        with self._pacer.client(self._transport) as client:
             for _ in range(_MAX_PAGES):
                 if not url:
                     return
