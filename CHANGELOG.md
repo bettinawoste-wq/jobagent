@@ -9,6 +9,14 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 ## Unveröffentlicht
 
 ### Neu
+
+### Geändert
+
+### Behoben
+
+## 0.8.0 – 2026-11-21
+
+### Neu
 - Hinweise der Quelle im Quellenstatus, getrennt von Fehlern: Arbeitnow meldet das
   Ende nach 10 Seiten als Hinweis, sodass der Lauf trotzdem vollständig sein kann
   und der Suchzeitraum nicht dauerhaft beim Höchstwert bleibt (#46)
