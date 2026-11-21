@@ -8,6 +8,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+from enum import Enum
 from pathlib import Path
 
 from jobagent import report
@@ -25,10 +26,18 @@ logger = logging.getLogger(__name__)
 
 _PROFILE_SUGGESTION_MIN_FEEDBACK = 5
 
-# Woran eine Bewertung scheiterte: eine Fehlerart des Sprachmodells oder, als None, ein
-# unerwarteter Fehler wie ein Programmfehler in der Prüfung, der keine Fehlerart des
-# Sprachmodells ist.
-_Failure = LanguageModelFailure | None
+
+class _OtherFailure(Enum):
+    """Woran eine Anzeige außerhalb des Sprachmodells unbewertet blieb."""
+
+    # Etwa ein Programmfehler in der Prüfung, der keine Fehlerart des Sprachmodells ist.
+    UNEXPECTED = "unexpected"
+    # Die Quelle konnte die Beschreibung nicht liefern.
+    NO_DESCRIPTION = "no_description"
+
+
+# Woran eine Anzeige unbewertet blieb.
+_Failure = LanguageModelFailure | _OtherFailure
 
 
 def run(
@@ -55,9 +64,7 @@ def run(
     described, undescribed = _describe_new(db, found)
     source_status = _with_description_errors(source_status, undescribed)
     new_matches, failures = _new_matches(described, language_model, search_profile)
-    # Eine Anzeige ohne abrufbare Beschreibung bleibt unbewertet, ohne Fehlerart des
-    # Sprachmodells.
-    failures += [None] * len(undescribed)
+    failures += [_OtherFailure.NO_DESCRIPTION] * len(undescribed)
     unassessed = report.Unassessed(len(failures), _common_cause(new_matches, failures))
     complete = not failures and not any(status.errors for status in source_status)
     return _report_and_remember(
@@ -242,10 +249,11 @@ def _common_cause(
     matches: list[report.Match], failures: list[_Failure]
 ) -> LanguageModelFailure | None:
     """Woran alle Bewertungen des Laufs scheiterten, wenn es bei allen dieselbe Fehlerart
-    des Sprachmodells war; bei unerwarteten Fehlern gibt es keine."""
+    des Sprachmodells war; bei anderen Gründen gibt es keine."""
     if matches or len(set(failures)) != 1:
         return None
-    return failures[0]
+    [cause] = set(failures)
+    return cause if isinstance(cause, LanguageModelFailure) else None
 
 
 def _safe_score(
@@ -257,7 +265,7 @@ def _safe_score(
         return score_job_ad(job_ad, search_profile, language_model)
     except Exception:
         logger.exception("Unerwarteter Fehler in der Bewertung (anzeige=%r)", job_ad.id)
-        return None
+        return _OtherFailure.UNEXPECTED
 
 
 def _open_feedback(db: Store) -> int:
