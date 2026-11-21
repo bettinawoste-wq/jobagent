@@ -14,6 +14,9 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
   und der Suchzeitraum nicht dauerhaft beim Höchstwert bleibt (#46)
 
 ### Geändert
+- Die Bundesagentur holt die Beschreibung nur noch für neue Anzeigen statt für
+  jede gefundene; bei täglichen Läufen entfallen so die meisten Detail-Abrufe
+  (#47)
 - Bundesagentur und Arbeitnow lassen zwischen zwei Anfragen mindestens 0,5 s
   Abstand; Arbeitnow lehnte bei einer Messung nach rund 17 schnellen Aufrufen ab
   (#47)
@@ -21,6 +24,9 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
   enger zu fassen (#46)
 
 ### Behoben
+- Scheitert der Abruf der Beschreibung (etwa HTTP 429), wird die Anzeige nicht
+  mehr nur nach dem Titel bewertet und für immer gemerkt: Sie bleibt unbewertet,
+  der Quellenstatus nennt den Grund, und der nächste Lauf versucht es erneut (#47)
 - Arbeitnow blättert weiter, bis eine ganze Seite älter als der Suchzeitraum ist:
   Die API sortiert nicht streng nach Datum, und bisher beendete schon eine einzelne
   alte Anzeige das Blättern, sodass jüngere auf späteren Seiten still fehlten (#46)

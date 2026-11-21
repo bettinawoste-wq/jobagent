@@ -20,7 +20,7 @@ import httpx
 import pytest
 
 from jobagent.job_ad import JobAd
-from jobagent.sources import Source
+from jobagent.sources import DescriptionUnavailable, SearchResult, Source
 from jobagent.sources.arbeitnow import ArbeitnowSource
 from jobagent.sources.bundesagentur import BundesagenturSource
 from jobagent.sources.watchlist import WatchlistCompany, WatchlistSource
@@ -353,24 +353,52 @@ def _error_pattern(adapter: Adapter, keywords: list[str]) -> re.Pattern[str]:
     return re.compile(rf"(?:{subjects}): (?:{_KNOWN_REASONS})")
 
 
+@dataclass(frozen=True)
+class Found:
+    """Was ein Lauf von einer Quelle bekommt: das Suchergebnis, die beschriebenen Anzeigen
+    und die Gründe, aus denen `describe` scheiterte."""
+
+    result: SearchResult
+    described: list[JobAd]
+    unavailable: list[str]
+
+
+def _search_and_describe(source: Source, keywords: list[str]) -> Found:
+    """Wie der Lauf: suchen, dann jede gefundene Anzeige beschreiben lassen.
+
+    `describe` darf nur mit `DescriptionUnavailable` scheitern; alles andere fliegt hier.
+    """
+    result = source.search(keywords)
+    described: list[JobAd] = []
+    unavailable: list[str] = []
+    for job_ad in result.job_ads:
+        try:
+            described.append(source.describe(job_ad))
+        except DescriptionUnavailable as error:
+            unavailable.append(error.reason)
+    return Found(result, described, unavailable)
+
+
 @pytest.mark.parametrize("case", list(_cases()))
 def test_search_never_raises_and_reports_errors_uniformly(case: Case) -> None:
     source = case.adapter.build(httpx.MockTransport(case.handler))
 
-    result = source.search([_KEYWORD])
+    found = _search_and_describe(source, [_KEYWORD])
 
     pattern = _error_pattern(case.adapter, [_KEYWORD])
-    for error in result.errors:
+    for error in found.result.errors:
         assert pattern.fullmatch(error), error
+    for reason in found.unavailable:
+        assert re.fullmatch(_KNOWN_REASONS, reason), reason
 
 
 @pytest.mark.parametrize("case", list(_cases()))
 def test_job_ads_carry_only_text_or_none(case: Case) -> None:
     source = case.adapter.build(httpx.MockTransport(case.handler))
 
-    result = source.search([_KEYWORD])
+    found = _search_and_describe(source, [_KEYWORD])
 
-    for job_ad in result.job_ads:
+    for job_ad in [*found.result.job_ads, *found.described]:
         assert isinstance(job_ad.title, str), job_ad
         assert isinstance(job_ad.link, str), job_ad
         assert isinstance(job_ad.company, str | None), job_ad
@@ -410,9 +438,11 @@ def test_errors_with_two_keywords_name_keywords_or_company(adapter: Adapter, bro
 
 
 def _search_valid(adapter: Adapter) -> JobAd:
-    """Die eine Anzeige aus der gültigen Antwort."""
+    """Die eine Anzeige aus der gültigen Antwort, beschrieben."""
     handler = _respond(adapter, _json(adapter.search_body), _json(adapter.detail_body))
-    [job_ad] = adapter.build(httpx.MockTransport(handler)).search([_KEYWORD]).job_ads
+    [job_ad] = _search_and_describe(
+        adapter.build(httpx.MockTransport(handler)), [_KEYWORD]
+    ).described
     return job_ad
 
 
@@ -428,10 +458,11 @@ def test_malformed_optional_field_costs_neither_job_ad_nor_error(malformed: Malf
     valid = _search_valid(malformed.adapter)
     source = malformed.adapter.build(httpx.MockTransport(malformed.handler))
 
-    result = source.search([_KEYWORD])
+    found = _search_and_describe(source, [_KEYWORD])
 
-    assert result.errors == []
-    [job_ad] = result.job_ads
+    assert found.result.errors == []
+    assert found.unavailable == []
+    [job_ad] = found.described
     # Abweichen darf nur das Feld, das am verformten Pfad hängt.
     changed = {
         job_ad_field.name

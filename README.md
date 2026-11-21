@@ -106,6 +106,9 @@ Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
     sources/  ──►  store.py (SQLite-Dedupe: schon gesehene IDs raus)
         │
         ▼
+    describe  ──►  Beschreibung nur für neue Anzeigen (Bundesagentur: Detail-Call)
+        │
+        ▼
     score.py  ──►  Claude Haiku bewertet jede neue Anzeige
         │          gegen profile.md (strukturierte JSON-Antwort:
         │          score, passt, passt_nicht, luecken, kurzfazit)
@@ -118,7 +121,8 @@ und Sprachmodell sind Seams mit austauschbaren Adaptern, siehe [Aufbau](#aufbau)
 
 Jeder Schritt ist defensiv: Fällt eine Quelle aus, steht das im Quellenstatus
 des Reports. Scheitert die Bewertung einer Anzeige (API-Fehler, ungültige
-Antwort des Sprachmodells), wird das geloggt. Der Report zählt die Anzeige dann
+Antwort des Sprachmodells) oder lässt sich ihre Beschreibung nicht abrufen,
+wird das geloggt. Der Report zählt die Anzeige dann
 als unbewertet, und der nächste Lauf versucht es erneut, sofern eine Quelle sie
 noch liefert. Der Gesamtlauf bricht daran nicht ab.
 

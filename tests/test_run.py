@@ -95,6 +95,69 @@ class BrokenSource:
     def search(self, keywords: list[str]) -> SearchResult:
         raise KeyError("referenznummer")
 
+    def describe(self, job_ad: JobAd) -> JobAd:
+        return job_ad
+
+
+class BrokenDescriptionSource(FakeSource):
+    def describe(self, job_ad: JobAd) -> JobAd:
+        raise KeyError("stellenangebotsBeschreibung")
+
+
+# Beschreibung: Die Quelle beschreibt nur neue Anzeigen.
+
+
+def test_run_describes_only_new_job_ads(db: Store, output_dir: Path) -> None:
+    db.remember_job_ad(fake_job_ad("a-1"), _assessment(), TODAY - timedelta(days=1))
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")])
+
+    _run(db, output_dir, source)
+
+    assert source.described == ["a-2"]
+
+
+def test_run_assesses_job_ad_with_its_description(db: Store, output_dir: Path) -> None:
+    model = FakeLanguageModel(assessment_answer())
+    source = FakeSource([fake_job_ad("a-1")], descriptions={"a-1": "Python im Backend."})
+
+    _run(db, output_dir, source, model=model)
+
+    [request] = model.requests
+    assert "Beschreibung: Python im Backend." in request.text
+
+
+def test_job_ad_appearing_in_two_sources_is_described_by_the_first(
+    db: Store, output_dir: Path
+) -> None:
+    first = FakeSource([fake_job_ad("a-1")], name="Erste")
+    second = FakeSource([fake_job_ad("a-1")], name="Zweite")
+
+    _run(db, output_dir, first, second)
+
+    assert (first.described, second.described) == (["a-1"], [])
+
+
+def test_unavailable_description_leaves_job_ad_unassessed(db: Store, output_dir: Path) -> None:
+    model = FakeLanguageModel(assessment_answer())
+    source = FakeSource([fake_job_ad("a-1"), fake_job_ad("a-2")], unavailable={"a-1": "HTTP 429"})
+
+    content = _run(db, output_dir, source, model=model)
+
+    assert _asked_about(model) == ["Stelle a-2"]
+    assert db.is_new("a-1")
+    assert db.last_complete_run() is None
+    assert "1 unbewertete Anzeige" in content
+    assert "FEHLER, 2 Anzeigen (Beschreibung: HTTP 429)" in content
+
+
+def test_unexpected_description_error_leaves_job_ad_unassessed(db: Store, output_dir: Path) -> None:
+    source = BrokenDescriptionSource([fake_job_ad("a-1")])
+
+    content = _run(db, output_dir, source)
+
+    assert db.is_new("a-1")
+    assert "FEHLER, 1 Anzeige (Beschreibung: unerwarteter Fehler)" in content
+
 
 def test_run_assesses_against_given_profile(db: Store, output_dir: Path) -> None:
     model = FakeLanguageModel(assessment_answer())

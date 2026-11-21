@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 import httpx
 
 from jobagent.job_ad import JobAd
-from jobagent.sources import SearchResult
+from jobagent.sources import DescriptionUnavailable, SearchResult
 from jobagent.sources._http import (
     ConvertedEntries,
     FetchError,
@@ -28,8 +28,8 @@ _DETAILS_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/
 _HEADERS = {"X-API-Key": "jobboerse-jobsuche"}
 # Ergebnisse je Seite, wie im Beispiel der Doku von bundesAPI/jobsuche-api.
 _PAGE_SIZE = 50
-# Sicherheitsgrenze je Suchbegriff, zur maßvollen Nutzung der API (ADR 0002): Jede
-# gefundene Anzeige kostet noch einen Detail-Call.
+# Sicherheitsgrenze je Suchbegriff, zur maßvollen Nutzung der API (ADR 0002): Jede neue
+# Anzeige kostet noch einen Detail-Call.
 _MAX_PAGES = 5
 # Abgeschnitten ist ein Fehler: Der Lauf zählt dann nicht als vollständig, und der nächste
 # Suchzeitraum reicht weiter zurück, statt die übrigen Anzeigen still zu verlieren. Bei
@@ -38,7 +38,7 @@ _TRUNCATED = f"Ergebnisse abgeschnitten nach {_MAX_PAGES} Seiten, Suchbegriff en
 
 
 class BundesagenturSource:
-    """Sucht je Suchbegriff in der Jobsuche-API und holt die Jobdetails je Anzeige einmal.
+    """Sucht je Suchbegriff in der Jobsuche-API; die Jobdetails holt sie erst auf Nachfrage.
 
     Gesucht wird im Suchzeitraum `search_window` (in Tagen, an die API als
     `veroeffentlichtseit`). Je Suchbegriff blättert sie (`page` ab 1, `size`), bis alle
@@ -46,8 +46,8 @@ class BundesagenturSource:
     meldet sie "Ergebnisse abgeschnitten" als Fehler: Der Lauf zählt dann nicht als
     vollständig.
 
-    Scheitert der Detail-Call einer Anzeige, bleibt nur deren Beschreibung leer; das gilt
-    nicht als Fehler der Quelle.
+    Die Beschreibung holt erst `describe` per Detail-Call, den der Lauf nur für neue
+    Anzeigen aufruft (ADR 0002).
     """
 
     name = "Bundesagentur für Arbeit"
@@ -76,12 +76,19 @@ class BundesagenturSource:
                 for job_ad in result.job_ads:
                     found.setdefault(job_ad.id, job_ad)
                 errors.extend(result.errors)
-            # Die Details erst nach dem Zusammenführen holen: je Anzeige nur einmal.
-            job_ads = [
-                replace(job_ad, description=_description(client, job_ad.id))
-                for job_ad in found.values()
-            ]
-        return SearchResult(job_ads, errors)
+        return SearchResult(list(found.values()), errors)
+
+    def describe(self, job_ad: JobAd) -> JobAd:
+        """Holt die Beschreibung per Detail-Call; scheitert er, `DescriptionUnavailable`.
+
+        Antwortet die API ohne Beschreibung oder in unerwarteter Form, bleibt sie None.
+        """
+        with self._pacer.client(self._transport) as client:
+            try:
+                description = _description(client, job_ad.id)
+            except FetchError as error:
+                raise DescriptionUnavailable(error.reason) from error
+        return replace(job_ad, description=description)
 
     def _search_keyword(self, client: httpx.Client, keyword: str) -> SearchResult:
         """Blättert durch alle Seiten zu einem Suchbegriff, höchstens `_MAX_PAGES`.
@@ -209,11 +216,9 @@ def _title(entry: dict) -> str:
 
 
 def _description(client: httpx.Client, reference: str) -> str | None:
+    """Die Beschreibung aus den Jobdetails; ein gescheiterter Abruf wirft `FetchError`."""
     code = base64.b64encode(reference.encode()).decode()
-    try:
-        details = get_json(client, _DETAILS_URL.format(code=code), headers=_HEADERS)
-    except FetchError:
-        return None
+    details = get_json(client, _DETAILS_URL.format(code=code), headers=_HEADERS)
     if not isinstance(details, dict):
         return None
     return text_or_none(details.get("stellenangebotsBeschreibung")) or text_or_none(

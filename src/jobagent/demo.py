@@ -215,6 +215,9 @@ class DemoSource:
                 found.setdefault(job_ad.id, job_ad)
         return SearchResult(list(found.values()), list(self._errors))
 
+    def describe(self, job_ad: JobAd) -> JobAd:
+        return job_ad
+
 
 def sources() -> list[Source]:
     """Drei Demo-Quellen, benannt wie die echten; die Firmen-Watchlist meldet einen Fehler."""

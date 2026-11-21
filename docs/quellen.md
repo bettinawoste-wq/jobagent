@@ -2,7 +2,9 @@
 
 Diese Datei brauchst du vor jeder Arbeit an `src/jobagent/sources/` oder an den Fixtures in `tests/fixtures/`. Welche Quellen erlaubt sind und warum, steht in ADR 0002.
 
-Jede Quelle ist ein Adapter am Seam `Source` und erfüllt `name` und `search(keywords) -> SearchResult`:
+Jede Quelle ist ein Adapter am Seam `Source` und erfüllt `name`, `search(keywords) -> SearchResult` und `describe(job_ad) -> JobAd`. Der Lauf ruft `describe` nur für neue Anzeigen auf: Eine Quelle, die die Beschreibung erst per Detail-Call holt (Bundesagentur), holt sie dort und spart so die Abrufe für schon gemerkte Anzeigen. Quellen, die sie schon in der Liste haben, geben die Anzeige unverändert zurück. Scheitert der Abruf selbst, wirft `describe` `DescriptionUnavailable` mit Grund; die Anzeige bleibt dann unbewertet, und der Quellenstatus nennt „Beschreibung: <Grund>“. Antwortet die Quelle ohne Beschreibung, bleibt sie `None`, und die Anzeige wird nach Titel, Firma und Ort bewertet.
+
+Für `search` gilt:
 - Sie bekommt alle Suchbegriffe auf einmal.
 - Sie dedupliziert intern.
 - Sie wirft nie. Fehler meldet sie im `SearchResult` in der Form „<Suchbegriff oder Firma>: <Grund>“.
@@ -11,7 +13,7 @@ Jede Quelle ist ein Adapter am Seam `Source` und erfüllt `name` und `search(key
   - Hat ein optionales Feld (Firma, Ort, Beschreibung) oder sein Unterobjekt den falschen Typ, wird nur dieses Feld `None`, auch wenn es in einem Container wie dem Ort-Unterobjekt steckt. Die Anzeige bleibt, gemeldet wird nichts. Welche Pfade das je Quelle sind, nennt der Vertragstest.
   - Ein Eintrag ohne gültige ID macht dagegen die ganze Antwort ungültig.
 
-Der Vertragstest `tests/sources/test_contract.py` prüft das für jeden Adapter: Jeder nennt dort seine optionalen Pfade als Präfixe (`("ergebnisliste", 0, "stellenlokationen")` deckt alles darunter), auch Felder mit Ersatz und aus Detail-Abrufen. Eine neue Quelle trägt ihre optionalen Pfade dort ein.
+Der Vertragstest `tests/sources/test_contract.py` prüft das für jeden Adapter, über `search` und danach `describe` wie im Lauf: Jeder nennt dort seine optionalen Pfade als Präfixe (`("ergebnisliste", 0, "stellenlokationen")` deckt alles darunter), auch Felder mit Ersatz und aus Detail-Abrufen. Eine neue Quelle trägt ihre optionalen Pfade dort ein.
 
 Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für Textfelder unter einem Pfad durch Unterobjekte und Listen) und die HTML-zu-Text-Umwandlung liegen einmal in `_http.py`, ebenso der Taktgeber `Pacer`, der zwischen zwei Anfragen einer Quelle 0,5 s Abstand hält (Bundesagentur und Arbeitnow; die Watchlist fragt je Firma nur einmal). Tests ersetzen sein Warten über `sleep`. Die IDs der Anzeigen bleiben stabil, weil die Datenbank an ihnen hängt.
 
@@ -24,7 +26,7 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
   - Umkreis (`umkreis` unter `[bundesagentur]`, nur diese Quelle nutzt ihn)
   - Alter der Anzeige (`veroeffentlichtseit` der API) aus dem Suchzeitraum, siehe `GLOSSARY.md`; `veroeffentlichtseit` unter `[suche]` ist nur dessen Startwert und Höchstwert
 - Blättern laut Doku: `page` (ab 1) und `size`; die Antwort nennt die Gesamtzahl in `maxErgebnisse` (Doku: Text, Beispielantwort: Zahl). Je Suchbegriff blättert die Quelle mit 50 Ergebnissen je Seite, höchstens 5 Seiten. Nennt die Antwort `maxErgebnisse`, endet das Blättern, sobald so viele verschiedene Anzeigen da sind; eine kürzere Seite allein beendet es dann nicht. Ohne `maxErgebnisse` endet es an der ersten nicht vollen Seite. Eine Seite ohne neue Anzeigen (leer oder nur Wiederholungen) beendet es immer. Wie die Live-API Seiten hinter dem Ende beantwortet, ist nicht dokumentiert. Bleiben danach Ergebnisse übrig, meldet sie „Ergebnisse abgeschnitten nach 5 Seiten, Suchbegriff enger fassen“ als Fehler; der Lauf zählt dann nicht als vollständig. Im November 2026 lag der größte gemessene Wert bei 178 Treffern in 7 Tagen („IT Consultant“ um München). Die Grenze ist maßvoll gewählt, weil jede gefundene Anzeige noch einen Detail-Call kostet.
-- Die Beschreibung kommt per Detail-Call, einmal je Anzeige.
+- Die Beschreibung kommt per Detail-Call in `describe`, nur für neue Anzeigen. Im November 2026 lieferte die Live-API auch für Anzeigen mit `externeURL` eine Beschreibung (16 von 16 geprüft).
 - Die ID ist die rohe `referenznummer`.
 
 ## Arbeitnow (`ArbeitnowSource`)

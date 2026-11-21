@@ -87,6 +87,10 @@ class ArbeitnowSource:
             errors.append(f"{subject}: {fetch_reason}")
         return SearchResult(list(job_ads.values()), errors, notices)
 
+    def describe(self, job_ad: JobAd) -> JobAd:
+        """Die Beschreibung steht schon in der Liste der Anzeigen."""
+        return job_ad
+
     def _recent_entries(self, notices: list[str]) -> Iterator[dict]:
         """Liefert die Einträge Seite für Seite, solange sie jung genug sind.
 

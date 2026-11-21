@@ -6,6 +6,7 @@ noch Umgebung. Zusammengebaut wird er in `jobagent.main`.
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from jobagent.position import position_key
 from jobagent.report import SourceStatus
 from jobagent.score import Assessment, score_job_ad
 from jobagent.search_window import SearchWindow
-from jobagent.sources import SearchResult, Source
+from jobagent.sources import DescriptionUnavailable, SearchResult, Source
 from jobagent.store import Store, description_hash
 
 logger = logging.getLogger(__name__)
@@ -50,8 +51,13 @@ def run(
     Scheitert der Report (`ReportError`) oder das Merken (`StoreError`), merkt er sich
     nichts und lässt keinen Report liegen: Die Treffer kommen im nächsten Lauf wieder.
     """
-    job_ads, source_status = _search_all(sources, config.keywords)
-    new_matches, failures = _new_matches(db, job_ads, language_model, search_profile)
+    found, source_status = _search_all(sources, config.keywords)
+    described, undescribed = _describe_new(db, found)
+    source_status = _with_description_errors(source_status, undescribed)
+    new_matches, failures = _new_matches(described, language_model, search_profile)
+    # Eine Anzeige ohne abrufbare Beschreibung bleibt unbewertet, ohne Fehlerart des
+    # Sprachmodells.
+    failures += [None] * len(undescribed)
     unassessed = report.Unassessed(len(failures), _common_cause(new_matches, failures))
     complete = not failures and not any(status.errors for status in source_status)
     return _report_and_remember(
@@ -154,8 +160,58 @@ def _write_report(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _Undescribed:
+    """Eine neue Anzeige, deren Beschreibung sich nicht abrufen ließ, mit Quelle und Grund."""
+
+    job_ad_id: str
+    source_name: str
+    reason: str
+
+
+def _describe_new(
+    db: Store, found: list[tuple[JobAd, Source]]
+) -> tuple[list[JobAd], list[_Undescribed]]:
+    """Lässt jede neue Anzeige von ihrer Quelle beschreiben; schon gemerkte fallen weg.
+
+    Gibt die beschriebenen Anzeigen zurück und die, deren Beschreibung scheiterte: Diese
+    bleiben unbewertet und kommen im nächsten Lauf wieder.
+    """
+    described: list[JobAd] = []
+    undescribed: list[_Undescribed] = []
+    for job_ad, source in found:
+        if not db.is_new(job_ad.id):
+            continue
+        try:
+            described.append(source.describe(job_ad))
+        except DescriptionUnavailable as error:
+            logger.warning(
+                "Beschreibung nicht abrufbar, der nächste Lauf versucht es erneut "
+                "(anzeige=%r, grund=%r)",
+                job_ad.id,
+                error.reason,
+            )
+            undescribed.append(_Undescribed(job_ad.id, source.name, error.reason))
+        except Exception:
+            # Wie bei der Suche: Eine Quelle darf den Lauf nie abbrechen.
+            logger.exception("Unerwarteter Fehler beim Beschreiben (anzeige=%r)", job_ad.id)
+            undescribed.append(_Undescribed(job_ad.id, source.name, "unerwarteter Fehler"))
+    return described, undescribed
+
+
+def _with_description_errors(
+    status: list[SourceStatus], undescribed: list[_Undescribed]
+) -> list[SourceStatus]:
+    """Der Quellenstatus mit je einem Fehler "Beschreibung: <Grund>" pro Quelle und Grund."""
+    result: list[SourceStatus] = []
+    for source in status:
+        reasons = [item.reason for item in undescribed if item.source_name == source.name]
+        errors = [f"Beschreibung: {reason}" for reason in dict.fromkeys(reasons)]
+        result.append(replace(source, errors=[*source.errors, *errors]) if errors else source)
+    return result
+
+
 def _new_matches(
-    db: Store,
     job_ads: list[JobAd],
     language_model: LanguageModel,
     search_profile: str,
@@ -169,9 +225,6 @@ def _new_matches(
     failures: list[_Failure] = []
 
     for job_ad in job_ads:
-        if not db.is_new(job_ad.id):
-            continue
-
         assessment = _safe_score(job_ad, search_profile, language_model)
         if not isinstance(assessment, Assessment):
             logger.warning(
@@ -237,15 +290,16 @@ def _text_differs(new: str | None, at_application: str | None) -> report.TextCom
 
 def _search_all(
     sources: Sequence[Source], keywords: list[str]
-) -> tuple[list[JobAd], list[SourceStatus]]:
-    found: dict[str, JobAd] = {}
+) -> tuple[list[tuple[JobAd, Source]], list[SourceStatus]]:
+    """Jede gefundene Anzeige einmal, mit der ersten Quelle, die sie geliefert hat."""
+    found: dict[str, tuple[JobAd, Source]] = {}
     status: list[SourceStatus] = []
 
     for source in sources:
         result = _safe_search(source, keywords)
         ids = {job_ad.id for job_ad in result.job_ads}
         for job_ad in result.job_ads:
-            found.setdefault(job_ad.id, job_ad)
+            found.setdefault(job_ad.id, (job_ad, source))
         # Doppelte weg, Reihenfolge bleibt.
         errors = list(dict.fromkeys(result.errors))
         notices = list(dict.fromkeys(result.notices))
