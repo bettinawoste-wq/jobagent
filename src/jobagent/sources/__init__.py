@@ -10,11 +10,14 @@ from jobagent.job_ad import JobAd
 class SearchResult:
     """Gefundene Anzeigen plus Fehler: leer und gescheitert sind verschiedene Dinge.
 
-    Fehler haben die Form "<Suchbegriff oder Firma>: <Grund>".
+    Fehler haben die Form "<Suchbegriff oder Firma>: <Grund>". Hinweise (`notices`) sind
+    keine Fehler, etwa eine bekannte Grenze der Schnittstelle; ein Lauf mit Hinweisen kann
+    vollständig sein.
     """
 
     job_ads: list[JobAd]
     errors: list[str] = field(default_factory=list)
+    notices: list[str] = field(default_factory=list)
 
 
 class Source(Protocol):

@@ -744,6 +744,15 @@ def test_run_with_source_error_is_not_complete(db: Store, output_dir: Path) -> N
     assert db.last_complete_run() is None
 
 
+def test_run_with_source_notice_is_complete(db: Store, output_dir: Path) -> None:
+    source = FakeSource([fake_job_ad("a-1")], notices=["nach 10 Seiten beendet"])
+
+    content = _run(db, output_dir, source)
+
+    assert db.last_complete_run() == TODAY
+    assert "Hinweis: nach 10 Seiten beendet" in content
+
+
 def test_run_with_unexpected_source_error_is_not_complete(db: Store, output_dir: Path) -> None:
     _run(db, output_dir, FakeSource([fake_job_ad("a-1")]), BrokenSource())
 

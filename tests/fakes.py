@@ -20,12 +20,13 @@ class FakeSource:
 
     job_ads: list[JobAd] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    notices: list[str] = field(default_factory=list)
     name: str = "Bundesagentur für Arbeit"
     received: list[list[str]] = field(default_factory=list)
 
     def search(self, keywords: list[str]) -> SearchResult:
         self.received.append(keywords)
-        return SearchResult(list(self.job_ads), list(self.errors))
+        return SearchResult(list(self.job_ads), list(self.errors), list(self.notices))
 
 
 def fake_job_ad(id_: str) -> JobAd:

@@ -246,8 +246,10 @@ def _search_all(
         ids = {job_ad.id for job_ad in result.job_ads}
         for job_ad in result.job_ads:
             found.setdefault(job_ad.id, job_ad)
-        errors = list(dict.fromkeys(result.errors))  # doppelte weg, Reihenfolge bleibt
-        status.append(SourceStatus(source.name, len(ids), errors))
+        # Doppelte weg, Reihenfolge bleibt.
+        errors = list(dict.fromkeys(result.errors))
+        notices = list(dict.fromkeys(result.notices))
+        status.append(SourceStatus(source.name, len(ids), errors, notices))
 
     return list(found.values()), status
 

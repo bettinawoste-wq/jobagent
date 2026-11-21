@@ -410,8 +410,10 @@ def test_search_reports_truncated_results_when_page_limit_is_reached() -> None:
     assert 1 < pages_per_keyword < 20  # eine Sicherheitsgrenze, maßvoll (ADR 0002)
     assert len(result.job_ads) == pages_per_keyword * _page_size()
     assert result.errors == [
-        f"Data Science: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
-        f"Python: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
+        f"Data Science: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten,"
+        " Suchbegriff enger fassen",
+        f"Python: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten,"
+        " Suchbegriff enger fassen",
     ]
 
 

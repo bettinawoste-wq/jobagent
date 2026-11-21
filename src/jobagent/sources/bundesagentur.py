@@ -19,7 +19,6 @@ from jobagent.sources._http import (
     required_text,
     text_at,
     text_or_none,
-    truncated_reason,
 )
 
 _SEARCH_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
@@ -30,6 +29,10 @@ _PAGE_SIZE = 50
 # Sicherheitsgrenze je Suchbegriff, zur maßvollen Nutzung der API (ADR 0002): Jede
 # gefundene Anzeige kostet noch einen Detail-Call.
 _MAX_PAGES = 5
+# Abgeschnitten ist ein Fehler: Der Lauf zählt dann nicht als vollständig, und der nächste
+# Suchzeitraum reicht weiter zurück, statt die übrigen Anzeigen still zu verlieren. Bei
+# einem Suchbegriff mit so vielen Treffern hilft nur, ihn enger zu fassen.
+_TRUNCATED = f"Ergebnisse abgeschnitten nach {_MAX_PAGES} Seiten, Suchbegriff enger fassen"
 
 
 class BundesagenturSource:
@@ -98,7 +101,7 @@ class BundesagenturSource:
             if _last_page(result, len(seen), brought_new=bool(new)):
                 break
         else:
-            errors.append(f"{keyword}: {truncated_reason(_MAX_PAGES)}")
+            errors.append(f"{keyword}: {_TRUNCATED}")
         # "ungültige Antwort" höchstens einmal je Suchbegriff, auch über mehrere Seiten.
         return SearchResult(job_ads, list(dict.fromkeys(errors)))
 

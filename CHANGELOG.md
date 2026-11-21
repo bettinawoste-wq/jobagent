@@ -9,8 +9,13 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 ## Unveröffentlicht
 
 ### Neu
+- Hinweise der Quelle im Quellenstatus, getrennt von Fehlern: Arbeitnow meldet das
+  Ende nach 10 Seiten als Hinweis, sodass der Lauf trotzdem vollständig sein kann
+  und der Suchzeitraum nicht dauerhaft beim Höchstwert bleibt (#46)
 
 ### Geändert
+- Schneidet die Bundesagentur Ergebnisse ab, rät die Meldung, den Suchbegriff
+  enger zu fassen (#46)
 
 ### Behoben
 - Arbeitnow blättert weiter, bis eine ganze Seite älter als der Suchzeitraum ist:

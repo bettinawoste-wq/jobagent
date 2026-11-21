@@ -97,14 +97,16 @@ def test_search_follows_next_link() -> None:
     ]
 
 
-def test_search_fetches_at_most_ten_pages_and_reports_truncated_results() -> None:
+def test_search_fetches_at_most_ten_pages_and_gives_a_notice() -> None:
+    # Arbeitnow hat keine Suche auf dem Server; die Grenze ist bekannt und kein Fehler.
     handler, requests = _pages(PAGE_1)  # verweist immer wieder auf eine naechste Seite
 
     result = _source(handler).search(["Data Scientist", "Python"])
 
     assert len(requests) == 10
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:data-scientist-berlin-200001"]
-    assert result.errors == ["Data Scientist, Python: Ergebnisse abgeschnitten nach 10 Seiten"]
+    assert result.errors == []
+    assert result.notices == ["nach 10 Seiten beendet, ältere Anzeigen nicht geprüft"]
 
 
 def test_search_ending_on_the_tenth_page_is_not_truncated() -> None:
@@ -115,6 +117,7 @@ def test_search_ending_on_the_tenth_page_is_not_truncated() -> None:
 
     assert len(requests) == 10
     assert result.errors == []
+    assert result.notices == []
 
 
 def test_search_stops_paging_at_job_ads_older_than_search_window() -> None:

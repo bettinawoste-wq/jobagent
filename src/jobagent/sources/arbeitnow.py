@@ -20,12 +20,14 @@ from jobagent.sources._http import (
     text_at,
     text_or_none,
     title_matches,
-    truncated_reason,
 )
 
 _URL = "https://www.arbeitnow.com/api/job-board-api"
 # Arbeitnow bittet um maßvolle Nutzung der freien API (ADR 0002).
 _MAX_PAGES = 10
+# Ohne Suche auf dem Server reichen 10 Seiten nur für wenige Tage; das ist eine bekannte
+# Grenze der Schnittstelle und kein Fehler (ADR 0002).
+_PAGE_LIMIT_NOTICE = f"nach {_MAX_PAGES} Seiten beendet, ältere Anzeigen nicht geprüft"
 
 
 class ArbeitnowSource:
@@ -36,8 +38,9 @@ class ArbeitnowSource:
     Geokoordinaten nicht. Das Paging folgt `links.next`, endet nach höchstens 10 Seiten
     oder nach der ersten Seite, auf der jede Anzeige älter als der Suchzeitraum
     (`search_window` Tage) ist; die API sortiert nicht streng nach Datum. Gäbe es nach
-    10 Seiten noch eine nächste, meldet es "Ergebnisse abgeschnitten" als Fehler. Bricht
-    es ab, bleiben die bis dahin gefundenen Anzeigen erhalten.
+    10 Seiten noch eine nächste, gibt es einen Hinweis der Quelle, keinen Fehler: Der Lauf
+    kann trotzdem vollständig sein. Bricht es ab, bleiben die bis dahin gefundenen
+    Anzeigen erhalten.
     """
 
     name = "Arbeitnow"
@@ -59,10 +62,11 @@ class ArbeitnowSource:
         if not keywords:
             return SearchResult([])
         matching: list[dict] = []
+        notices: list[str] = []
         fetch_reason: str | None = None
         try:
             with malformed_as_invalid("Arbeitnow-Antwort", f"url={_URL!r}"):
-                for entry in self._recent_entries():
+                for entry in self._recent_entries(notices):
                     if self._matches(entry, keywords):
                         matching.append(entry)
         except FetchError as error:
@@ -79,10 +83,13 @@ class ArbeitnowSource:
         errors = converted.errors(subject)
         if fetch_reason is not None and f"{subject}: {fetch_reason}" not in errors:
             errors.append(f"{subject}: {fetch_reason}")
-        return SearchResult(list(job_ads.values()), errors)
+        return SearchResult(list(job_ads.values()), errors, notices)
 
-    def _recent_entries(self) -> Iterator[dict]:
-        """Liefert die Einträge Seite für Seite, solange sie jung genug sind."""
+    def _recent_entries(self, notices: list[str]) -> Iterator[dict]:
+        """Liefert die Einträge Seite für Seite, solange sie jung genug sind.
+
+        Endet das Blättern an der Seitengrenze, kommt ein Hinweis in `notices`.
+        """
         cutoff = (
             self._now() - self._search_window * 86400 if self._search_window is not None else None
         )
@@ -115,7 +122,7 @@ class ArbeitnowSource:
                     return
                 url = (page.get("links") or {}).get("next")
         if url:
-            raise FetchError(truncated_reason(_MAX_PAGES))
+            notices.append(_PAGE_LIMIT_NOTICE)
 
     def _matches(self, entry: dict, keywords: list[str]) -> bool:
         if not title_matches(entry.get("title"), keywords):

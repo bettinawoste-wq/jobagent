@@ -29,6 +29,7 @@ class SourceStatus:
     name: str
     count: int
     errors: list[str] = field(default_factory=list)
+    notices: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,9 +206,11 @@ def _sources_block(sources: Sequence[SourceStatus]) -> str:
 
 def _source_line(source: SourceStatus) -> str:
     count = "1 Anzeige" if source.count == 1 else f"{source.count} Anzeigen"
-    if not source.errors:
-        return f"- {source.name}: {count}"
-    return f"- {source.name}: FEHLER, {count} ({'; '.join(source.errors)})"
+    line = f"- {source.name}: "
+    line += f"FEHLER, {count} ({'; '.join(source.errors)})" if source.errors else count
+    if source.notices:
+        line += f" · Hinweis: {'; '.join(source.notices)}"
+    return line
 
 
 def _cause_text(cause: LanguageModelFailure) -> str | None:
