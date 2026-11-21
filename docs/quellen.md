@@ -30,7 +30,7 @@ Der JSON-Abruf mit Fehlergrund, die Typprüfung der Felder (auch `text_at` für 
 ## Arbeitnow (`ArbeitnowSource`)
 - Freie, öffentliche API ohne Key: `https://www.arbeitnow.com/api/job-board-api`. Sie sammelt Remote- und Europa-Jobs mit Tech-Schwerpunkt.
 - Es gibt keine serverseitige Suche nach Stichwort oder Ort. Gefiltert wird lokal, und alle Suchbegriffe teilen sich dieselben abgerufenen Seiten. Der Ort (`wo` unter `[suche]`) wird lokal im Ort-Feld gesucht. Ein `umkreis` ist nicht möglich, weil die API keine Geokoordinaten liefert.
-- Das Paging folgt `links.next` und stoppt, sobald Einträge auftauchen, die älter als der Suchzeitraum sind. Höchstens 10 Seiten pro Lauf, als Sicherheitsgrenze und zur maßvollen Nutzung der freien API. Gibt es nach der zehnten Seite noch eine nächste, meldet die Quelle „Ergebnisse abgeschnitten nach 10 Seiten“ als Fehler.
+- Das Paging folgt `links.next` und stoppt nach der ersten Seite, auf der jede Anzeige älter als der Suchzeitraum ist. Eine einzelne alte Anzeige reicht nicht: Die Live-API sortiert nicht streng nach Datum, im November 2026 standen auf Seite 1 Anzeigen von 1,7 Tagen und auf Seite 4 noch welche von wenigen Stunden. Höchstens 10 Seiten pro Lauf, als Sicherheitsgrenze und zur maßvollen Nutzung der freien API. Gibt es nach der zehnten Seite noch eine nächste, meldet die Quelle „Ergebnisse abgeschnitten nach 10 Seiten“ als Fehler.
 - Das Veröffentlichungsdatum `created_at` zählt nur als Zahl. Fehlt es oder hat es einen anderen Typ, auch einen Wahrheitswert, oder ist es keine endliche Zahl (NaN, Infinity), gilt die Anzeige nicht als zu alt.
 - Die Uhr kommt über den Konstruktor (`now`).
 - Die ID hat die Form `arbeitnow:<slug>`.

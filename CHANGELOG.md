@@ -13,6 +13,9 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 ### Geändert
 
 ### Behoben
+- Arbeitnow blättert weiter, bis eine ganze Seite älter als der Suchzeitraum ist:
+  Die API sortiert nicht streng nach Datum, und bisher beendete schon eine einzelne
+  alte Anzeige das Blättern, sodass jüngere auf späteren Seiten still fehlten (#46)
 - Ein gemerkter vollständiger Lauf mit einem Datum in der Zukunft (etwa nach einer
   verstellten Uhr) bestimmt den Suchzeitraum nicht mehr; es zählen nur Läufe bis
   heute (#48)

@@ -34,10 +34,10 @@ class ArbeitnowSource:
     Die API kennt weder Stichwort- noch Ortssuche, daher werden alle Suchbegriffe und
     der Ort clientseitig auf Titel bzw. Ort angewandt; einen Umkreis gibt es mangels
     Geokoordinaten nicht. Das Paging folgt `links.next`, endet nach höchstens 10 Seiten
-    oder nach der Seite, auf der Anzeigen älter als der Suchzeitraum (`search_window` Tage)
-    auftauchen. Gäbe es nach 10 Seiten noch eine nächste, meldet es "Ergebnisse
-    abgeschnitten" als Fehler. Bricht es ab, bleiben die bis dahin gefundenen Anzeigen
-    erhalten.
+    oder nach der ersten Seite, auf der jede Anzeige älter als der Suchzeitraum
+    (`search_window` Tage) ist; die API sortiert nicht streng nach Datum. Gäbe es nach
+    10 Seiten noch eine nächste, meldet es "Ergebnisse abgeschnitten" als Fehler. Bricht
+    es ab, bleiben die bis dahin gefundenen Anzeigen erhalten.
     """
 
     name = "Arbeitnow"
@@ -102,15 +102,16 @@ class ArbeitnowSource:
                 if not entries:
                     return
 
-                too_old_reached = False
+                # Die Seiten sind nicht streng nach Datum sortiert: Erst eine Seite, auf der
+                # jede Anzeige zu alt ist, beendet das Blättern.
+                all_too_old = True
                 for entry in entries:
                     created_at = _timestamp(entry.get("created_at"))
-                    if cutoff is not None and created_at is not None:
-                        if created_at < cutoff:
-                            too_old_reached = True
-                            continue
+                    if cutoff is not None and created_at is not None and created_at < cutoff:
+                        continue
+                    all_too_old = False
                     yield entry
-                if too_old_reached:
+                if cutoff is not None and all_too_old:
                     return
                 url = (page.get("links") or {}).get("next")
         if url:

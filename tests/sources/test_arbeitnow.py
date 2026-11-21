@@ -135,15 +135,36 @@ def test_search_without_search_window_ignores_age() -> None:
     assert len(requests) == 2
 
 
-def test_search_keeps_young_job_ads_of_the_page_that_stops_paging() -> None:
-    page = deepcopy(PAGE_1)
-    page["data"].append({**page["data"][0], "slug": "neu-200009", "created_at": _days(59)})
-    handler, requests = _pages(page, PAGE_2)
+def _with_young_entry(page: dict, slug: str) -> dict:
+    """Die Seite mit einer zusätzlichen Anzeige, die am Tag 59 erschienen ist."""
+    page = deepcopy(page)
+    page["data"].append({**page["data"][0], "slug": slug, "created_at": _days(59)})
+    return page
+
+
+def test_a_single_old_job_ad_does_not_stop_paging() -> None:
+    # Arbeitnow sortiert nicht streng nach Datum: Auf eine Seite mit einer alten Anzeige
+    # können noch junge folgen.
+    last = {**_with_young_entry(PAGE_2, "neu-200010"), "links": {"next": None}}
+    handler, requests = _pages(_with_young_entry(PAGE_1, "neu-200009"), last)
+
+    result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
+
+    assert [job_ad.id for job_ad in result.job_ads] == [
+        "arbeitnow:neu-200009",
+        "arbeitnow:neu-200010",
+    ]
+    assert len(requests) == 2
+
+
+def test_search_stops_after_the_first_page_that_is_entirely_too_old() -> None:
+    third = _with_young_entry(PAGE_1, "nie-geholt-200011")
+    handler, requests = _pages(_with_young_entry(PAGE_1, "neu-200009"), PAGE_2, third)
 
     result = _source(handler, today=60, search_window=7).search(["Data Scientist"])
 
     assert [job_ad.id for job_ad in result.job_ads] == ["arbeitnow:neu-200009"]
-    assert len(requests) == 1
+    assert len(requests) == 2
 
 
 def test_published_date_as_boolean_does_not_count_as_too_old() -> None:
