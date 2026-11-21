@@ -14,6 +14,35 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 
 ### Behoben
 
+## 0.8.0 – 2026-11-21
+
+### Neu
+- Hinweise der Quelle im Quellenstatus, getrennt von Fehlern: Arbeitnow meldet das
+  Ende nach 10 Seiten als Hinweis, sodass der Lauf trotzdem vollständig sein kann
+  und der Suchzeitraum nicht dauerhaft beim Höchstwert bleibt (#46)
+
+### Geändert
+- Die Bundesagentur holt die Beschreibung nur noch für neue Anzeigen statt für
+  jede gefundene; bei täglichen Läufen entfallen so die meisten Detail-Abrufe
+  (#47)
+- Bundesagentur und Arbeitnow lassen zwischen zwei Anfragen mindestens 0,5 s
+  Abstand; Arbeitnow lehnte bei einer Messung nach rund 17 schnellen Aufrufen ab
+  (#47)
+- Schneidet die Bundesagentur Anzeigen ab, rät die Meldung, den Suchbegriff
+  enger zu fassen (#46)
+
+### Behoben
+- Scheitert der Abruf der Beschreibung (etwa HTTP 429), wird die Anzeige nicht
+  mehr nur nach dem Titel bewertet und für immer gemerkt: Sie bleibt unbewertet,
+  der Quellenstatus nennt den Grund, und der nächste Lauf versucht es erneut.
+  Nur ein 404 zählt als fehlende Beschreibung (#47)
+- Arbeitnow blättert weiter, bis eine ganze Seite älter als der Suchzeitraum ist:
+  Die API sortiert nicht streng nach Datum, und bisher beendete schon eine einzelne
+  alte Anzeige das Blättern, sodass jüngere auf späteren Seiten still fehlten (#46)
+- Ein gemerkter vollständiger Lauf mit einem Datum in der Zukunft (etwa nach einer
+  verstellten Uhr) bestimmt den Suchzeitraum nicht mehr; es zählen nur Läufe bis
+  heute (#48)
+
 ## 0.7.0 – 2026-11-20
 
 ### Neu

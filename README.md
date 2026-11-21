@@ -106,6 +106,9 @@ Bundesagentur-API   Arbeitnow-API   Firmen-Watchlist
     sources/  ──►  store.py (SQLite-Dedupe: schon gesehene IDs raus)
         │
         ▼
+    describe  ──►  Beschreibung nur für neue Anzeigen (Bundesagentur: Detail-Call)
+        │
+        ▼
     score.py  ──►  Claude Haiku bewertet jede neue Anzeige
         │          gegen profile.md (strukturierte JSON-Antwort:
         │          score, passt, passt_nicht, luecken, kurzfazit)
@@ -118,7 +121,8 @@ und Sprachmodell sind Seams mit austauschbaren Adaptern, siehe [Aufbau](#aufbau)
 
 Jeder Schritt ist defensiv: Fällt eine Quelle aus, steht das im Quellenstatus
 des Reports. Scheitert die Bewertung einer Anzeige (API-Fehler, ungültige
-Antwort des Sprachmodells), wird das geloggt. Der Report zählt die Anzeige dann
+Antwort des Sprachmodells) oder lässt sich ihre Beschreibung nicht abrufen,
+wird das geloggt. Der Report zählt die Anzeige dann
 als unbewertet, und der nächste Lauf versucht es erneut, sofern eine Quelle sie
 noch liefert. Der Gesamtlauf bricht daran nicht ab.
 
@@ -252,6 +256,12 @@ Bundesagentur nicht an. Fällt ein Tag aus, eine Quelle aus oder bleibt eine
 Anzeige unbewertet, holt der nächste Lauf die Tage seither nach. Ein gemerkter
 Lauf mit einem Datum in der Zukunft, etwa nach einer verstellten Uhr, zählt
 nicht. Die Watchlist sucht ohne Suchzeitraum.
+
+Ein Hinweis der Quelle im Report ist kein Fehler: Arbeitnow hat keine Suche auf
+dem Server und hört nach 10 Seiten auf, das reicht nur für wenige Tage. Der Lauf
+kann dann trotzdem vollständig sein. Schneidet dagegen die Bundesagentur
+Anzeigen ab (mehr als 250 für einen Suchbegriff), ist das ein Fehler;
+dann hilft es, den Suchbegriff enger zu fassen.
 
 Fehlende Werte behalten ihren Standard. Unbekannte Abschnitte und Schlüssel,
 Werte vom falschen Typ oder außerhalb ihres Bereichs (etwa `mindest_score`

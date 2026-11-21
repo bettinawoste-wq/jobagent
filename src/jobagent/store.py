@@ -308,10 +308,18 @@ class Store:
         )
         self._commit()
 
-    def last_complete_run(self) -> date | None:
-        """Tag des letzten vollständigen Laufs; None, wenn es noch keinen gab."""
-        # Ohne vollständigen Lauf liefert MAX NULL.
-        day = self._conn.fetch_value("SELECT MAX(datum) FROM vollstaendige_laeufe")
+    def last_complete_run(self, *, until: date | None = None) -> date | None:
+        """Tag des letzten vollständigen Laufs; None, wenn es noch keinen gab.
+
+        Mit `until` zählen nur Läufe bis einschließlich diesem Tag: Ein gemerkter Lauf in
+        der Zukunft (etwa nach einer verstellten Uhr) bestimmt dann nicht den Suchzeitraum.
+        """
+        # Ohne passenden vollständigen Lauf liefert MAX NULL; ISO-Daten sortieren als Text.
+        last_day = until.isoformat() if until else None
+        day = self._conn.fetch_value(
+            "SELECT MAX(datum) FROM vollstaendige_laeufe WHERE ? IS NULL OR datum <= ?",
+            (last_day, last_day),
+        )
         return date.fromisoformat(cast(str, day)) if day else None
 
     # Bewerbungen

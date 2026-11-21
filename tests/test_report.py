@@ -236,6 +236,25 @@ def test_source_status_names_errors_even_with_partial_result(tmp_path: Path) -> 
     )
 
 
+def test_source_status_shows_notices_apart_from_errors(tmp_path: Path) -> None:
+    sources = [
+        SourceStatus(
+            "Arbeitnow", 312, [], ["nach 10 Seiten beendet, ältere Anzeigen nicht geprüft"]
+        ),
+        SourceStatus("Bundesagentur", 2, ["IT: HTTP 503"], ["etwas anderes"]),
+    ]
+
+    content = _write_path([], date(2026, 11, 5), output_dir=tmp_path, sources=sources).read_text(
+        encoding="utf-8"
+    )
+
+    notice = "nach 10 Seiten beendet, ältere Anzeigen nicht geprüft"
+    assert f"- Arbeitnow: 312 Anzeigen · Hinweis: {notice}\n" in content
+    assert (
+        "- Bundesagentur: FEHLER, 2 Anzeigen (IT: HTTP 503) · Hinweis: etwas anderes\n" in content
+    )
+
+
 def test_without_matches_source_failure_is_still_reported(tmp_path: Path) -> None:
     sources = [SourceStatus("Arbeitnow", 0, ["IT: keine Verbindung"])]
 

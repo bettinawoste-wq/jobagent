@@ -266,7 +266,9 @@ def test_default_sources_search_with_location_radius_and_search_window() -> None
     )
     window = SearchWindow(4, since=date(2026, 2, 27), capped=False)
 
-    for source in main.default_sources(config, window, transport=httpx.MockTransport(handler)):
+    for source in main.default_sources(
+        config, window, transport=httpx.MockTransport(handler), sleep=lambda seconds: None
+    ):
         assert source.search(config.keywords).errors == []
 
     hosts = [request.url.host for request in requests]
@@ -617,7 +619,9 @@ def test_arbeitnow_from_default_sources_skips_job_ads_older_than_search_window()
 
     config = Config(keywords=["Python"])  # ohne veroeffentlichtseit: nur der Suchzeitraum zählt
     window = SearchWindow(2, since=date(2026, 3, 1), capped=False)
-    [_, arbeitnow] = main.default_sources(config, window, transport=httpx.MockTransport(handler))
+    [_, arbeitnow] = main.default_sources(
+        config, window, transport=httpx.MockTransport(handler), sleep=lambda seconds: None
+    )
 
     assert [job_ad.id for job_ad in arbeitnow.search(["Python"]).job_ads] == ["arbeitnow:neu"]
 

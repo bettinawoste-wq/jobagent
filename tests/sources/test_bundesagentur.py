@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from jobagent.job_ad import JobAd
-from jobagent.sources import Source
+from jobagent.sources import DescriptionUnavailable, Source
 from jobagent.sources.bundesagentur import BundesagenturSource
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -30,13 +30,40 @@ def _successful_handler(request: httpx.Request) -> httpx.Response:
 
 
 def _source(handler, **kwargs) -> Source:
+    kwargs.setdefault("sleep", lambda seconds: None)
     return BundesagenturSource(transport=httpx.MockTransport(handler), **kwargs)
 
 
-def test_search_maps_response_to_job_ads_including_details() -> None:
-    result = _source(_successful_handler).search(["Softwareentwicklerin"])
+def test_search_pauses_half_a_second_between_requests() -> None:
+    # Maßvolle Nutzung (ADR 0002): Die Antworten kommen hier sofort, also wartet die
+    # Quelle vor jeder Anfrage außer der ersten fast die ganze Pause.
+    pauses: list[float] = []
 
-    assert result.job_ads == [
+    source = _source(_successful_handler, sleep=pauses.append)
+    for job_ad in source.search(["Softwareentwicklerin"]).job_ads:
+        source.describe(job_ad)
+
+    assert len(pauses) == 2  # eine Suchseite, zwei Detail-Abrufe
+    assert all(0.4 < pause <= 0.5 for pause in pauses)
+
+
+def test_describe_keeps_the_pause_after_the_search() -> None:
+    # Suche und Detail-Abruf nutzen eigene Verbindungen; der Abstand gilt trotzdem.
+    pauses: list[float] = []
+    source = _source(_successful_handler, sleep=pauses.append)
+    [job_ad, _] = source.search(["Softwareentwicklerin"]).job_ads
+
+    source.describe(job_ad)
+
+    assert len(pauses) == 1
+    assert 0.4 < pauses[0] <= 0.5
+
+
+def test_search_maps_response_to_job_ads_and_describe_adds_details() -> None:
+    source = _source(_successful_handler)
+    result = source.search(["Softwareentwicklerin"])
+
+    assert [source.describe(job_ad) for job_ad in result.job_ads] == [
         JobAd(
             id="10001-1003353506-S",
             title="Softwareentwickler/in Linux (m/w/d)",
@@ -95,7 +122,8 @@ def test_search_without_optional_parameters_sends_only_keyword_and_page() -> Non
     assert requests[0].url.params["page"] == "1"
 
 
-def test_search_finds_job_ad_once_and_fetches_its_details_once_across_keywords() -> None:
+def test_search_finds_job_ad_once_across_keywords_and_fetches_no_details() -> None:
+    # Die Details holt erst `describe`, und das nur für neue Anzeigen (ADR 0002).
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -105,9 +133,10 @@ def test_search_finds_job_ad_once_and_fetches_its_details_once_across_keywords()
     result = _source(handler).search(["Softwareentwicklerin", "IT Consultant"])
 
     assert [job_ad.id for job_ad in result.job_ads] == ["10001-1003353506-S", "10001-1003353507-S"]
+    assert all(job_ad.description is None for job_ad in result.job_ads)
     search_keywords = [r.url.params["was"] for r in requests if r.url.path == _SEARCH_PATH]
     assert search_keywords == ["Softwareentwicklerin", "IT Consultant"]
-    assert len([r for r in requests if r.url.path.startswith(_DETAILS_PREFIX)]) == 2
+    assert not [r for r in requests if r.url.path.startswith(_DETAILS_PREFIX)]
 
 
 def test_search_without_matches_fetches_no_details() -> None:
@@ -164,17 +193,28 @@ def test_failed_keyword_does_not_stop_the_others() -> None:
     assert result.errors == ["kaputt: HTTP 503"]
 
 
-def test_failed_details_leave_only_description_empty() -> None:
+@pytest.mark.parametrize(
+    ("details", "reason"),
+    [
+        (lambda request: httpx.Response(429), "HTTP 429"),
+        (lambda request: httpx.Response(500), "HTTP 500"),
+        (lambda request: httpx.Response(200, text="<html>Wartung</html>"), "ungültige Antwort"),
+    ],
+    ids=["zu-viele-anfragen", "serverfehler", "kein-json"],
+)
+def test_failed_details_make_the_description_unavailable(details, reason: str) -> None:
+    # Die Anzeige bleibt dann unbewertet und kommt im nächsten Lauf wieder.
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == _SEARCH_PATH:
             return httpx.Response(200, json=SEARCH_FIXTURE)
-        return httpx.Response(500)
+        return details(request)
 
-    result = _source(handler).search(["Softwareentwicklerin"])
+    source = _source(handler)
+    [job_ad, _] = source.search(["Softwareentwicklerin"]).job_ads
 
-    assert len(result.job_ads) == 2
-    assert all(job_ad.description is None for job_ad in result.job_ads)
-    assert result.errors == []
+    with pytest.raises(DescriptionUnavailable) as error:
+        source.describe(job_ad)
+    assert error.value.reason == reason
 
 
 def _search_with_first_entry(**changes: object):
@@ -241,15 +281,30 @@ def test_optional_fields_of_wrong_type_become_none_and_link_falls_back() -> None
     assert result.errors == []
 
 
+def test_details_not_found_leave_only_description_empty() -> None:
+    # 404 geht nicht vorüber: Würde die Anzeige darauf unbewertet bleiben, wäre kein Lauf
+    # mehr vollständig, solange die Suche sie liefert. Sie wird nach dem Titel bewertet.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _SEARCH_PATH:
+            return httpx.Response(200, json=SEARCH_FIXTURE)
+        return httpx.Response(404)
+
+    source = _source(handler)
+    [job_ad, _] = source.search(["Softwareentwicklerin"]).job_ads
+
+    assert source.describe(job_ad) == job_ad
+
+
 def test_description_of_wrong_type_becomes_none() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.startswith(_DETAILS_PREFIX):
             return httpx.Response(200, json={"stellenangebotsBeschreibung": 42})
         return _successful_handler(request)
 
-    result = _source(handler).search(["Data Science"])
+    source = _source(handler)
+    result = source.search(["Data Science"])
 
-    assert [job_ad.description for job_ad in result.job_ads] == [None, None]
+    assert [source.describe(job_ad).description for job_ad in result.job_ads] == [None, None]
     assert result.errors == []
 
 
@@ -410,8 +465,9 @@ def test_search_reports_truncated_results_when_page_limit_is_reached() -> None:
     assert 1 < pages_per_keyword < 20  # eine Sicherheitsgrenze, maßvoll (ADR 0002)
     assert len(result.job_ads) == pages_per_keyword * _page_size()
     assert result.errors == [
-        f"Data Science: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
-        f"Python: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten",
+        f"Data Science: Anzeigen abgeschnitten nach {pages_per_keyword} Seiten,"
+        " Suchbegriff enger fassen",
+        f"Python: Anzeigen abgeschnitten nach {pages_per_keyword} Seiten, Suchbegriff enger fassen",
     ]
 
 

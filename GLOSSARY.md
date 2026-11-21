@@ -26,6 +26,16 @@ Ein Anbieter, von dem Anzeigen kommen, etwa die Bundesagentur für Arbeit, Arbei
 _Im Code_: `Source`; Eigennamen bleiben erhalten: `BundesagenturSource`, `ArbeitnowSource`, `WatchlistSource`, `GreenhouseBoard`, `LeverBoard`
 _Avoid_: Portal, Feed
 
+**Quellenstatus**:
+Was jede Quelle in einem Lauf geliefert hat: die Zahl ihrer Anzeigen, ihre Fehler und ihre Hinweise; steht im Report.
+_Im Code_: `SourceStatus`
+_Avoid_: Quellenbericht, Log
+
+**Hinweis der Quelle**:
+Eine Meldung im Quellenstatus, die kein Fehler ist, etwa dass eine Quelle an einer bekannten Grenze ihrer Schnittstelle aufgehört hat; ein Lauf mit Hinweisen kann vollständig sein.
+_Im Code_: `notices`
+_Avoid_: Warnung
+
 **Suchbegriff**:
 Ein Stichwort, nach dem in den Quellen gesucht wird; in `config.toml` als `was` im Abschnitt `[suche]`.
 _Im Code_: `keywords`
@@ -59,7 +69,7 @@ _Im Code_: `Assessment`
 _Avoid_: Rating, Analyse, Analyzer, Scoring
 
 **Unbewertete Anzeige**:
-Eine neue Anzeige, deren Bewertung in einem Lauf gescheitert ist; sie gilt als ungesehen und wird im nächsten Lauf erneut bewertet, sofern eine Quelle sie dann noch liefert.
+Eine neue Anzeige, deren Bewertung in einem Lauf gescheitert ist oder deren Beschreibung sich nicht abrufen ließ; sie gilt als ungesehen und wird im nächsten Lauf erneut bewertet, sofern eine Quelle sie dann noch liefert.
 _Im Code_: `unassessed`
 _Avoid_: übersprungen, fehlerhaft
 
@@ -76,7 +86,7 @@ _Im Code_: `run`
 _Avoid_: Durchlauf, Testlauf
 
 **Vollständiger Lauf**:
-Ein Lauf, in dem jede Quelle fehlerfrei geliefert hat und keine Anzeige unbewertet blieb; ab seinem Tag rechnet der Suchzeitraum des nächsten Laufs.
+Ein Lauf, in dem jede Quelle fehlerfrei geliefert hat (Hinweise der Quelle zählen nicht als Fehler) und keine Anzeige unbewertet blieb; ab seinem Tag rechnet der Suchzeitraum des nächsten Laufs.
 _Im Code_: `complete_run`
 _Avoid_: erfolgreicher Lauf, letzter Lauf
 

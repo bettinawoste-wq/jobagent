@@ -183,3 +183,7 @@ class WatchlistSource:
                     job_ads.setdefault(job_ad.id, job_ad)
                 errors.extend(converted.errors(company.name))
         return SearchResult(list(job_ads.values()), errors)
+
+    def describe(self, job_ad: JobAd) -> JobAd:
+        """Die Beschreibung holt schon `search`, je passender Anzeige."""
+        return job_ad

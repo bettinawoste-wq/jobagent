@@ -1,6 +1,6 @@
 """Gemeinsame Fakes für Tests: `from tests.fakes import FakeLanguageModel`."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import cast
 
 import anthropic
@@ -8,24 +8,38 @@ import anthropic
 from jobagent.job_ad import JobAd
 from jobagent.language_model import LanguageModelError, with_required_keys
 from jobagent.score import Assessment
-from jobagent.sources import SearchResult
+from jobagent.sources import DescriptionUnavailable, SearchResult
 
 
 @dataclass
 class FakeSource:
     """Quelle am Interface `Source`, die feste Anzeigen und Fehler liefert.
 
-    Sie hält in `received` die Suchbegriffe jeder Suche fest.
+    Sie hält in `received` die Suchbegriffe jeder Suche fest und in `described` die IDs der
+    Anzeigen, die der Lauf beschreiben ließ. `descriptions` ergänzt dabei eine Beschreibung,
+    `unavailable` lässt den Abruf mit diesem Grund scheitern.
     """
 
     job_ads: list[JobAd] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    notices: list[str] = field(default_factory=list)
     name: str = "Bundesagentur für Arbeit"
+    descriptions: dict[str, str] = field(default_factory=dict)
+    unavailable: dict[str, str] = field(default_factory=dict)
     received: list[list[str]] = field(default_factory=list)
+    described: list[str] = field(default_factory=list)
 
     def search(self, keywords: list[str]) -> SearchResult:
         self.received.append(keywords)
-        return SearchResult(list(self.job_ads), list(self.errors))
+        return SearchResult(list(self.job_ads), list(self.errors), list(self.notices))
+
+    def describe(self, job_ad: JobAd) -> JobAd:
+        self.described.append(job_ad.id)
+        if job_ad.id in self.unavailable:
+            raise DescriptionUnavailable(self.unavailable[job_ad.id])
+        if job_ad.id in self.descriptions:
+            return replace(job_ad, description=self.descriptions[job_ad.id])
+        return job_ad
 
 
 def fake_job_ad(id_: str) -> JobAd:

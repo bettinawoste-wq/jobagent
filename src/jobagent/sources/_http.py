@@ -8,6 +8,7 @@ Intern im Quellen-Paket, gehört nicht zum Interface `Source`.
 import html
 import logging
 import re
+import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,26 +20,48 @@ from jobagent.job_ad import JobAd
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 30.0
+# Mindestabstand zwischen zwei Anfragen derselben Quelle, zur maßvollen Nutzung (ADR 0002).
+PAUSE = 0.5
 INVALID_RESPONSE = "ungültige Antwort"
 _TAG_PATTERN = re.compile(r"<[^>]+>")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class FetchError(Exception):
-    """Abruf gescheitert oder abgeschnitten; `reason` ist der Grund für den Quellenstatus."""
+    """Abruf gescheitert; `reason` ist der Grund für den Quellenstatus.
 
-    def __init__(self, reason: str) -> None:
+    `status` ist der HTTP-Status, wenn der Server mit einem Fehlercode geantwortet hat.
+    """
+
+    def __init__(self, reason: str, status: int | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.status = status
 
 
-def truncated_reason(max_pages: int) -> str:
-    """Grund für den Quellenstatus, wenn das Blättern an der Sicherheitsgrenze endet.
+class Pacer:
+    """Hält zwischen zwei Anfragen einer Quelle mindestens `PAUSE` Sekunden Abstand.
 
-    Als Fehler der Quelle zählt der Lauf dann nicht als vollständig: Der nächste Suchzeitraum
-    reicht weiter zurück, statt die übrigen Anzeigen still zu verlieren.
+    Eine Quelle behält ihren Taktgeber über alle ihre Clients; `sleep` ist in Tests
+    ersetzt, damit sie nicht wirklich warten.
     """
-    return f"Ergebnisse abgeschnitten nach {max_pages} Seiten"
+
+    def __init__(self, sleep: Callable[[float], None]) -> None:
+        self._sleep = sleep
+        self._last: float | None = None
+
+    def client(self, transport: httpx.BaseTransport | None) -> httpx.Client:
+        """Ein Client, der vor jeder Anfrage den Abstand zur letzten einhält."""
+        return httpx.Client(
+            timeout=TIMEOUT, transport=transport, event_hooks={"request": [self._wait]}
+        )
+
+    def _wait(self, request: httpx.Request) -> None:
+        if self._last is not None:
+            remaining = PAUSE - (time.monotonic() - self._last)
+            if remaining > 0:
+                self._sleep(remaining)
+        self._last = time.monotonic()
 
 
 @contextmanager
@@ -73,7 +96,8 @@ def get_json(
         return response.json()
     except httpx.HTTPStatusError as error:
         logger.exception("Anfrage fehlgeschlagen (url=%r)", url)
-        raise FetchError(f"HTTP {error.response.status_code}") from error
+        status = error.response.status_code
+        raise FetchError(f"HTTP {status}", status) from error
     except httpx.HTTPError as error:
         logger.exception("Anfrage fehlgeschlagen (url=%r)", url)
         raise FetchError("keine Verbindung") from error
