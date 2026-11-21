@@ -28,11 +28,15 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class FetchError(Exception):
-    """Abruf gescheitert; `reason` ist der Grund für den Quellenstatus."""
+    """Abruf gescheitert; `reason` ist der Grund für den Quellenstatus.
 
-    def __init__(self, reason: str) -> None:
+    `status` ist der HTTP-Status, wenn der Server mit einem Fehlercode geantwortet hat.
+    """
+
+    def __init__(self, reason: str, status: int | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.status = status
 
 
 class Pacer:
@@ -92,7 +96,8 @@ def get_json(
         return response.json()
     except httpx.HTTPStatusError as error:
         logger.exception("Anfrage fehlgeschlagen (url=%r)", url)
-        raise FetchError(f"HTTP {error.response.status_code}") from error
+        status = error.response.status_code
+        raise FetchError(f"HTTP {status}", status) from error
     except httpx.HTTPError as error:
         logger.exception("Anfrage fehlgeschlagen (url=%r)", url)
         raise FetchError("keine Verbindung") from error

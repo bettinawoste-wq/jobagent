@@ -260,7 +260,7 @@ nicht. Die Watchlist sucht ohne Suchzeitraum.
 Ein Hinweis der Quelle im Report ist kein Fehler: Arbeitnow hat keine Suche auf
 dem Server und hört nach 10 Seiten auf, das reicht nur für wenige Tage. Der Lauf
 kann dann trotzdem vollständig sein. Schneidet dagegen die Bundesagentur
-Ergebnisse ab (mehr als 250 Treffer für einen Suchbegriff), ist das ein Fehler;
+Anzeigen ab (mehr als 250 für einen Suchbegriff), ist das ein Fehler;
 dann hilft es, den Suchbegriff enger zu fassen.
 
 Fehlende Werte behalten ihren Standard. Unbekannte Abschnitte und Schlüssel,

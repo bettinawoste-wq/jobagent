@@ -34,7 +34,7 @@ _MAX_PAGES = 5
 # Abgeschnitten ist ein Fehler: Der Lauf zählt dann nicht als vollständig, und der nächste
 # Suchzeitraum reicht weiter zurück, statt die übrigen Anzeigen still zu verlieren. Bei
 # einem Suchbegriff mit so vielen Treffern hilft nur, ihn enger zu fassen.
-_TRUNCATED = f"Ergebnisse abgeschnitten nach {_MAX_PAGES} Seiten, Suchbegriff enger fassen"
+_TRUNCATED = f"Anzeigen abgeschnitten nach {_MAX_PAGES} Seiten, Suchbegriff enger fassen"
 
 
 class BundesagenturSource:
@@ -43,7 +43,7 @@ class BundesagenturSource:
     Gesucht wird im Suchzeitraum `search_window` (in Tagen, an die API als
     `veroeffentlichtseit`). Je Suchbegriff blättert sie (`page` ab 1, `size`), bis alle
     Ergebnisse da sind, höchstens `_MAX_PAGES` Seiten. Bleiben danach Ergebnisse übrig,
-    meldet sie "Ergebnisse abgeschnitten" als Fehler: Der Lauf zählt dann nicht als
+    meldet sie "Anzeigen abgeschnitten" als Fehler: Der Lauf zählt dann nicht als
     vollständig.
 
     Die Beschreibung holt erst `describe` per Detail-Call, den der Lauf nur für neue
@@ -81,12 +81,17 @@ class BundesagenturSource:
     def describe(self, job_ad: JobAd) -> JobAd:
         """Holt die Beschreibung per Detail-Call; scheitert er, `DescriptionUnavailable`.
 
-        Antwortet die API ohne Beschreibung oder in unerwarteter Form, bleibt sie None.
+        Antwortet die API ohne Beschreibung, mit JSON in unerwarteter Form oder mit 404,
+        bleibt sie None: Ein 404 geht nicht vorüber, und bliebe die Anzeige deshalb
+        unbewertet, wäre kein Lauf mehr vollständig, solange die Suche sie liefert.
+        Vorübergehende Fehler (etwa 429, 5xx, keine Verbindung, kein JSON) werfen.
         """
         with self._pacer.client(self._transport) as client:
             try:
                 description = _description(client, job_ad.id)
             except FetchError as error:
+                if error.status == httpx.codes.NOT_FOUND:
+                    return job_ad
                 raise DescriptionUnavailable(error.reason) from error
         return replace(job_ad, description=description)
 

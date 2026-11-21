@@ -47,6 +47,18 @@ def test_search_pauses_half_a_second_between_requests() -> None:
     assert all(0.4 < pause <= 0.5 for pause in pauses)
 
 
+def test_describe_keeps_the_pause_after_the_search() -> None:
+    # Suche und Detail-Abruf nutzen eigene Verbindungen; der Abstand gilt trotzdem.
+    pauses: list[float] = []
+    source = _source(_successful_handler, sleep=pauses.append)
+    [job_ad, _] = source.search(["Softwareentwicklerin"]).job_ads
+
+    source.describe(job_ad)
+
+    assert len(pauses) == 1
+    assert 0.4 < pauses[0] <= 0.5
+
+
 def test_search_maps_response_to_job_ads_and_describe_adds_details() -> None:
     source = _source(_successful_handler)
     result = source.search(["Softwareentwicklerin"])
@@ -269,6 +281,20 @@ def test_optional_fields_of_wrong_type_become_none_and_link_falls_back() -> None
     assert result.errors == []
 
 
+def test_details_not_found_leave_only_description_empty() -> None:
+    # 404 geht nicht vorüber: Würde die Anzeige darauf unbewertet bleiben, wäre kein Lauf
+    # mehr vollständig, solange die Suche sie liefert. Sie wird nach dem Titel bewertet.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == _SEARCH_PATH:
+            return httpx.Response(200, json=SEARCH_FIXTURE)
+        return httpx.Response(404)
+
+    source = _source(handler)
+    [job_ad, _] = source.search(["Softwareentwicklerin"]).job_ads
+
+    assert source.describe(job_ad) == job_ad
+
+
 def test_description_of_wrong_type_becomes_none() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.startswith(_DETAILS_PREFIX):
@@ -439,10 +465,9 @@ def test_search_reports_truncated_results_when_page_limit_is_reached() -> None:
     assert 1 < pages_per_keyword < 20  # eine Sicherheitsgrenze, maßvoll (ADR 0002)
     assert len(result.job_ads) == pages_per_keyword * _page_size()
     assert result.errors == [
-        f"Data Science: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten,"
+        f"Data Science: Anzeigen abgeschnitten nach {pages_per_keyword} Seiten,"
         " Suchbegriff enger fassen",
-        f"Python: Ergebnisse abgeschnitten nach {pages_per_keyword} Seiten,"
-        " Suchbegriff enger fassen",
+        f"Python: Anzeigen abgeschnitten nach {pages_per_keyword} Seiten, Suchbegriff enger fassen",
     ]
 
 

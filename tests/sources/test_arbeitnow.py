@@ -142,6 +142,16 @@ def test_search_stops_paging_at_job_ads_older_than_search_window() -> None:
     assert len(requests) == 1
 
 
+def test_search_without_search_window_pages_to_the_limit_and_gives_a_notice() -> None:
+    handler, requests = _pages(PAGE_1)  # verweist immer wieder auf eine naechste Seite
+
+    result = _source(handler, today=365).search(["Data Scientist"])
+
+    assert len(requests) == 10
+    assert result.errors == []
+    assert result.notices == ["nach 10 Seiten beendet, ältere Anzeigen nicht geprüft"]
+
+
 def test_search_without_search_window_ignores_age() -> None:
     handler, requests = _pages(PAGE_1, PAGE_2)
 

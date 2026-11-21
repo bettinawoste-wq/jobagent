@@ -28,13 +28,14 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 - Bundesagentur und Arbeitnow lassen zwischen zwei Anfragen mindestens 0,5 s
   Abstand; Arbeitnow lehnte bei einer Messung nach rund 17 schnellen Aufrufen ab
   (#47)
-- Schneidet die Bundesagentur Ergebnisse ab, rät die Meldung, den Suchbegriff
+- Schneidet die Bundesagentur Anzeigen ab, rät die Meldung, den Suchbegriff
   enger zu fassen (#46)
 
 ### Behoben
 - Scheitert der Abruf der Beschreibung (etwa HTTP 429), wird die Anzeige nicht
   mehr nur nach dem Titel bewertet und für immer gemerkt: Sie bleibt unbewertet,
-  der Quellenstatus nennt den Grund, und der nächste Lauf versucht es erneut (#47)
+  der Quellenstatus nennt den Grund, und der nächste Lauf versucht es erneut.
+  Nur ein 404 zählt als fehlende Beschreibung (#47)
 - Arbeitnow blättert weiter, bis eine ganze Seite älter als der Suchzeitraum ist:
   Die API sortiert nicht streng nach Datum, und bisher beendete schon eine einzelne
   alte Anzeige das Blättern, sodass jüngere auf späteren Seiten still fehlten (#46)
