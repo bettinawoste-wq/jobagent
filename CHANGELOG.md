@@ -13,6 +13,9 @@ Patch-Version. Nummern wie (#12) verweisen auf die Issues im Repo.
 ### Geändert
 
 ### Behoben
+- Ein gemerkter vollständiger Lauf mit einem Datum in der Zukunft (etwa nach einer
+  verstellten Uhr) bestimmt den Suchzeitraum nicht mehr; es zählen nur Läufe bis
+  heute (#48)
 
 ## 0.7.0 – 2026-11-20
 

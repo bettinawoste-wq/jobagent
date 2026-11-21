@@ -607,6 +607,26 @@ def test_last_complete_run_is_the_latest_day(db_path: Path) -> None:
         assert db.last_complete_run() == date(2026, 11, 19)
 
 
+def test_complete_run_in_the_future_does_not_count(db: Store) -> None:
+    # Etwa nach einer verstellten Uhr: Der Lauf vom 20.11. gilt, nicht der vom 30.11.
+    db.remember_complete_run(date(2026, 11, 20), "2026-11-20")
+    db.remember_complete_run(date(2026, 11, 30), "2026-11-30")
+
+    assert db.last_complete_run(until=date(2026, 11, 21)) == date(2026, 11, 20)
+
+
+def test_only_complete_runs_in_the_future_count_as_none(db: Store) -> None:
+    db.remember_complete_run(date(2026, 11, 30), "2026-11-30")
+
+    assert db.last_complete_run(until=date(2026, 11, 21)) is None
+
+
+def test_complete_run_of_today_counts(db: Store) -> None:
+    db.remember_complete_run(date(2026, 11, 21), "2026-11-21")
+
+    assert db.last_complete_run(until=date(2026, 11, 21)) == date(2026, 11, 21)
+
+
 def test_complete_run_stores_only_day_and_report(db: Store, db_path: Path) -> None:
     db.remember_complete_run(date(2026, 11, 19), "2026-11-19")
 
